@@ -589,7 +589,7 @@ export class Tactical {
       this.occ[u.y * this.W + u.x] = u.id;
       const visible = u.team === 'player' || this.isVisibleAlien(u) || (u.team === 'civ' && this.vis[u.y * this.W + u.x]);
       const dur = (visible ? 0.24 : 0.02) / spd;
-      if (visible && (u.team === 'player' || opts.follow)) { this.camT.x = to.x; this.camT.z = to.z; }
+      if (visible && u.team !== 'civ') { this.camT.x = to.x; this.camT.z = to.z; }
       let t = 0;
       while (t < dur) {
         const dt = await this.frame();
