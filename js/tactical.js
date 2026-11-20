@@ -313,7 +313,7 @@ export class Tactical {
     this.cursorFill.position.y = 0.04;
     this.pathDots = add(new THREE.InstancedMesh(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }), 80));
     this.pathDots.count = 0;
-    this.rangeMesh = add(new THREE.InstancedMesh(new THREE.PlaneGeometry(TILE * 0.97, TILE * 0.97).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 0.8, 1.4), transparent: true, opacity: this.map.night ? 0.03 : 0.055, depthWrite: false }), this.N));
+    this.rangeMesh = add(new THREE.InstancedMesh(new THREE.PlaneGeometry(TILE * 0.97, TILE * 0.97).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 0.8, 1.4), transparent: true, opacity: this.map.night || this.opts.biome === 'hive' ? 0.03 : 0.055, depthWrite: false }), this.N));
     this.rangeMesh.count = 0; this.rangeMesh.position.y = 0.03;
     this.grenadeArea = add(new THREE.Mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), ringMat(0xff8030, 0.18)));
     this.grenadeArea.visible = false; this.grenadeArea.position.y = 0.07;
@@ -352,7 +352,7 @@ export class Tactical {
     const site = this.opts.site;
     let roster, n;
     const monthIdx = Game.c.lastMonth || 0;
-    if (site.kind === 'hive') { roster = ['krull', 'drone', 'vael_s', 'beast']; n = 14; }
+    if (site.kind === 'hive') { roster = ['krull', 'drone', 'vael_s', 'beast']; n = 11; }
     else if (site.kind === 'terror') { roster = ['vael', 'vael_s', 'beast', 'beast', monthIdx > 2 ? 'krull' : 'vael_s']; n = randInt(7, 10); }
     else { const us = UFOS[site.ufoType]; roster = us.roster; n = randInt(us.crew[0], us.crew[1]); if (site.kind === 'crash') n = Math.max(1, Math.round(n * 0.75)); }
     const inUfo = m.alienSpawns.filter((s) => s.inUfo), outUfo = m.alienSpawns.filter((s) => !s.inUfo);

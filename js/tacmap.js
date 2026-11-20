@@ -266,7 +266,7 @@ function genHive(map, at, setWall) {
   const { W, H } = map;
   // Höhlensystem via zellulärem Automaten
   let grid = new Uint8Array(W * H);
-  for (let i = 0; i < grid.length; i++) grid[i] = rand() < 0.44 ? 1 : 0;
+  for (let i = 0; i < grid.length; i++) grid[i] = rand() < 0.5 ? 1 : 0;
   for (let it = 0; it < 5; it++) {
     const ng = new Uint8Array(W * H);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
