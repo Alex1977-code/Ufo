@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="75%"><stop offset="0" stop-color="#123048"/><stop offset="1" stop-color="#03070c"/></radialGradient>
+    <linearGradient id="hull" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e6eef5"/><stop offset="1" stop-color="#5d6b78"/></linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3dffd0" stop-opacity=".55"/><stop offset="1" stop-color="#3dffd0" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <path d="M206 262 L150 470 L362 470 L306 262 Z" fill="url(#beam)"/>
+  <ellipse cx="256" cy="196" rx="70" ry="56" fill="#0c3a4a" stroke="#3fe0ff" stroke-width="6"/>
+  <ellipse cx="256" cy="236" rx="176" ry="44" fill="url(#hull)"/>
+  <ellipse cx="256" cy="244" rx="176" ry="18" fill="none" stroke="#3fe0ff" stroke-width="8"/>
+  <g fill="#ff4d6a"><circle cx="150" cy="250" r="9"/><circle cx="210" cy="258" r="9"/><circle cx="302" cy="258" r="9"/><circle cx="362" cy="250" r="9"/></g>
+  <path d="M256 60 L300 96 L256 84 L212 96 Z" fill="#3dffb0"/>
+</svg>
