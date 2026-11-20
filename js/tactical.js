@@ -379,7 +379,7 @@ export class Tactical {
     const scale = 1 + Math.min(0.5, (Game.c.lastMonth || 0) * 0.06);
     return this.addUnit({
       team: 'alien', name: a.name, spec: type, x, y, hp: Math.round(a.hp * scale), tu: a.tu, acc: a.acc, react: a.react, armor: a.armor, weapon: a.weapon,
-      grenades: type === 'krull' || type === 'vael_s' ? (rand() < 0.4 ? 1 : 0) : 0, grenadeKind: 'alien', obj: makeAlien(a.model), sight: a.sight, flying: !!a.flying, guard, boss: !!a.boss,
+      grenades: type === 'krull' || type === 'vael_s' ? (rand() < 0.4 ? 1 : 0) : 0, grenadeKind: 'alien', obj: makeAlien(a.model), sight: this.map.night ? Math.round(a.sight * 0.7) : a.sight, flying: !!a.flying, guard, boss: !!a.boss,
     });
   }
 
@@ -955,7 +955,7 @@ export class Tactical {
   async alienAct(a) {
     const w = WEAPONS[a.weapon];
     let guard = 0, shots = 0;
-    const maxShots = a.boss ? 3 : 2;
+    const maxShots = a.boss ? 3 : this.turn === 1 ? 1 : 2;
     while (a.alive && !this.ended && guard++ < 8 && shots < maxShots) {
       let targets = this.alienTargets(a);
       const soldiersSeen = targets.filter((t) => t.team === 'player');
