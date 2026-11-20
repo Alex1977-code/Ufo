@@ -866,6 +866,7 @@ export class Geoscape {
     const finish = (res) => {
       if (done) return false; done = true;
       clearInterval(timer);
+      u.hp = Math.max(0, u.hp); cr.hp = Math.max(0, cr.hp); draw();
       const ll = vecToLatLon(u.pos);
       const region = regionOf(ll.lat, ll.lon);
       if (res === 'win') {
