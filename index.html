@@ -42,5 +42,9 @@
     })();
   </script>
   <script type="module" src="js/main.js"></script>
+  <script>
+    // Falls das Spiel nicht startet (z. B. sehr alter Browser oder offline ohne Cache), Hinweis statt endlosem Ladekreis
+    setTimeout(function () { var b = document.getElementById('boot'); if (b) b.innerHTML = '<p style="max-width:440px;text-align:center">AEGIS konnte nicht gestartet werden. Bitte aktualisiere deinen Browser (Chrome, Edge, Firefox oder Safari ab Version 16.4) und lade die Seite neu.</p>'; }, 25000);
+  </script>
 </body>
 </html>

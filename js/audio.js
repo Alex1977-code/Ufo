@@ -4,7 +4,7 @@ let musicTimer = null, musicMood = 'geo';
 const settings = { sfx: 0.7, music: 0.4 };
 
 export function initAudio() {
-  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+  if (ctx) { if (ctx.state !== 'running') ctx.resume().catch(() => {}); return; }
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
   } catch { return; }

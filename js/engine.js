@@ -24,18 +24,30 @@ const SuperResShader = {
     srcSize: { value: new THREE.Vector2(1, 1) },
     sharpness: { value: 0.6 },
     enabled: { value: 1.0 },
+    time: { value: 0 },
+    vignette: { value: 0.35 },
+    grain: { value: 0.025 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse; uniform vec2 srcSize; uniform float sharpness; uniform float enabled;
+    uniform float time; uniform float vignette; uniform float grain;
     varying vec2 vUv;
     vec3 tap(vec2 p) { return texture2D(tDiffuse, p).rgb; }
     float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + time) * 43758.5453); }
+    // Vignette und Filmkorn erst NACH der Rekonstruktion in Ausgabeauflösung
+    vec4 grade(vec3 c) {
+      vec2 d = vUv - 0.5;
+      c *= 1.0 - vignette * dot(d, d) * 1.6;
+      c += (hash(gl_FragCoord.xy) - 0.5) * grain;
+      return vec4(c, 1.0);
+    }
     void main() {
       vec2 px = 1.0 / srcSize;
-      if (enabled < 0.5) { gl_FragColor = vec4(tap(vUv), 1.0); return; }
+      if (enabled < 0.5) { gl_FragColor = grade(tap(vUv)); return; }
       // Kantenrichtungs-gesteuerte Rekonstruktion: Gradient bestimmen und entlang der Kante filtern
       vec3 c = tap(vUv);
       vec3 n = tap(vUv + vec2(0.0, px.y)), s = tap(vUv - vec2(0.0, px.y));
@@ -56,12 +68,12 @@ const SuperResShader = {
       vec3 wgt = -amp * mix(0.125, 0.2, sharpness);
       vec3 sharp = (rec + (n + s + e + w) * wgt) / (1.0 + 4.0 * wgt);
       sharp = clamp(sharp, mn, mx);
-      gl_FragColor = vec4(mix(rec, sharp, clamp(sharpness * 1.4, 0.0, 1.0)), 1.0);
+      gl_FragColor = grade(mix(rec, sharp, clamp(sharpness * 1.4, 0.0, 1.0)));
     }`,
 };
 
-// Leichtes Filmkorn + Vignette für cineastischen Look
-const GradeShader = {
+// (Filmkorn + Vignette sind im SuperRes-Shader integriert)
+const _UnusedGrade = {
   uniforms: { tDiffuse: { value: null }, time: { value: 0 }, vignette: { value: 0.35 }, grain: { value: 0.025 } },
   vertexShader: SuperResShader.vertexShader,
   fragmentShader: /* glsl */ `
@@ -99,16 +111,17 @@ export class Engine {
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.5, 0.82);
     this.output = new OutputPass();
-    this.grade = new ShaderPass(GradeShader);
     this.superRes = new ShaderPass(SuperResShader);
     this.composer.addPass(this.renderPass);
     this.composer.addPass(this.bloom);
     this.composer.addPass(this.output);
-    this.composer.addPass(this.grade);
     this.composer.addPass(this.superRes);
 
     this.dynScale = 1; // Faktor der dynamischen Auflösung
     this.fpsSamples = [];
+    this.peakFps = 30; // gemessene maximale Bildrate (≈ Bildwiederholrate des Displays)
+    this.goodWindows = 0;
+    this.pendingResize = false;
     this.fps = 60;
     this.frameMs = 16;
     this.lastResize = 0;
@@ -125,17 +138,16 @@ export class Engine {
   get internalScale() {
     const mode = UPSCALE_MODES[this.settings.upscale] || UPSCALE_MODES.quality;
     let s = mode.scale;
-    if (this.settings.dynamicRes) s *= this.dynScale;
+    if (this.settings.dynamicRes && this.settings.upscale !== 'native') s *= this.dynScale;
     return clamp(s, 0.33, 1);
   }
 
   applySettings() {
     const s = this.settings;
     this.bloom.enabled = s.bloom;
-    this.grade.enabled = s.filmGrain;
-    this.renderer.shadowMap.enabled = s.shadows !== 'off';
+    this.superRes.uniforms.vignette.value = s.filmGrain ? 0.35 : 0;
+    this.superRes.uniforms.grain.value = s.filmGrain ? 0.025 : 0;
     this.superRes.uniforms.sharpness.value = s.sharpness;
-    this.superRes.uniforms.enabled.value = s.upscale === 'native' ? 0.0 : 1.0;
     this.shadowSize = s.shadows === 'high' ? 2048 : s.shadows === 'med' ? 1024 : 512;
     this.resize();
   }
@@ -144,18 +156,20 @@ export class Engine {
     const w = Math.max(1, this.container.clientWidth);
     const h = Math.max(1, this.container.clientHeight);
     const dpr = Math.min(window.devicePixelRatio || 1, this.settings.maxDpr || 2);
-    this.outW = Math.round(w * dpr);
-    this.outH = Math.round(h * dpr);
+    this.outW = Math.floor(w * dpr);
+    this.outH = Math.floor(h * dpr);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, true);
     const scale = this.internalScale;
     // Interne Renderauflösung niedriger, finaler Pass skaliert auf volle Ausgabeauflösung hoch
     this.composer.setPixelRatio(dpr * scale);
     this.composer.setSize(w, h);
-    this.internalW = Math.round(w * dpr * scale);
-    this.internalH = Math.round(h * dpr * scale);
+    this.internalW = this.composer.renderTarget1.width | 0;
+    this.internalH = this.composer.renderTarget1.height | 0;
     this.superRes.uniforms.srcSize.value.set(this.internalW, this.internalH);
-    this.bloom.resolution.set(this.internalW / 2, this.internalH / 2);
+    this.superRes.uniforms.enabled.value = scale < 0.999 ? 1.0 : 0.0;
+    this.pendingResize = false;
+    this.lastResize = performance.now();
     if (this.active?.camera) {
       this.active.camera.aspect = w / h;
       this.active.camera.updateProjectionMatrix();
@@ -174,21 +188,24 @@ export class Engine {
   updateDynamicRes(dt) {
     this.fpsSamples.push(dt);
     if (this.fpsSamples.length < 30) return;
-    const avg = this.fpsSamples.reduce((a, b) => a + b, 0) / this.fpsSamples.length;
+    const samples = this.fpsSamples.slice();
     this.fpsSamples.length = 0;
+    const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
     this.fps = 1 / avg;
     this.frameMs = avg * 1000;
-    if (!this.settings.dynamicRes) return;
-    const target = this.settings.targetFps || 60;
+    // Fenster mit Ausreißern (Shader-Kompilierung, Moduswechsel, Tab im Hintergrund) ignorieren
+    if (samples.some((s) => s >= 0.09)) return;
+    this.peakFps = Math.max(this.peakFps * 0.995, this.fps);
+    if (!this.settings.dynamicRes || this.settings.upscale === 'native') return;
+    // Ziel nie über der tatsächlich erreichbaren Bildwiederholrate
+    const target = Math.min(this.settings.targetFps || 60, this.peakFps * 0.97);
+    if (performance.now() - this.lastResize < 600) return;
     let ns = this.dynScale;
-    if (this.fps < target * 0.9) ns -= 0.07;
-    else if (this.fps > target * 0.98 && ns < 1) ns += 0.04;
-    ns = clamp(ns, 0.6, 1);
-    if (Math.abs(ns - this.dynScale) > 0.001) {
-      this.dynScale = ns;
-      const now = performance.now();
-      if (now - this.lastResize > 400) { this.lastResize = now; this.resize(); }
-    }
+    if (this.fps < target * 0.88) { ns -= 0.08; this.goodWindows = 0; }
+    else if (this.fps > target * 0.97) { if (++this.goodWindows >= 4 && ns < 1) { ns += 0.05; this.goodWindows = 0; } }
+    else this.goodWindows = 0;
+    ns = Math.round(clamp(ns, 0.6, 1) * 100) / 100;
+    if (ns !== this.dynScale) { this.dynScale = ns; this.resize(); }
   }
 
   start() {
@@ -203,7 +220,7 @@ export class Engine {
       this.onFrame?.(dt);
       if (this.active) {
         this.active.update?.(dt);
-        this.grade.uniforms.time.value = this.time % 100;
+        this.superRes.uniforms.time.value = this.time % 100;
         this.composer.render(dt);
       }
     };

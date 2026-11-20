@@ -148,7 +148,7 @@ export class Tactical {
 
     const S = this.engine.shadowSize;
     const sun = new THREE.DirectionalLight(night ? 0x8fa8ff : hive ? 0xc080ff : 0xfff0d8, night ? 0.6 : hive ? 0.7 : 3.2);
-    const ext = this.W * TILE * 0.62;
+    const ext = this.W * TILE * 0.75;
     sun.position.set(ext * 0.6, ext * 1.1, ext * 0.35);
     sun.castShadow = this.engine.settings.shadows !== 'off';
     sun.shadow.mapSize.set(S, S);
@@ -269,7 +269,8 @@ export class Tactical {
       let rot = 0, scl = 1, colors = null;
       if (['tree', 'pine', 'rock', 'bigrock', 'hivewall', 'wreck', 'pod', 'crate'].includes(t)) { rot = rand() * Math.PI * 2; scl = randRange(0.85, 1.2); }
       if (t === 'crate') { scl = 1; rot = randInt(0, 3) * Math.PI / 2 + randRange(-0.2, 0.2); }
-      if (['fence', 'hedge', 'window', 'barrier'].includes(t)) rot = (same(x, y - 1, t) || same(x, y + 1, t) || (t === 'window' && (same(x, y - 1, 'brick') || same(x, y + 1, 'brick')))) ? Math.PI / 2 : 0;
+      if (['fence', 'hedge', 'barrier'].includes(t)) rot = (same(x, y - 1, t) || same(x, y + 1, t)) ? Math.PI / 2 : 0;
+      if (t === 'window') rot = c.wall.vert ? Math.PI / 2 : 0;
       if (t === 'car') { rot = (randInt(0, 1) * Math.PI / 2) + randRange(-0.15, 0.15); colors = [new THREE.Color().setHSL(rand(), 0.6, 0.4)]; }
       if (t === 'tree' || t === 'pine') colors = [null, new THREE.Color().setHSL(0.25 + rand() * 0.08, 0.5, 0.6 + rand() * 0.3), new THREE.Color().setHSL(0.25 + rand() * 0.08, 0.5, 0.6 + rand() * 0.3), new THREE.Color(1, 1, 1)];
       if (t === 'tree' || t === 'pine') pos.x += randRange(-0.3, 0.3), pos.z += randRange(-0.3, 0.3);
@@ -312,9 +313,9 @@ export class Tactical {
     this.cursorFill = add(new THREE.Mesh(new THREE.PlaneGeometry(TILE * 0.94, TILE * 0.94).rotateX(-Math.PI / 2), ringMat(0xffffff, 0.12)));
     this.cursorFill.position.y = 0.04;
     this.pathDots = add(new THREE.InstancedMesh(new THREE.SphereGeometry(0.13, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }), 80));
-    this.pathDots.count = 0;
+    this.pathDots.count = 0; this.pathDots.frustumCulled = false;
     this.rangeMesh = add(new THREE.InstancedMesh(new THREE.PlaneGeometry(TILE * 0.97, TILE * 0.97).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 0.8, 1.4), transparent: true, opacity: this.map.night || this.opts.biome === 'hive' ? 0.03 : 0.055, depthWrite: false }), this.N));
-    this.rangeMesh.count = 0; this.rangeMesh.position.y = 0.03;
+    this.rangeMesh.count = 0; this.rangeMesh.position.y = 0.03; this.rangeMesh.frustumCulled = false;
     this.grenadeArea = add(new THREE.Mesh(new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2), ringMat(0xff8030, 0.18)));
     this.grenadeArea.visible = false; this.grenadeArea.position.y = 0.07;
     // Partikel
@@ -337,10 +338,10 @@ export class Tactical {
     this.opts.squad.forEach((s, i) => {
       const sp = spawns[i]; if (!sp) return;
       const arm = ARMORS[s.armor];
-      let gk = 'frag', gn = s.grenades;
+      let gk = Game.grenadeAvailable('alien') && ((stockLeft.alien || 0) >= Math.max(1, s.grenades) || Game.cheats.allGear) ? 'alien' : 'frag', gn = s.grenades;
       if (!Game.cheats.allGear) {
-        if ((stockLeft.alien || 0) > 0 && Game.grenadeAvailable('alien')) gk = 'alien';
-        gn = Math.min(gn, stockLeft[gk] || 0); stockLeft[gk] = (stockLeft[gk] || 0) - gn;
+        if (gk === 'frag' && (stockLeft.frag || 0) < gn && (stockLeft.alien || 0) > (stockLeft.frag || 0) && Game.grenadeAvailable('alien')) gk = 'alien';
+        gn = Math.max(0, Math.min(gn, stockLeft[gk] || 0)); stockLeft[gk] = (stockLeft[gk] || 0) - gn;
       }
       const u = this.addUnit({
         team: 'player', name: s.name, soldier: s, x: sp.x, y: sp.y, hp: s.hp + arm.hp, tu: s.tu, acc: s.acc, react: s.react, armor: arm.armor, weapon: s.weapon,
@@ -357,6 +358,7 @@ export class Tactical {
     else { const us = UFOS[site.ufoType]; roster = us.roster; n = randInt(us.crew[0], us.crew[1]); if (site.kind === 'crash') n = Math.max(1, Math.round(n * 0.75)); }
     const inUfo = m.alienSpawns.filter((s) => s.inUfo), outUfo = m.alienSpawns.filter((s) => !s.inUfo);
     const used = new Set();
+    if (site.kind === 'hive' && m.boss) { this.addAlien('hive', m.boss.x, m.boss.y, true); used.add(m.boss.y * m.W + m.boss.x); }
     const pick = (list) => { for (const s of list) { const k = s.y * m.W + s.x; if (!used.has(k) && !m.at(s.x, s.y).wall) { used.add(k); return s; } } return null; };
     for (let i = 0; i < n; i++) {
       const type = choice(roster);
@@ -364,7 +366,6 @@ export class Tactical {
       if (!sp) break;
       this.addAlien(type, sp.x, sp.y, !!sp.inUfo);
     }
-    if (site.kind === 'hive' && m.boss) this.addAlien('hive', m.boss.x, m.boss.y, true);
     // Zivilisten
     if (site.kind === 'terror') {
       for (let i = 0; i < 8; i++) {
@@ -414,9 +415,13 @@ export class Tactical {
   los(x0, y0, x1, y1) {
     const dx = x1 - x0, dy = y1 - y0;
     const n = Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) * 2.5);
-    for (let i = 1; i < n; i++) {
+    let px = x0, py = y0;
+    for (let i = 1; i <= n; i++) {
       const t = i / n;
       const cx = Math.round(x0 + dx * t), cy = Math.round(y0 + dy * t);
+      // diagonaler Übergang zwischen zwei sich berührenden Wänden blockiert die Sicht
+      if (cx !== px && cy !== py && this.blocksSight(px, cy) && this.blocksSight(cx, py)) return false;
+      px = cx; py = cy;
       if ((cx === x1 && cy === y1) || (cx === x0 && cy === y0)) continue;
       if (this.blocksSight(cx, cy)) return false;
     }
@@ -450,13 +455,20 @@ export class Tactical {
         if (this.blocksMove(nx, ny, u)) continue;
         if (dx && dy && (this.blocksMove(x + dx, y, u) || this.blocksMove(x, y + dy, u))) continue;
         const j = ny * W + nx;
-        if (!ignoreUnits && this.occ[j] >= 0 && this.occ[j] !== u.id) continue;
+        if (!ignoreUnits && this.occ[j] >= 0 && this.occ[j] !== u.id && this.knownBlocker(u, this.units[this.occ[j]])) continue;
         const nd = d + (dx && dy ? 6 : 4);
         if (nd > maxCost || nd >= dist[j]) continue;
         dist[j] = nd; prev[j] = i; h.push(j, nd);
       }
     }
     return { dist, prev };
+  }
+  // Für die Wegplanung des Spielers zählen nur Einheiten, die er sehen kann
+  knownBlocker(u, o) {
+    if (u.team !== 'player') return true;
+    if (o.team === 'player') return true;
+    if (o.team === 'alien') return this.isVisibleAlien(o);
+    return !!this.vis[o.y * this.W + o.x];
   }
   buildPath(prev, tx, ty) {
     const path = []; let i = ty * this.W + tx;
@@ -574,13 +586,14 @@ export class Tactical {
     if (!path.length) return;
     this.busy = true;
     u.kneel = false;
+    if (u.team === 'player') this.refreshUi();
     const spd = this.engine.settings.animSpeed || 1;
     for (const step of path) {
       if (!u.alive || this.ended) break;
       const diag = step.x !== u.x && step.y !== u.y;
       const cost = diag ? 6 : 4;
       if (!this.hasTu(u, cost)) break;
-      if (this.unitAt(step.x, step.y)) break;
+      if (this.unitAt(step.x, step.y)) { if (u.team === 'player') toast('Weg blockiert – unbekannter Kontakt!', 'warn', 1800); this.updateVisibility(); break; }
       this.spendTu(u, cost);
       this.occ[u.y * this.W + u.x] = -1;
       const from = this.cellPos(u.x, u.y), to = this.cellPos(step.x, step.y);
@@ -617,8 +630,8 @@ export class Tactical {
       if (u.team !== 'civ') await this.reactionFire(u);
     }
     u.anim.walk = 0;
-    this.busy = false;
-    if (u.team === 'player') { this.updateVisibility(); this.refreshUi(); }
+    this.busy = !!this.ended;
+    if (u.team === 'player' && !this.ended) { this.updateVisibility(); this.refreshUi(); }
   }
 
   async reactionFire(mover) {
@@ -661,12 +674,13 @@ export class Tactical {
     const m = w[mode];
     if (!m) return false;
     const cost = this.modeCost(u, mode);
+    if (this.ended || !u.alive) return false;
     if (!this.hasTu(u, cost)) { if (u.team === 'player') { toast('Nicht genügend Zeiteinheiten.', 'warn'); sfx('deny'); } return false; }
     const wasBusy = this.busy; this.busy = true;
     this.spendTu(u, cost);
     this.faceTo(u, t.x, t.y);
-    if (u.team === 'alien') { u.revealed = true; u.obj.visible = true; this.updateAlienBadges(); }
-    const showShot = u.team === 'player' || u.obj.visible || t.team === 'player';
+    const showShot = u.team === 'player' || t.team === 'player' || (u.team === 'alien' && this.isVisibleAlien(u)) || !!this.vis[t.y * this.W + t.x];
+    if (u.team === 'alien' && showShot) { u.revealed = true; u.obj.visible = true; this.updateAlienBadges(); }
     if (showShot) { this.camT.x = (u.obj.position.x + t.obj.position.x) / 2; this.camT.z = (u.obj.position.z + t.obj.position.z) / 2; await sleep(160 / (this.engine.settings.animSpeed || 1)); }
     const shots = m.shots || 1;
     for (let s = 0; s < shots; s++) {
@@ -676,8 +690,8 @@ export class Tactical {
       await this.shoot(u, t, hit, w, showShot);
       if (s < shots - 1) await sleep(90);
     }
-    this.busy = wasBusy;
-    if (u.team === 'player') this.refreshUi();
+    this.busy = this.ended ? true : wasBusy;
+    if (u.team === 'player' && !this.ended) this.refreshUi();
     return true;
   }
 
@@ -720,6 +734,7 @@ export class Tactical {
       if (show && t.team) this.floatAt(t, 'Verfehlt', '#9aa');
       if (impact?.wall) this.damageWall(impact.wall.x, impact.wall.y, w.dmg * randRange(0.5, 1.5));
       if (impact?.unit) this.damage(impact.unit, w.dmg, u);
+      if (this.losDirty) { this.losDirty = false; this.updateVisibility(); }
       this.spark(to, FX_COLORS[w.fx], 10);
     }
   }
@@ -757,7 +772,7 @@ export class Tactical {
   }
 
   damage(t, raw, src) {
-    if (!t.alive) return;
+    if (!t.alive || this.disposed) return;
     let dmg = Math.max(0, Math.round(raw * randRange(0.5, 1.5) - t.armor));
     if (src?.team === 'player' && Game.cheats.oneHit && t.team !== 'player') dmg = 9999;
     if (t.team === 'player' && Game.cheats.god) dmg = 0;
@@ -773,7 +788,7 @@ export class Tactical {
   kill(t, src) {
     t.alive = false; t.dying = true;
     this.occ[t.y * this.W + t.x] = -1;
-    if (src && src !== t && t.team !== src.team) src.kills++;
+    if (src && src !== t && t.team === 'alien' && src.team === 'player') src.kills++;
     sfx(t.team === 'alien' ? 'alienDeath' : 'death');
     if (t.team === 'alien') {
       this.result.kills[t.spec] = (this.result.kills[t.spec] || 0) + 1;
@@ -797,7 +812,8 @@ export class Tactical {
     this.fx.push(anim);
     if (this.target === t) { this.target = null; }
     this.updateAlienBadges();
-    setTimeout(() => this.checkEnd(), 400);
+    this.checkEnd();
+    if (t === this.selected && !this.ended) { this.selected = null; if (this.phase === 'player') this.cycleUnit(1); }
   }
 
   damageWall(x, y, amount) {
@@ -832,8 +848,10 @@ export class Tactical {
     if (Math.hypot(tx - u.x, ty - u.y) > 13) { if (u.team === 'player') toast('Zu weit entfernt (max. 13 Felder).', 'warn'); return false; }
     this.busy = true;
     this.spendTu(u, cost);
-    if (!(u.team === 'player' && Game.cheats.allGear)) u.grenades--;
-    if (u.team === 'player') this.result.grenadesUsed[u.grenadeKind] = (this.result.grenadesUsed[u.grenadeKind] || 0) + 1;
+    if (!(u.team === 'player' && Game.cheats.allGear)) {
+      u.grenades--;
+      if (u.team === 'player') this.result.grenadesUsed[u.grenadeKind] = (this.result.grenadesUsed[u.grenadeKind] || 0) + 1;
+    }
     this.faceTo(u, tx, ty);
     const acc = u.team === 'player' && Game.cheats.aimbot ? 1 : clamp(u.acc / 100 + 0.2, 0.3, 0.95);
     if (rand() > acc) { tx = clamp(tx + randInt(-2, 2), 0, this.W - 1); ty = clamp(ty + randInt(-2, 2), 0, this.H - 1); }
@@ -849,8 +867,8 @@ export class Tactical {
     while (t < dur) { const dt = await this.frame(); t += dt; const k = Math.min(1, t / dur); ball.position.lerpVectors(from, to, k); ball.position.y += Math.sin(k * Math.PI) * (2 + dist * 0.15); }
     this.scene.remove(ball);
     await this.explode(tx, ty, g.dmg, g.radius, u);
-    this.busy = false;
-    if (u.team === 'player') this.refreshUi();
+    this.busy = !!this.ended;
+    if (u.team === 'player' && !this.ended) this.refreshUi();
     return true;
   }
 
@@ -921,11 +939,14 @@ export class Tactical {
     sfx('alienTurn');
     setMusicMood('tac');
     await sleep(900);
+    if (this.ended) return;
+    for (const u of this.units) { u.revealed = false; if (u.alive && u.team === 'alien') u.tu = u.maxTu; }
     await this.alienTurn();
     if (this.ended) return;
     await this.civilianTurn();
+    if (this.ended) return;
     this.turn++;
-    for (const u of this.units) { if (u.alive) u.tu = u.maxTu; u.revealed = false; }
+    for (const u of this.units) if (u.alive && u.team !== 'alien') u.tu = u.maxTu;
     this.phase = 'player';
     this.updateVisibility();
     banner('DEIN ZUG', `Runde ${this.turn}`);
@@ -943,9 +964,10 @@ export class Tactical {
       if (this.ended) break;
       if (!a.alive) continue;
       await this.alienAct(a);
+      if (this.ended) break;
       await sleep(a.obj.visible ? 250 : 10);
     }
-    this.busy = false;
+    this.busy = !!this.ended;
   }
 
   alienTargets(a) {
@@ -974,7 +996,9 @@ export class Tactical {
         }
         // Granate gegen Gruppen
         if (a.grenades > 0 && this.hasTu(a, this.modeCost(a, 'grenade'))) {
-          const t = targets.find((tt) => this.units.filter((o) => o.alive && o.team === 'player' && this.dist(o, tt) < 2.5).length >= 2 && this.dist(a, tt) < 12);
+          const gr = GRENADES.alien.radius + 0.6;
+          const t = targets.find((tt) => this.units.filter((o) => o.alive && o.team === 'player' && this.dist(o, tt) < 2.5).length >= 2 && this.dist(a, tt) < 12
+            && !this.units.some((o) => o.alive && o.team === 'alien' && this.dist(o, tt) < gr));
           if (t && rand() < 0.6) { await this.throwGrenade(a, t.x, t.y); shots++; continue; }
         }
         let best = null, bs = -1, bm = 'snap';
@@ -1080,7 +1104,7 @@ export class Tactical {
   }
 
   checkEnd() {
-    if (this.ended) return;
+    if (this.ended || this.disposed) return;
     const aliens = this.units.filter((u) => u.team === 'alien' && u.alive);
     const soldiers = this.units.filter((u) => u.team === 'player' && u.alive && !u.evac);
     const boss = this.units.find((u) => u.boss);
@@ -1089,10 +1113,13 @@ export class Tactical {
   }
 
   async abort() {
-    const onLz = this.units.filter((u) => u.team === 'player' && u.alive && this.map.lz.some((p) => p.x === u.x && p.y === u.y));
+    if (this.ended || this.busy || this.phase !== 'player') { toast('Rückzug nur während deines Zuges möglich.', 'warn'); return; }
+    const lzNow = () => this.units.filter((u) => u.team === 'player' && u.alive && this.map.lz.some((p) => p.x === u.x && p.y === u.y));
+    const pre = lzNow();
     const total = this.units.filter((u) => u.team === 'player' && u.alive).length;
-    const ok = await confirmBox(`Mission abbrechen?<br><br>${onLz.length} von ${total} Soldaten befinden sich in der Landezone und werden evakuiert.${onLz.length < total ? '<br><b class="bad">Alle anderen gelten als vermisst!</b>' : ''}`, 'Abbrechen & Rückzug');
-    if (!ok) return;
+    const ok = await confirmBox(`Mission abbrechen?<br><br>${pre.length} von ${total} Soldaten befinden sich in der Landezone und werden evakuiert.${pre.length < total ? '<br><b class="bad">Alle anderen gelten als vermisst!</b>' : ''}`, 'Abbrechen & Rückzug');
+    if (!ok || this.ended) return;
+    const onLz = lzNow();
     for (const u of this.units) {
       if (u.team !== 'player' || !u.alive) continue;
       if (onLz.includes(u)) u.evac = true; else { u.alive = false; u.mia = true; }
@@ -1136,7 +1163,7 @@ export class Tactical {
     } else score -= site.kind === 'terror' ? 150 : 40;
     // Zivilisten
     if (site.kind === 'terror') {
-      r.civSaved = this.units.filter((u) => u.team === 'civ' && u.alive).length;
+      r.civSaved = won ? this.units.filter((u) => u.team === 'civ' && u.alive).length : 0;
       score += r.civSaved * 10 - r.civKilled * 15;
     }
     // Soldaten
@@ -1150,7 +1177,8 @@ export class Tactical {
     }
     // Lager
     for (const [k, n] of Object.entries(artifacts)) c.artifacts[k] = (c.artifacts[k] || 0) + n;
-    if (!Game.cheats.allGear) for (const [k, n] of Object.entries(r.grenadesUsed)) c.stock[k] = Math.max(0, (c.stock[k] || 0) - n);
+    for (const u of dead) if (u.grenades > 0 && !Game.cheats.allGear) r.grenadesUsed[u.grenadeKind] = (r.grenadesUsed[u.grenadeKind] || 0) + u.grenades;
+    for (const [k, n] of Object.entries(r.grenadesUsed)) c.stock[k] = Math.max(0, (c.stock[k] || 0) - n);
     // tote Soldaten verlieren ihre Ausrüstung
     for (const u of dead) { const s = u.soldier; if (s.weapon !== 'rifle') c.stock[s.weapon] = Math.max(0, (c.stock[s.weapon] || 0) - 1); if (s.armor !== 'none') c.stock[s.armor] = Math.max(0, (c.stock[s.armor] || 0) - 1); }
     const bounty = won ? totalKills * 15000 + (site.ufoType ? UFOS[site.ufoType].radius * 40000 : 0) : 0;
@@ -1193,14 +1221,17 @@ export class Tactical {
     this.cursor = { x: u.x, y: u.y };
     if (WEAPONS[u.weapon][this.mode] == null && this.mode !== 'grenade') this.mode = 'snap';
     this.computeRange();
+    this.updateHover();
     this.refreshUi();
   }
   cycleUnit(dir) {
+    if (this.busy && this.phase === 'player') return;
     const list = this.units.filter((u) => u.team === 'player' && u.alive && !u.evac);
     if (!list.length) return;
     const i = list.indexOf(this.selected);
-    this.select(list[(i + dir + list.length) % list.length]);
+    this.select(list[i < 0 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length]);
   }
+  recenter() { const u = this.selected; if (u) { this.camT.x = u.obj.position.x; this.camT.z = u.obj.position.z; } }
   computeRange() {
     const u = this.selected;
     if (!u || this.phase !== 'player') { this.rangeMesh.count = 0; this.reach = null; return; }
@@ -1219,7 +1250,7 @@ export class Tactical {
   }
   clearTarget() { this.target = null; this.grenadeTarget = null; this.pendingMove = null; this.tgtRing.visible = false; }
   setMode(m) {
-    const u = this.selected; if (!u) return;
+    const u = this.selected; if (!u || this.busy || this.phase !== 'player') return;
     if (m === 'grenade' && u.grenades <= 0) { toast('Keine Granaten.', 'warn'); sfx('deny'); return; }
     if (m !== 'grenade' && !WEAPONS[u.weapon][m]) { sfx('deny'); return; }
     this.mode = m; this.grenadeTarget = null; sfx('click');
@@ -1231,17 +1262,19 @@ export class Tactical {
     this.setMode(modes[(modes.indexOf(this.mode) + 1) % modes.length]);
   }
   toggleKneel() {
-    const u = this.selected; if (!u || this.busy || this.phase !== 'player') return;
+    const u = this.selected; if (!u || !u.alive || this.busy || this.ended || this.phase !== 'player') return;
     const cost = u.kneel ? 6 : 4;
     if (!this.hasTu(u, cost)) { toast('Nicht genügend Zeiteinheiten.', 'warn'); return; }
-    this.spendTu(u, cost); u.kneel = !u.kneel; sfx('click'); this.computeRange(); this.refreshUi();
+    this.spendTu(u, cost); u.kneel = !u.kneel; sfx('click'); this.computeRange(); this.updateHover(); this.refreshUi();
   }
 
   // Klick/Tipp/Ⓐ auf ein Feld
   async actAt(x, y, confirmTwice) {
     if (this.busy || this.phase !== 'player' || this.ended || !this.inb(x, y)) return;
+    if (this.selected && !this.selected.alive) { this.selected = null; this.cycleUnit(1); }
     const u = this.selected;
-    const other = this.unitAt(x, y);
+    let other = this.unitAt(x, y);
+    if (other && u && !this.knownBlocker(u, other)) other = null; // unsichtbare Einheiten nicht verraten
     if (other && other.team === 'player' && other !== u) { this.select(other); return; }
     if (!u) return;
     if (this.mode === 'grenade') {
@@ -1269,7 +1302,7 @@ export class Tactical {
   }
   async fireAtTarget() {
     const u = this.selected, t = this.target;
-    if (!u || !t || !t.alive || this.busy) return;
+    if (!u || !u.alive || !t || !t.alive || this.busy || this.ended || this.phase !== 'player') return;
     if (this.mode === 'grenade') return;
     if (!this.canSee(u, t.x, t.y) && !(WEAPONS[u.weapon].melee)) { toast('Keine Sichtlinie zum Ziel.', 'warn'); sfx('deny'); return; }
     this.rangeMesh.count = 0; this.pathDots.count = 0;
@@ -1278,6 +1311,7 @@ export class Tactical {
   }
   afterAction() {
     if (this.ended) return;
+    if (this.selected && !this.selected.alive) { this.selected = null; this.cycleUnit(1); }
     if (this.target && !this.target.alive) this.clearTarget();
     this.computeRange(); this.updateHover(); this.refreshUi();
   }
@@ -1350,8 +1384,10 @@ export class Tactical {
         </div>
       </div>
       <div class="pad-hints" id="t-padhint"></div>`;
-    hud.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => this.setMode(b.dataset.mode)));
-    hud.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', () => this.btnAction(b.dataset.a)));
+    // HUD-Buttons behalten keinen Fokus, damit Leertaste/Enter weiter als Tastenkürzel wirken
+    hud.querySelectorAll('.tac-actions .btn, #t-menu').forEach((b) => b.addEventListener('pointerdown', (e) => e.preventDefault()));
+    hud.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { b.blur(); this.setMode(b.dataset.mode); }));
+    hud.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', () => { b.blur(); this.btnAction(b.dataset.a); }));
     hud.querySelector('#t-menu').addEventListener('click', () => this.hooks.openMenu());
     this.updatePadHints();
   }
@@ -1382,7 +1418,7 @@ export class Tactical {
     box.querySelectorAll('[data-alien]').forEach((b) => b.addEventListener('click', () => { const a = this.units[+b.dataset.alien]; this.focusAlien(a); }));
   }
   focusAlien(a) {
-    if (!a) return;
+    if (!a || this.busy || this.phase !== 'player') return;
     this.cursor = { x: a.x, y: a.y };
     this.camT.x = a.obj.position.x; this.camT.z = a.obj.position.z;
     if (this.mode === 'grenade') this.mode = 'snap';
@@ -1393,7 +1429,7 @@ export class Tactical {
     const seen = this.units.filter((u) => u.team === 'alien' && u.alive && this.isVisibleAlien(u));
     if (!seen.length) { sfx('deny'); return; }
     const i = seen.indexOf(this.target);
-    this.focusAlien(seen[(i + dir + seen.length) % seen.length]);
+    this.focusAlien(seen[i < 0 ? (dir > 0 ? 0 : seen.length - 1) : (i + dir + seen.length) % seen.length]);
   }
   refreshUi() {
     const u = this.selected;
@@ -1453,6 +1489,7 @@ export class Tactical {
       if (e.pointerType === 'touch') Input.setDevice('touch');
       cv.setPointerCapture?.(e.pointerId);
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), btn: e.button, type: e.pointerType });
+      if (this.pointers.size >= 2) for (const p of this.pointers.values()) p.moved = true; // Geste, kein Tipp
     };
     const move = (e) => {
       if (!this.active) return;
@@ -1468,7 +1505,9 @@ export class Tactical {
         p.x = e.clientX; p.y = e.clientY;
         const d1 = Math.hypot(a.x - b.x, a.y - b.y), ang1 = Math.atan2(b.y - a.y, b.x - a.x);
         this.camT.dist = clamp(this.camT.dist * (d0 / d1), 12, 70);
-        this.camT.yaw += (ang1 - ang0);
+        let dAng = ang1 - ang0;
+        if (dAng > Math.PI) dAng -= Math.PI * 2; else if (dAng < -Math.PI) dAng += Math.PI * 2;
+        this.camT.yaw += dAng;
         this.pan(dx * 0.5, dy * 0.5);
         p.moved = true;
         return;
@@ -1486,6 +1525,7 @@ export class Tactical {
       if (!p || p.moved || this.pointers.size) return;
       if (performance.now() - p.t > 700) return;
       if (p.btn === 2) { this.clearTarget(); this.updateHover(); this.refreshUi(); return; }
+      if (p.btn > 0) return;
       const c = pick(e.clientX, e.clientY);
       if (!c) return;
       this.cursor = c;
@@ -1495,9 +1535,10 @@ export class Tactical {
     const wheel = (e) => { if (!this.active) return; e.preventDefault(); this.camT.dist = clamp(this.camT.dist * (1 + Math.sign(e.deltaY) * 0.1), 12, 70); };
     const ctx = (e) => e.preventDefault();
     cv.addEventListener('pointerdown', down); cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up);
-    cv.addEventListener('pointercancel', (e) => this.pointers.delete(e.pointerId));
+    const cancel = (e) => this.pointers.delete(e.pointerId);
+    cv.addEventListener('pointercancel', cancel);
     cv.addEventListener('wheel', wheel, { passive: false }); cv.addEventListener('contextmenu', ctx);
-    this.unsub.push(() => { cv.removeEventListener('pointerdown', down); cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); cv.removeEventListener('wheel', wheel); cv.removeEventListener('contextmenu', ctx); });
+    this.unsub.push(() => { cv.removeEventListener('pointerdown', down); cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); cv.removeEventListener('pointercancel', cancel); cv.removeEventListener('wheel', wheel); cv.removeEventListener('contextmenu', ctx); });
 
     this.unsub.push(Input.on('pad', (b) => {
       if (!this.active || anyModalOpen()) return;
@@ -1509,13 +1550,14 @@ export class Tactical {
         X: () => this.cycleMode(), Y: () => this.toggleKneel(),
         LB: () => this.cycleUnit(-1), RB: () => this.cycleUnit(1),
         LEFT: () => this.cycleAlien(-1), RIGHT: () => this.cycleAlien(1),
-        UP: () => { if (this.selected) this.select(this.selected, true); },
+        UP: () => this.recenter(),
         DOWN: () => this.setMode('grenade'),
         SELECT: () => this.confirmEndTurn(),
       };
       map[b]?.();
     }));
     this.unsub.push(Input.on('keydown', (code, e) => {
+      if (code === 'Tab' && this.active) e?.preventDefault();
       if (!this.active || anyModalOpen()) return;
       if (code === 'Escape') { if (this.target || this.mode === 'grenade') { this.clearTarget(); this.mode = 'snap'; this.updateHover(); this.refreshUi(); } else this.hooks.openMenu(); return; }
       if (this.phase !== 'player' || this.busy) return;
@@ -1523,7 +1565,7 @@ export class Tactical {
         Tab: () => { e?.preventDefault(); this.cycleUnit(e?.shiftKey ? -1 : 1); },
         Digit1: () => this.setMode('snap'), Digit2: () => this.setMode('aimed'), Digit3: () => this.setMode('auto'), Digit4: () => this.setMode('grenade'), KeyG: () => this.setMode('grenade'),
         KeyF: () => this.btnAction('fire'), KeyK: () => this.toggleKneel(), KeyC: () => this.toggleKneel(), Enter: () => this.confirmEndTurn(),
-        Space: () => { if (this.selected) this.select(this.selected, true); }, KeyT: () => this.cycleAlien(1),
+        Space: () => this.recenter(), KeyT: () => this.cycleAlien(1),
       };
       map[code]?.();
     }));
@@ -1643,10 +1685,13 @@ export class Tactical {
   cheatHeal() { for (const u of this.units) if (u.team === 'player' && u.alive) { u.hp = u.maxHp; u.tu = u.maxTu; } this.refreshUi(); }
   cheatWin() { this.cheatKillAll(); if (!this.units.some((u) => u.team === 'alien')) this.finish(true); }
   dispose() {
+    this.disposed = true; this.ended = true;
     this.deactivate();
     this.unsub.forEach((f) => f());
     this.scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
-    this.envRT?.dispose(); this.fogTex.dispose(); this.groundTex.dispose();
+    this.envRT?.dispose(); this.fogTex.dispose(); this.groundTex.dispose(); this.particleTex?.dispose();
+    this.sun?.dispose?.();
+    this.scene.traverse((o) => { if (o.isInstancedMesh) o.dispose(); if (o.material && !o.isSprite) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (!m.userData.shared) m.dispose(); }); });
     document.getElementById('hud').innerHTML = '';
     this.engine.renderer.toneMappingExposure = 1.0;
   }

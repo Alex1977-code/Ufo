@@ -77,6 +77,8 @@ function buildMenuScene() {
   const lamp = new THREE.Mesh(new THREE.SphereGeometry(5, 8, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 4, 4.5) })); lamp.position.set(20, 20, 10); env.add(lamp);
   const lamp2 = new THREE.Mesh(new THREE.SphereGeometry(8, 8, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 0.6, 1.4) })); lamp2.position.set(0, -30, 0); env.add(lamp2);
   scene.environment = pmrem.fromScene(env, 0.02).texture;
+  pmrem.dispose();
+  env.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
   const key = new THREE.DirectionalLight(0xffffff, 3); key.position.set(5, 6, 4); scene.add(key);
   const rimL = new THREE.DirectionalLight(0x60c0ff, 2.5); rimL.position.set(-4, -2, -3); scene.add(rimL);
   scene.add(new THREE.AmbientLight(0x223344, 1));
@@ -145,13 +147,29 @@ function loading(text) {
   return () => l.classList.remove('show');
 }
 
+let geoStarting = false;
 function startGeoscape(isNew) {
+  if (geoStarting) return;
+  geoStarting = true;
+  closeAllModals();
   hideMainMenu();
+  if (tac) { tac.dispose(); tac = null; }
+  if (geo) { geo.dispose(); geo = null; }
   const done = loading('Erzeuge Planetenoberfläche …');
   setTimeout(() => {
-    geo = new Geoscape(engine, hooks);
-    engine.setMode(geo);
-    geo.activate();
+    geoStarting = false;
+    try {
+      geo = new Geoscape(engine, hooks);
+      engine.setMode(geo);
+      geo.activate();
+    } catch (e) {
+      console.error(e);
+      done();
+      geo = null;
+      toast('Weltkarte konnte nicht geladen werden: ' + e.message, 'bad', 8000);
+      showMainMenu();
+      return;
+    }
     done();
     if (isNew) {
       modal({
@@ -178,17 +196,18 @@ const hooks = {
       } catch (e) {
         console.error(e);
         toast('Fehler beim Laden der Mission: ' + e.message, 'bad', 8000);
-        tac = null; engine.setMode(geo); geo.activate();
+        tac = null; Game.c.transport.status = 'return'; engine.setMode(geo); geo.activate();
       }
       done();
     }, 60);
   },
   endMission(site, result) {
+    if (!tac || !geo) return;
     closeAllModals();
     tac.dispose(); tac = null;
     geo.missionDone(site, result);
     Game.save();
-    if (site.kind === 'hive' && result.won) { Game.c.won = true; Game.save(); victory(); return; }
+    if (site.kind === 'hive' && result.won) { Game.c.won = true; Game.save(); engine.setMode(geo); geo.activate(); victory(); return; }
     if (!Game.c.soldiers.length) { toast('Keine Soldaten mehr! Rekrutiere neue Einheiten in der Basis.', 'warn', 6000); }
     engine.setMode(geo);
     geo.activate();
@@ -233,6 +252,7 @@ function openPauseMenu() {
 }
 
 function toggleFullscreen() {
+  if (!document.documentElement.requestFullscreen) { toast('Vollbild: Auf dem iPhone über „Teilen → Zum Home-Bildschirm“ als App installieren.', 'warn', 6000); return; }
   if (document.fullscreenElement) document.exitFullscreen?.();
   else document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => toast('Vollbild wird nicht unterstützt.', 'warn'));
 }
@@ -271,7 +291,7 @@ function openSettings() {
     saveSettings();
     engine.applySettings();
     setVolumes(settings.sfx, settings.music);
-    document.body.classList.toggle('tv', settings.tvMode || Cast.isReceiver);
+    document.body.classList.toggle('tv', settings.tvMode || Cast.isReceiver || new URLSearchParams(location.search).has('tv'));
     document.getElementById('fps').style.display = settings.showFps ? 'block' : 'none';
     body.innerHTML = render();
     if (focusSel) body.querySelector(focusSel)?.focus();
@@ -313,11 +333,12 @@ function victory() {
     title: '🏆 SIEG!', closable: false, wide: true,
     html: `<h2 style="text-align:center">Das Hive-Nest ist zerstört.</h2><p>Ohne den Hive-Kommandanten bricht das kollektive Bewusstsein der Invasoren zusammen. Die verbliebenen UFOs ziehen sich zurück – die Erde ist gerettet.</p>
       <p>Gesamtwertung: <b>${Game.c.score}</b> · Missionen: ${Game.c.stats.won}/${Game.c.stats.missions} · UFOs abgeschossen: ${Game.c.stats.ufosDown} · Aliens eliminiert: ${Game.c.stats.kills} · Gefallene: ${Game.c.stats.lost}</p>`,
-    buttons: [{ label: 'Weiterspielen', action: () => { engine.setMode(geo); geo.activate(); } }, { label: 'Hauptmenü', primary: true, action: () => showMainMenu() }],
+    buttons: [{ label: 'Weiterspielen' }, { label: 'Hauptmenü', primary: true, action: () => showMainMenu() }],
   });
 }
 function gameOver(text) {
   sfx('defeat');
+  if (Game.c) Game.c.lost = true;
   try { localStorage.removeItem('aegis_save_v1'); } catch { /* */ }
   modal({ title: '✖ PROJEKT BEENDET', closable: false, html: `<p>${text}</p><p>Die Erde ist den Invasoren schutzlos ausgeliefert …</p>`, buttons: [{ label: 'Hauptmenü', primary: true, action: () => showMainMenu() }] });
 }
@@ -330,8 +351,21 @@ Input.on('padconnect', (gp) => {
 });
 Input.on('paddisconnect', () => toast('Controller getrennt.', 'warn'));
 Input.on('keydown', (code) => { if (code === 'F11') { toggleFullscreen(); } });
-['pointerdown', 'keydown', 'touchstart'].forEach((ev) => window.addEventListener(ev, () => initAudio(), { once: true, passive: true }));
-Cast.onRemoteSave = () => { if (!geo && !tac) startGeoscape(); };
+// Audio bei jeder Nutzerinteraktion (wieder) freischalten – nötig für iOS nach App-Wechsel
+['pointerup', 'touchend', 'keydown'].forEach((ev) => window.addEventListener(ev, () => initAudio(), { passive: true }));
+// TV-Empfänger: neuer Spielstand vom Handy → Weltkarte neu aufbauen
+Cast.onRemoteSave = () => startGeoscape();
+// Handy wird zum Controller: lokales Spiel anhalten; danach mit dem aktuellen Stand vom TV weiter
+Cast.onControllerMode = (on) => {
+  if (on) {
+    closeAllModals(); cheats.close();
+    currentMode()?.deactivate?.();
+    setVolumes(0, 0);
+  } else {
+    setVolumes(settings.sfx, settings.music);
+    if (geo || tac) { if (Game.load()) startGeoscape(); else showMainMenu(); }
+  }
+};
 
 const fpsEl = document.getElementById('fps');
 fpsEl.style.display = settings.showFps ? 'block' : 'none';

@@ -52,16 +52,38 @@ export function generateMap({ biome, ufoType, kind, night }) {
   if (ufoType && biome !== 'urban' && biome !== 'hive') placeUfo(map, at, setWall, ufoType, kind === 'crash');
 
   // Erreichbarkeit sicherstellen: alles, was nicht von der Landezone erreichbar ist, wird freigeräumt bzw. Spawns entfernt
-  const reach = floodReach(map);
+  let reach = floodReach(map);
   const lzc = { x: lzx + 2, y: H - 2 };
+  // Sicherstellen, dass die UFO-Tür bzw. der Hive-Boss von der Landezone aus erreichbar ist
+  const goal = map.ufo ? map.ufo.door : map.boss;
+  if (goal && ![[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => reach[(goal.y + dy) * W + goal.x + dx])) {
+    // Schneise: von der Tür nach außen bis zum Kartenrand, dann am Rand entlang zur Landezone
+    const clear = (x, y) => { const c = at(x, y); if (c?.wall && !c.hull) c.wall = null; };
+    const line = (x0, y0, x1, y1) => { let x = x0, y = y0; clear(x, y); while (x !== x1 || y !== y1) { if (x !== x1) x += Math.sign(x1 - x); else y += Math.sign(y1 - y); clear(x, y); } };
+    let px = goal.x, py = goal.y;
+    if (map.ufo) {
+      const [dx, dy] = map.ufo.dir;
+      px += dx; py += dy;
+      while (px + dx >= 0 && py + dy >= 0 && px + dx < W && py + dy < H) { clear(px, py); px += dx; py += dy; }
+      clear(px, py);
+      const side = px < W / 2 ? 0 : W - 1;
+      if (py !== H - 1) { line(px, py, side, py); line(side, py, side, H - 1); line(side, H - 1, lzc.x, H - 1); }
+      else line(px, py, lzc.x, H - 1);
+    } else line(lzc.x, lzc.y, goal.x, goal.y);
+    reach = floodReach(map);
+  }
   const farFromLz = (s) => Math.hypot(s.x - lzc.x, s.y - lzc.y) >= Math.min(16, H * 0.5);
   map.alienSpawns = map.alienSpawns.filter((s) => reach[s.y * W + s.x] && !at(s.x, s.y).wall && farFromLz(s));
   map.civSpawns = map.civSpawns.filter((s) => reach[s.y * W + s.x] && !at(s.x, s.y).wall);
-  if (map.alienSpawns.length < 4) {
+  // Doppelte entfernen und bei Bedarf auffüllen (genug Felder für die gesamte Besatzung)
+  const seenSp = new Set();
+  map.alienSpawns = map.alienSpawns.filter((s) => { const k = s.y * W + s.x; if (seenSp.has(k)) return false; seenSp.add(k); return true; });
+  if (map.alienSpawns.length < 18) {
     const free = [];
-    for (let y = 0; y < H * 0.6; y++) for (let x = 0; x < W; x++) if (reach[y * W + x] && !at(x, y).wall && farFromLz({ x, y })) free.push({ x, y });
-    shuffle(free); map.alienSpawns.push(...free.slice(0, 12));
+    for (let y = 0; y < H * 0.7; y++) for (let x = 0; x < W; x++) if (reach[y * W + x] && !at(x, y).wall && farFromLz({ x, y }) && !seenSp.has(y * W + x)) free.push({ x, y });
+    shuffle(free); map.alienSpawns.push(...free.slice(0, 18 - map.alienSpawns.length));
   }
+  if (map.boss) map.alienSpawns = map.alienSpawns.filter((s) => s.x !== map.boss.x || s.y !== map.boss.y);
   for (const c of cells) delete c.reserved;
   return map;
 }
@@ -97,7 +119,7 @@ function building(map, at, setWall, x0, y0, w, h, opts = {}) {
     c.wall = null;
     c.indoor = true;
     const edge = x === x0 || y === y0 || x === x0 + w - 1 || y === y0 + h - 1;
-    if (edge) setWall(x, y, rand() < (opts.windows ?? 0.18) && !(x === x0 || x === x0 + w - 1) !== !(y === y0 || y === y0 + h - 1) ? 'window' : mat);
+    if (edge) { setWall(x, y, rand() < (opts.windows ?? 0.18) && !(x === x0 || x === x0 + w - 1) !== !(y === y0 || y === y0 + h - 1) ? 'window' : mat); if (c.wall) c.wall.vert = x === x0 || x === x0 + w - 1; }
   }
   // Türen
   const sides = shuffle(['n', 's', 'e', 'w']).slice(0, randInt(1, 3));
@@ -186,10 +208,13 @@ function placeUfo(map, at, setWall, type, crashed) {
   // Tür
   for (let i = R - 1; i <= R + 1; i++) { const c = at(cx + doorDir[0] * i, cy + doorDir[1] * i); if (c) { c.wall = null; c.door = true; } }
   map.ufo.door = { x: cx + doorDir[0] * R, y: cy + doorDir[1] * R };
+  map.ufo.dir = doorDir;
   // Innenraum
   if (R >= 4) {
     const r2 = R - 2.2;
-    const gaps = shuffle([0, 1, 2, 3]).slice(0, 2);
+    // Eine Lücke im inneren Ring liegt immer in Türrichtung, damit der Reaktorraum erreichbar ist
+    const doorGap = doorDir[0] === 1 ? 2 : doorDir[0] === -1 ? 0 : doorDir[1] === 1 ? 3 : 1;
+    const gaps = [doorGap, choice([0, 1, 2, 3].filter((g) => g !== doorGap))];
     for (let y = cy - R; y <= cy + R; y++) for (let x = cx - R; x <= cx + R; x++) {
       const d = Math.hypot(x - cx, y - cy);
       if (Math.abs(d - r2) < 0.5) {
@@ -201,10 +226,27 @@ function placeUfo(map, at, setWall, type, crashed) {
     }
   }
   setWall(cx, cy, 'reactor');
+  // Alle freien UFO-Felder müssen von der Tür aus erreichbar bleiben
+  const ufoConnected = () => {
+    const start = { x: cx + doorDir[0] * (R - 1), y: cy + doorDir[1] * (R - 1) };
+    let total = 0;
+    for (let y = cy - R; y <= cy + R; y++) for (let x = cx - R; x <= cx + R; x++) { const c = at(x, y); if (c?.ufo && !c.wall) total++; }
+    const seen = new Set([start.y * W + start.x]); const q = [start];
+    while (q.length) {
+      const p = q.pop();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = p.x + dx, ny = p.y + dy, c = at(nx, ny), k = ny * W + nx;
+        if (!c?.ufo || c.wall || seen.has(k)) continue;
+        seen.add(k); q.push({ x: nx, y: ny });
+      }
+    }
+    return seen.size >= total;
+  };
   for (let k = 0; k < R; k++) {
     const a = rand() * Math.PI * 2, r = R - 1.3;
     const x = Math.round(cx + Math.cos(a) * r), y = Math.round(cy + Math.sin(a) * r);
-    const c = at(x, y); if (c && !c.wall && c.ufo && !c.door) setWall(x, y, 'console');
+    const c = at(x, y);
+    if (c && !c.wall && c.ufo && !c.door) { setWall(x, y, 'console'); if (!ufoConnected()) c.wall = null; }
   }
   if (crashed) {
     // Rumpfbrüche und Trümmer
@@ -216,7 +258,7 @@ function placeUfo(map, at, setWall, type, crashed) {
     for (let k = 0; k < R * 3; k++) {
       const a = rand() * Math.PI * 2, r = R + 1 + rand() * 4;
       const x = Math.round(cx + Math.cos(a) * r), y = Math.round(cy + Math.sin(a) * r);
-      const c = at(x, y); if (c && !c.wall && !c.reserved) { setWall(x, y, 'wreck'); c.floor = 'burnt'; }
+      const c = at(x, y); if (c && !c.wall && !c.reserved && !c.door) { setWall(x, y, 'wreck'); c.floor = 'burnt'; }
     }
   }
   map.lights.push({ x: cx, y: cy, color: 0x7affd0, intensity: 30, h: 2.4 });
@@ -281,15 +323,19 @@ function genHive(map, at, setWall) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (Math.hypot(x - bx, y - by) < 5) grid[y * W + x] = 0;
   // Gewundener Korridor von der Landezone zur Kammer
   let x = Math.floor(W / 2), y = H - 4;
+  const corridor = new Uint8Array(W * H);
+  const carve = (cx0, cy0) => { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = cx0 + dx, yy = cy0 + dy; if (xx >= 0 && yy >= 0 && xx < W && yy < H) { grid[yy * W + xx] = 0; corridor[yy * W + xx] = 1; } } };
   while (y > by) {
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < W && yy < H) grid[yy * W + xx] = 0; }
+    carve(x, y);
     if (rand() < 0.6) y--; else x = Math.max(2, Math.min(W - 3, x + (x < bx ? 1 : -1) * (rand() < 0.7 ? 1 : -1)));
   }
+  while (x !== bx) { carve(x, y); x += x < bx ? 1 : -1; }
+  carve(x, y);
   for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
     const c = at(xx, yy); c.floor = 'hive';
     if (grid[yy * W + xx] && !c.reserved) setWall(xx, yy, 'hivewall');
   }
-  for (let k = 0; k < 26; k++) { const px = randInt(1, W - 2), py = randInt(1, H - 7), c = at(px, py); if (!c.wall && !c.reserved && Math.hypot(px - bx, py - by) > 2) setWall(px, py, 'pod'); }
+  for (let k = 0; k < 26; k++) { const px = randInt(1, W - 2), py = randInt(1, H - 7), c = at(px, py); if (!c.wall && !c.reserved && Math.hypot(px - bx, py - by) > 2 && !corridor[py * W + px]) setWall(px, py, 'pod'); }
   map.boss = { x: bx, y: by };
   for (let k = 0; k < 60; k++) map.alienSpawns.push({ x: randInt(0, W - 1), y: randInt(0, Math.floor(H * 0.7)) });
   map.lights.push({ x: bx, y: by, color: 0xc04dff, intensity: 60, h: 3 });

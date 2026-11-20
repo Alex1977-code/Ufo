@@ -1,5 +1,5 @@
 // Service Worker: Offline-Cache für die installierbare App (PWA)
-const CACHE = 'aegis-v1';
+const CACHE = 'aegis-v2';
 const ASSETS = [
   './', './index.html', './css/style.css', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
   './js/main.js', './js/engine.js', './js/util.js', './js/data.js', './js/input.js', './js/ui.js', './js/audio.js', './js/game.js',

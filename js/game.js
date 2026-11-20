@@ -51,7 +51,7 @@ class GameState extends Emitter {
   newGame() { this.c = createCampaign(); this.emit('change'); }
   hasSave() { try { return !!localStorage.getItem(SAVE_KEY); } catch { return false; } }
   save() {
-    if (!this.c) return;
+    if (!this.c || this.c.lost) return; // verlorene Kampagnen werden nie wieder gespeichert
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(this.c)); } catch { /* Speicher nicht verfügbar */ }
     this.emit('saved', this.c);
   }
@@ -82,7 +82,7 @@ class GameState extends Emitter {
   }
 
   // Verfügbarkeit von Ausrüstung
-  weaponAvailable(id) { const w = WEAPONS[id]; return w && (w.avail || (w.req && this.has(w.req)) || this.cheats.allGear); }
+  weaponAvailable(id) { const w = WEAPONS[id]; return !!w && (w.avail || (w.req && this.has(w.req)) || (this.cheats.allGear && w.cost > 0)); }
   armorAvailable(id) { const a = ARMORS[id]; return a && (a.avail || (a.req && this.has(a.req)) || this.cheats.allGear); }
   grenadeAvailable(id) { const g = GRENADES[id]; return g && (!g.req || this.has(g.req) || this.cheats.allGear); }
 
@@ -105,6 +105,7 @@ class GameState extends Emitter {
     // Forschung
     if (c.research) {
       const r = RESEARCH.find((x) => x.id === c.research.id);
+      if (!r || this.has(r.id)) { c.research = null; return; }
       const speed = this.cheats.instantResearch ? 9999 : 1;
       c.research.progress += c.scientists * days * speed;
       if (c.research.progress >= r.cost) this.completeResearch(r.id);
@@ -116,7 +117,6 @@ class GameState extends Emitter {
     for (const b of done) {
       c.facilities[b.type] = (c.facilities[b.type] || 0) + 1;
       if (b.type === 'lab') c.scientists = Math.min(this.labCapacity, c.scientists + 10);
-      if (b.type === 'hangar') c.crafts.push({ id: 'c' + Date.now(), type: 'falcon', name: `Falke-${c.crafts.length + 1}`, hp: CRAFTS.falcon.hp, status: 'ready' });
       this.emit('built', b.type);
     }
     // Heilung

@@ -207,6 +207,8 @@ export class Geoscape {
     this.ufos = c.ufos || [];
     c.sites = this.sites; c.ufos = this.ufos;
     if (!c.transport) c.transport = { status: 'ready', pos: null, target: null, squad: [] };
+    if (c.transport.status === 'arrived') c.transport.status = 'out'; // erneut ankommen lassen (z. B. nach Neuladen)
+    if (!c.researchProgress) c.researchProgress = {};
     this.events = c.events || [];
     c.events = this.events;
     if (c.geo) Object.assign(this, { nextUfo: c.geo.nextUfo, nextTerror: c.geo.nextTerror });
@@ -497,9 +499,19 @@ export class Geoscape {
     cv.addEventListener('pointerdown', down);
     cv.addEventListener('pointermove', move);
     cv.addEventListener('pointerup', up);
-    cv.addEventListener('pointercancel', (e) => this.pointers.delete(e.pointerId));
+    const cancel = (e) => this.pointers.delete(e.pointerId);
+    cv.addEventListener('pointercancel', cancel);
     cv.addEventListener('wheel', wheel, { passive: false });
-    this.unsub.push(() => { cv.removeEventListener('pointerdown', down); cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); cv.removeEventListener('wheel', wheel); });
+    this.unsub.push(() => { cv.removeEventListener('pointerdown', down); cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); cv.removeEventListener('pointercancel', cancel); cv.removeEventListener('wheel', wheel); });
+    this.unsub.push(Game.on('research', (id) => {
+      if (id === 'hyperwave' && this.active) this.spawnHive();
+      if (id === 'navigation' && this.baseObj) this.buildBaseMarker();
+    }));
+    this.unsub.push(Game.on('built', (type) => {
+      toast(`Bau abgeschlossen: ${FACILITIES[type].name}`, 'good');
+      this.log(`${FACILITIES[type].name} fertiggestellt.`, 'good');
+      if (type === 'radar' && this.baseObj) this.buildBaseMarker();
+    }));
     this.unsub.push(Input.on('pad', (b) => {
       if (!this.active || anyModalOpen()) return;
       if (b === 'A') { const r = this.engine.canvas.getBoundingClientRect(); this.click(r.left + r.width / 2, r.top + r.height / 2); }
@@ -663,10 +675,10 @@ export class Geoscape {
     for (const u of [...this.ufos]) this.updateUfo(u, min);
     // Abfangjäger
     for (const cr of c.crafts) this.updateCraft(cr, min);
-    // Transporter
-    this.updateTransport(min);
-    // Einsatzorte verfallen
+    // Einsatzorte verfallen (nicht, solange der Kondor dort gelandet ist)
+    const tr = c.transport;
     for (const s of [...this.sites]) {
+      if (tr.status === 'arrived' && tr.target === s.id) continue;
       if (s.expires != null) {
         s.expires -= min;
         if (s.expires <= 0) {
@@ -676,6 +688,8 @@ export class Geoscape {
         }
       }
     }
+    // Transporter
+    this.updateTransport(min);
   }
 
   spawnUfo(diff, mission = 'recon') {
@@ -697,7 +711,7 @@ export class Geoscape {
 
   updateUfo(u, min) {
     const spec = UFOS[u.type];
-    const ll = vecToLatLon(u.pos);
+    let ll = vecToLatLon(u.pos);
     if (u.state === 'landed') {
       u.landTimer -= min;
       if (u.landTimer <= 0) {
@@ -708,6 +722,7 @@ export class Geoscape {
     } else {
       const r = slerpStep(u.pos, u.target, spec.speed * min * (u.state === 'leave' ? 2 : 1));
       u.pos = { x: r.x, y: r.y, z: r.z };
+      ll = vecToLatLon(u.pos);
       if (r.arrived) {
         if (u.state === 'leave') { this.removeUfo(u); if (u.detected) this.log(`${u.name} hat die Atmosphäre verlassen.`); else Game.addScore(-15, regionOf(ll.lat, ll.lon)); return; }
         if (u.mission === 'terror') {
@@ -731,18 +746,19 @@ export class Geoscape {
       }
     }
     // Radar
-    const inRange = Game.c.base && angleBetween(u.pos, this.baseVec) < Game.radarRange;
+    const ang = Game.c.base ? angleBetween(u.pos, this.baseVec) : 9;
+    const inRange = ang < Game.radarRange;
     const chased = Game.c.crafts.some((cr) => cr.status === 'out' && cr.target === u.id);
     if (!u.detected && (inRange || Game.cheats.revealUfos)) {
       if (Game.cheats.revealUfos || rand() < spec.detect * (Game.has('navigation') ? 1 : 0.5) * (min / 10)) {
         u.detected = true;
-        this.log(`${u.name} geortet: ${spec.name}`, 'warn');
-        toast(`📡 UFO geortet: ${spec.name} – ${u.mission === 'terror' ? 'Kurs auf ' + u.city : 'Kurs unbekannt'}`, 'warn');
-        sfx('alert'); this.setSpeed(0);
+        const first = !u.reported; u.reported = true;
+        this.log(`${u.name} ${first ? 'geortet' : 'erneut geortet'}: ${spec.name}`, 'warn');
+        if (first) { toast(`📡 UFO geortet: ${spec.name} – ${u.mission === 'terror' ? 'Kurs auf ' + u.city : 'Kurs unbekannt'}`, 'warn'); sfx('alert'); this.setSpeed(0); }
         if (Input.lastDevice === 'pad') this.focusOn(ll.lat, ll.lon);
         if (u.state === 'landed' && !this.sites.find((s) => s.ufoId === u.id)) this.addSite({ kind: 'landed', name: `${u.name} (gelandet)`, lat: ll.lat, lon: ll.lon, ufoType: u.type, ufoId: u.id, region: regionOf(ll.lat, ll.lon) });
       }
-    } else if (u.detected && !inRange && !chased && !Game.cheats.revealUfos && u.state !== 'landed') {
+    } else if (u.detected && ang > Game.radarRange * 1.12 && !chased && !Game.cheats.revealUfos && u.state !== 'landed') {
       u.detected = false; this.log(`Radarkontakt zu ${u.name} verloren.`);
     }
   }
@@ -765,6 +781,7 @@ export class Geoscape {
       cr.pos = { x: r.x, y: r.y, z: r.z };
       if (angleBetween(cr.pos, u.pos) < 0.015) {
         if (u.state === 'landed') { cr.status = 'return'; toast(`${u.name} ist gelandet – Luftangriff nicht möglich. Sende einen Bodentrupp!`, 'warn'); return; }
+        if (u.engaged) return; // anderer Jäger kämpft bereits – folgt dem UFO weiter
         this.airCombat(cr, u);
       }
     } else if (cr.status === 'return') {
@@ -838,6 +855,8 @@ export class Geoscape {
     sfx('alert');
     const spec = CRAFTS[cr.type], us = UFOS[u.type];
     let mode = 'std', timer = null, done = false;
+    u.engaged = true;
+    const camp = Game.c;
     const h = modal({
       title: `Luftkampf: ${cr.name} vs. ${u.name}`, closable: false, wide: true,
       html: `<div class="dogfight">
@@ -851,6 +870,7 @@ export class Geoscape {
         { label: 'Aggressiv', close: false, action: () => setMode('aggr') },
         { label: 'Abbrechen', danger: true, close: false, action: () => finish('flee') },
       ],
+      onClose: () => { if (!done) finish('flee'); clearInterval(timer); },
     });
     const logEl = h.el.querySelector('#df-log');
     const log = (t, cls = '') => { logEl.insertAdjacentHTML('afterbegin', `<div class="${cls}">${t}</div>`); };
@@ -866,6 +886,9 @@ export class Geoscape {
     const finish = (res) => {
       if (done) return false; done = true;
       clearInterval(timer);
+      u.engaged = false;
+      if (Game.c !== camp) return false; // Kampagne wurde inzwischen gewechselt
+      if (res === 'win' && !this.ufos.includes(u)) res = 'flee';
       u.hp = Math.max(0, u.hp); cr.hp = Math.max(0, cr.hp); draw();
       const ll = vecToLatLon(u.pos);
       const region = regionOf(ll.lat, ll.lon);
@@ -880,7 +903,7 @@ export class Geoscape {
         } else { log(`<b>${u.name} abgeschossen!</b> Das Wrack versinkt im Ozean.`, 'good'); this.log(`${u.name} ins Meer gestürzt.`, 'good'); }
         sfx('explosion'); Input.rumble(1, 1, 400);
       } else if (res === 'lost') {
-        Game.c.crafts.splice(Game.c.crafts.indexOf(cr), 1);
+        const ci = Game.c.crafts.indexOf(cr); if (ci >= 0) Game.c.crafts.splice(ci, 1);
         log(`<b>${cr.name} wurde zerstört!</b>`, 'bad'); this.log(`${cr.name} abgeschossen.`, 'bad'); sfx('explosion');
         Game.addScore(-40, region);
       } else { log('Gefecht abgebrochen.'); }
@@ -895,6 +918,7 @@ export class Geoscape {
     log(`Feindkontakt! ${us.name} auf Abfangkurs.`);
     timer = setInterval(() => {
       if (done) return;
+      if (!h.el.isConnected || !this.active) return finish('flee');
       const acc = spec.acc + (mode === 'aggr' ? 0.15 : mode === 'safe' ? -0.12 : 0);
       const dmgMul = mode === 'aggr' ? 1.15 : 1;
       if (rand() < acc || Game.cheats.oneHit) {
@@ -971,6 +995,11 @@ export class Geoscape {
       } }],
     });
     const list = h.el.querySelector('#sq-list');
+    const grenadeStock = () => (Game.c.stock.frag || 0) + (Game.grenadeAvailable('alien') ? Game.c.stock.alien || 0 : 0);
+    const info = () => {
+      const g = [...chosen].reduce((a, id) => a + Game.c.soldiers.find((x) => x.id === id).grenades, 0);
+      h.el.querySelector('#sq-info').textContent = `Granaten im Trupp: ${g} / Lager: ${grenadeStock()}${Game.cheats.allGear ? ' (Cheat: unbegrenzt)' : g > grenadeStock() ? ' – nicht genug, wird gekürzt' : ''}`;
+    };
     const cycle = (arr, cur) => arr[(arr.indexOf(cur) + 1) % arr.length];
     const owned = (id, field) => Game.c.soldiers.filter((x) => x[field] === id).length;
     list.addEventListener('click', (e) => {
@@ -989,12 +1018,17 @@ export class Geoscape {
         const opts = Object.keys(ARMORS).filter((a) => Game.armorAvailable(a) && (a === 'none' || a === so.armor || owned(a, 'armor') < (Game.c.stock[a] || 0) || Game.cheats.allGear));
         so.armor = cycle(opts, so.armor);
       }
-      if (b.dataset.g) { const so = s(b.dataset.g); so.grenades = (so.grenades + 1) % 4; }
+      if (b.dataset.g) {
+        const so = s(b.dataset.g);
+        const others = [...chosen].filter((id) => id !== so.id).reduce((a, id) => a + s(id).grenades, 0);
+        const room = Game.cheats.allGear ? 3 : Math.max(0, Math.min(3, grenadeStock() - others));
+        so.grenades = so.grenades >= room ? 0 : so.grenades + 1;
+      }
       list.innerHTML = render();
       list.querySelector(`[data-${focusKey}="${focusVal}"]`)?.focus();
-      const g = [...chosen].reduce((a, id) => a + s(id).grenades, 0);
-      h.el.querySelector('#sq-info').textContent = `Granaten im Trupp: ${g} / Lager: ${Game.c.stock.frag || 0}${Game.cheats.allGear ? ' (Cheat: unbegrenzt)' : ''}`;
+      info();
     });
+    info();
   }
 
   transportInfo() {
@@ -1036,8 +1070,6 @@ export class Geoscape {
     sfx('research'); this.setSpeed(0);
     this.log(`Forschung abgeschlossen: ${r.name}`, 'good');
     modal({ title: '⚗ Forschung abgeschlossen', html: `<h3>${r.name}</h3><p>${r.desc}</p>`, buttons: [{ label: 'Neues Projekt', action: () => setTimeout(() => this.action('research'), 200) }, { label: 'OK', primary: true }] });
-    if (id === 'hyperwave') this.spawnHive();
-    if (id === 'navigation' && this.baseObj) this.buildBaseMarker();
   }
   spawnHive() {
     if (this.sites.some((s) => s.kind === 'hive')) return;
@@ -1051,16 +1083,18 @@ export class Geoscape {
     const rep = Game.monthlyReport();
     sfx('alert'); this.setSpeed(0);
     const d = fmtDate(Game.c.time - 1440);
+    const over = rep.gameOver && !Game.cheats.god;
+    if (over) Game.c.lost = true;
     modal({
-      title: `Monatsbericht – ${d.text.split(' ').slice(1).join(' ')}`, wide: true,
+      title: `Monatsbericht – ${d.text.split(' ').slice(1).join(' ')}`, wide: true, closable: !over,
       html: `<table class="tbl"><tr><th>Region</th><th>Bewertung</th><th>Finanzierung</th><th>Änderung</th></tr>
         ${rep.lines.map((l) => `<tr><td>${l.name}</td><td class="${l.score >= 0 ? 'good' : 'bad'}">${l.score}</td><td>${fmtMoney(l.funding)}</td><td class="${l.delta >= 0 ? 'good' : 'bad'}">${l.delta >= 0 ? '+' : ''}${fmtMoney(l.delta)}</td></tr>`).join('')}</table>
         <p>Einnahmen: <b class="good">${fmtMoney(rep.fundingTotal)}</b> · Gehälter: <b class="bad">−${fmtMoney(rep.salaries)}</b> · Unterhalt: <b class="bad">−${fmtMoney(rep.upkeep)}</b></p>
         <p>Bilanz: <b class="${rep.net >= 0 ? 'good' : 'bad'}">${fmtMoney(rep.net)}</b> · Monatswertung: <b>${rep.monthScore}</b></p>
         ${Game.c.negMonths ? '<p class="bad">⚠ Der Rat ist unzufrieden. Ein weiterer schlechter Monat beendet das Projekt AEGIS!</p>' : ''}`,
-      buttons: [{ label: 'Weiter', primary: true, action: () => { if (rep.gameOver && !Game.cheats.god) this.hooks.gameOver('Der Rat hat das Projekt AEGIS wegen anhaltender Misserfolge eingestellt.'); } }],
+      buttons: [{ label: 'Weiter', primary: true, action: () => { if (over) this.hooks.gameOver('Der Rat hat das Projekt AEGIS wegen anhaltender Misserfolge eingestellt.'); } }],
     });
-    Game.save();
+    if (!over) Game.save();
   }
 
   action(a) {
@@ -1099,7 +1133,7 @@ export class Geoscape {
         <div><h4>Personal</h4><p>Soldaten: <b>${c.soldiers.length}</b> (${c.soldiers.filter((s) => s.wound > 0).length} verwundet)</p>
           <p>Wissenschaftler: <b>${c.scientists}</b> / ${Game.labCapacity}</p>
           <button class="btn wide" data-hire="soldier">Soldat rekrutieren – ${fmtMoney(60000)}</button>
-          <button class="btn wide" data-hire="sci" ${c.scientists >= Game.labCapacity ? 'disabled' : ''}>5 Wissenschaftler einstellen – ${fmtMoney(150000)}</button>
+          <button class="btn wide" data-hire="sci" ${c.scientists >= Game.labCapacity ? 'disabled' : ''}>${Math.max(1, Math.min(5, Game.labCapacity - c.scientists))} Wissenschaftler einstellen – ${fmtMoney(Math.max(1, Math.min(5, Game.labCapacity - c.scientists)) * 30000)}</button>
           <h4>Radar</h4><p>Reichweite: ${Math.round(Game.radarRange / DEG * 111)} km</p></div></div>`,
       buttons: [{ label: 'Schließen', primary: true }],
     });
@@ -1112,7 +1146,7 @@ export class Geoscape {
         toast(`${f.name} wird gebaut.`); h.close(); this.baseMenu();
       }
       if (b.dataset.hire === 'soldier') { if (c.credits < 60000) { sfx('deny'); return; } c.credits -= 60000; const s = newSoldier(); c.soldiers.push(s); toast(`${s.name} rekrutiert.`); h.close(); this.baseMenu(); }
-      if (b.dataset.hire === 'sci') { if (c.credits < 150000) { sfx('deny'); return; } c.credits -= 150000; c.scientists = Math.min(Game.labCapacity, c.scientists + 5); h.close(); this.baseMenu(); }
+      if (b.dataset.hire === 'sci') { const n = Math.min(5, Game.labCapacity - c.scientists); const cost = n * 30000; if (n <= 0 || c.credits < cost) { sfx('deny'); return; } c.credits -= cost; c.scientists += n; h.close(); this.baseMenu(); }
       this.updateHud();
     });
   }
@@ -1131,7 +1165,8 @@ export class Geoscape {
     });
     h.el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-r]'); if (!b) return;
-      c.research = { id: b.dataset.r, progress: 0 };
+      if (c.research) c.researchProgress[c.research.id] = c.research.progress;
+      c.research = { id: b.dataset.r, progress: c.researchProgress[b.dataset.r] || 0 };
       sfx('select'); toast(`Forschung gestartet: ${RESEARCH.find((r) => r.id === b.dataset.r).name}`);
       h.close();
     });
@@ -1169,7 +1204,7 @@ export class Geoscape {
       if (c.credits < cost) { sfx('deny'); toast('Nicht genug Budget.', 'warn'); return; }
       c.credits -= cost; sfx('select');
       if (b.dataset.buy) c.stock[k] = (c.stock[k] || 0) + 1;
-      else { const n = c.crafts.filter((x) => x.type === k).length + 1; c.crafts.push({ id: 'c' + Date.now(), type: k, name: `${CRAFTS[k].name}-${n}`, hp: CRAFTS[k].hp, status: 'ready' }); }
+      else { const n = c.crafts.filter((x) => x.type === k).length + 1; c.crafts.push({ id: 'c' + Math.floor(rand() * 1e9).toString(36), type: k, name: `${CRAFTS[k].name}-${n}`, hp: CRAFTS[k].hp, status: 'ready' }); }
       h.close(); this.shopMenu(); this.updateHud();
     });
   }
@@ -1191,6 +1226,7 @@ export class Geoscape {
     setMusicMood('geo');
     if (!document.getElementById('g-date')) { this.labels.forEach((l) => l.remove()); this.labels.clear(); this.markers.forEach((m, k) => { if (!k.startsWith('static:')) this.markerGroup.remove(m); }); this.markers.clear(); this.buildHud(); if (Game.c.base) { this.markers.delete('static:base'); this.buildBaseMarker(); } }
     this.lastDay = Math.floor(Game.c.time / 1440);
+    if (Game.c.base && Game.has('hyperwave') && !Game.c.won) this.spawnHive();
     if (!Game.c.base) {
       this.setSpeed(0);
       const hint = el('div', 'base-hint panel', '<b>Wähle den Standort deines Hauptquartiers</b><br>Tippe/klicke auf eine Landmasse (Controller: Fadenkreuz + Ⓐ)');

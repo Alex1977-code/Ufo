@@ -23,13 +23,14 @@ export function el(tag, cls, html) {
 export function modal({ title, html = '', buttons = [], onClose, cls = '', closable = true, wide = false }) {
   const backdrop = el('div', 'modal-backdrop');
   const box = el('div', `modal panel ${wide ? 'wide' : ''} ${cls}`);
-  box.innerHTML = `${title ? `<div class="modal-title"><span>${title}</span>${closable ? '<button class="x" data-close aria-label="Schließen">✕</button>' : ''}</div>` : ''}<div class="modal-body">${html}</div>`;
+  box.innerHTML = `${title ? `<div class="modal-title"><span>${title}</span>${closable ? '<button class="btn x" data-close aria-label="Schließen">✕</button>' : ''}</div>` : ''}<div class="modal-body">${html}</div>`;
   const foot = el('div', 'modal-foot');
   const handle = { el: box, backdrop, close };
   buttons.forEach((b) => {
     const btn = el('button', `btn ${b.primary ? 'primary' : ''} ${b.danger ? 'danger' : ''}`, b.label);
     if (b.disabled) btn.disabled = true;
     btn.addEventListener('click', () => {
+      if (closed) return;
       sfx('click');
       const r = b.action?.(handle);
       if (b.close !== false && r !== false) close();
@@ -42,12 +43,13 @@ export function modal({ title, html = '', buttons = [], onClose, cls = '', closa
   box.querySelector('[data-close]')?.addEventListener('click', () => { sfx('click'); close(); });
   if (closable) backdrop.addEventListener('pointerdown', (e) => { if (e.target === backdrop) close(); });
   box.addEventListener('navback', () => { if (closable) close(); });
+  let closed = false;
   const entry = { el: box, close };
   stack.push(entry);
-  let closed = false;
   function close() {
     if (closed) return; closed = true;
     const i = stack.indexOf(entry); if (i >= 0) stack.splice(i, 1);
+    if (box.contains(document.activeElement)) document.activeElement.blur();
     backdrop.classList.add('closing');
     setTimeout(() => backdrop.remove(), 160);
     onClose?.();
@@ -69,7 +71,7 @@ export function alertBox(title, html, label = 'OK') {
   return new Promise((resolve) => modal({ title, html, buttons: [{ label, primary: true }], onClose: resolve }));
 }
 
-export function anyModalOpen() { return stack.length > 0; }
+export function anyModalOpen() { return stack.length > 0 || !!document.querySelector('#cheat-panel.open'); }
 export function closeAllModals() { [...stack].forEach((m) => m.close()); }
 
 let toastWrap = null;

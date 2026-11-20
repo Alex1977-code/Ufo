@@ -254,7 +254,8 @@ export function makeCivilian() {
   const body = new THREE.Group(); root.add(body);
   const cloth = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(rand(), 0.5, 0.45), roughness: 0.8 });
   const pants = um('pants', { color: 0x2b3245, roughness: 0.9 });
-  const skin = um('civskin' + (rand() < 0.5 ? 1 : 2), { color: rand() < 0.5 ? 0xe0ac69 : 0x8d5524, roughness: 0.7 });
+  const dark = rand() < 0.5;
+  const skin = um('civskin' + (dark ? 2 : 1), { color: dark ? 0x8d5524 : 0xe0ac69, roughness: 0.7 });
   const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26, 0.45, 4, 8), cloth); torso.position.y = 1.15; torso.castShadow = true; body.add(torso);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 10), skin); head.position.y = 1.68; body.add(head);
   const legL = limb(0.55, 0.11, pants), legR = limb(0.55, 0.11, pants);

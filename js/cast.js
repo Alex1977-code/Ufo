@@ -24,11 +24,13 @@ export const Cast = {
       this.conn = c;
       c.onmessage = (e) => {
         let msg; try { msg = JSON.parse(e.data); } catch { return; }
-        if (msg.t === 'pad') Input.remotePad = { buttons: msg.b, axes: msg.a };
+        if (msg.t === 'pad') { Input.remotePad = { buttons: msg.b, axes: msg.a }; Input.remotePadTime = performance.now(); }
         else if (msg.t === 'key') Input.injectKey(msg.code, msg.down);
         else if (msg.t === 'save' && msg.data) { Game.load(msg.data); this.onRemoteSave?.(); }
       };
-      Game.on('saved', (data) => { try { c.send(JSON.stringify({ t: 'save', data: JSON.stringify(data) })); } catch { /* Verbindung beendet */ } });
+      this._unsave?.();
+      this._unsave = Game.on('saved', (data) => { try { c.send(JSON.stringify({ t: 'save', data: JSON.stringify(data) })); } catch { /* Verbindung beendet */ } });
+      c.onclose = c.onterminate = () => { Input.remotePad = null; Input.keys.clear(); this._unsave?.(); this._unsave = null; if (this.conn === c) this.conn = null; };
     };
     navigator.presentation.receiver.connectionList.then((list) => {
       list.connections.forEach(addConn);
@@ -54,7 +56,10 @@ export const Cast = {
     this.conn = conn;
     const onConnect = () => {
       toast('📺 Verbunden – das Spiel läuft jetzt auf dem TV.', 'good');
-      if (Game.c) { Game.save(); conn.send(JSON.stringify({ t: 'save', data: Game.exportSave() })); }
+      let data = null;
+      try { data = localStorage.getItem('aegis_save_v1'); } catch { /* */ }
+      if (Game.c && document.body.dataset.mode === 'geo') { Game.save(); data = Game.exportSave(); }
+      if (data) conn.send(JSON.stringify({ t: 'save', data }));
       this.controllerMode(true);
     };
     if (conn.state === 'connected') onConnect(); else conn.onconnect = onConnect;
@@ -66,8 +71,18 @@ export const Cast = {
 
   controllerMode(on) {
     let ov = document.getElementById('remote-ctrl');
-    if (!on) { ov?.remove(); this.engine.paused = false; clearInterval(this._padTimer); this._unkey?.(); return; }
+    if (!on) {
+      if (!ov) return;
+      ov.remove(); this.engine.paused = false; clearInterval(this._padTimer); this._unkey?.();
+      Input.enabled = true; this._wake?.release?.().catch?.(() => {}); this._wake = null;
+      this.onControllerMode?.(false);
+      return;
+    }
+    if (ov) return;
     this.engine.paused = true;
+    Input.enabled = false;
+    this.onControllerMode?.(true);
+    navigator.wakeLock?.request?.('screen').then((w) => { this._wake = w; }).catch(() => {});
     ov = el('div', 'remote-ctrl');
     ov.id = 'remote-ctrl';
     ov.innerHTML = `
@@ -94,7 +109,8 @@ export const Cast = {
     };
     stick.addEventListener('pointerdown', (e) => { stick.setPointerCapture(e.pointerId); sm(e); });
     stick.addEventListener('pointermove', (e) => { if (e.buttons || e.pointerType === 'touch') sm(e); });
-    stick.addEventListener('pointerup', () => { va[0] = va[1] = 0; knob.style.transform = ''; });
+    const release = () => { va[0] = va[1] = 0; knob.style.transform = ''; };
+    stick.addEventListener('pointerup', release); stick.addEventListener('pointercancel', release); stick.addEventListener('lostpointercapture', release);
     ov.querySelector('#rc-stop').onclick = () => { sfx('click'); try { this.conn?.terminate(); } catch { /* */ } this.controllerMode(false); };
     // Physischen Controller + virtuelle Tasten zusammenführen und senden
     this._padTimer = setInterval(() => {

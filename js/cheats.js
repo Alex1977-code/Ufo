@@ -6,7 +6,7 @@ import { sfx } from './audio.js';
 import { Input, padLabel } from './input.js';
 
 const TOGGLES = [
-  ['god', 'Gottmodus', 'Soldaten & Abfangjäger nehmen keinen Schaden'],
+  ['god', 'Gottmodus', 'Kein Schaden für Soldaten & Jäger, kein Game Over'],
   ['infTU', 'Unendliche Zeiteinheiten', 'Soldaten können beliebig oft handeln'],
   ['aimbot', '100 % Trefferchance', 'Jeder Schuss und Wurf trifft'],
   ['oneHit', 'Ein-Treffer-Kills', 'Jeder Treffer vernichtet den Gegner (auch in der Luft)'],
@@ -20,10 +20,10 @@ const TOGGLES = [
 ];
 
 const CODES = {
-  GELDREGEN: () => { Game.addCredits(5000000); return '+5.000.000 ¢'; },
+  GELDREGEN: () => { if (!Game.c) return null; Game.addCredits(5000000); return '+5.000.000 ¢'; },
   UNSTERBLICH: () => { Game.cheats.god = true; return 'Gottmodus aktiv'; },
   ADLERAUGE: () => { Game.cheats.revealMap = true; Game.cheats.revealUfos = true; return 'Alles aufgedeckt'; },
-  EINSTEIN: () => { RESEARCH.forEach((r) => Game.completeResearch(r.id)); return 'Gesamte Forschung abgeschlossen'; },
+  EINSTEIN: () => { if (!Game.c) return null; RESEARCH.forEach((r) => Game.completeResearch(r.id)); return 'Gesamte Forschung abgeschlossen'; },
 };
 
 export class Cheats {
@@ -74,28 +74,32 @@ export class Cheats {
   }
   action(a) {
     const m = this.getMode();
-    if (!Game.c && a !== 'code') { toast('Starte zuerst ein Spiel.', 'warn'); return; }
+    const focusAct = document.activeElement?.dataset?.act;
+    if ((!Game.c || !m) && a !== 'code') { toast('Starte oder lade zuerst ein Spiel.', 'warn'); return; }
     sfx('select');
     switch (a) {
       case 'money': Game.addCredits(1000000); toast('+1.000.000 ¢', 'good'); break;
-      case 'research': RESEARCH.forEach((r) => Game.completeResearch(r.id)); if (m?.spawnHive) m.spawnHive(); toast('Gesamte Forschung abgeschlossen.', 'good'); break;
+      case 'research': RESEARCH.forEach((r) => Game.completeResearch(r.id)); toast('Gesamte Forschung abgeschlossen.', 'good'); break;
       case 'heal': Game.c.soldiers.forEach((s) => (s.wound = 0)); m?.cheatHeal?.(); toast('Alle Soldaten geheilt.', 'good'); break;
       case 'ufo': m?.spawnUfo?.(3); Game.cheats.revealUfos = true; toast('UFO erzeugt (Ortung aktiviert).', 'good'); break;
       case 'terror': m?.spawnUfo?.(3, 'terror'); Game.cheats.revealUfos = true; toast('Terror-UFO unterwegs!', 'warn'); break;
-      case 'hive': Game.completeResearch('hyperwave'); m?.spawnHive?.(); break;
+      case 'hive': Game.completeResearch('hyperwave'); m?.spawnHive?.(); if (!m?.spawnHive) toast('Das Hive-Nest erscheint auf der Weltkarte.', 'good'); break;
       case 'killall': this.close(); m?.cheatKillAll?.(); break;
       case 'win': this.close(); m?.cheatWin?.(); break;
       case 'code': {
         const inp = this.panel.querySelector('#cheat-input');
         const fn = CODES[inp.value.trim().toUpperCase()];
-        if (fn && Game.c) { toast('Code akzeptiert: ' + fn(), 'good'); } else { toast('Unbekannter Code.', 'warn'); sfx('deny'); }
+        const res = fn ? fn() : undefined;
+        if (res) toast('Code akzeptiert: ' + res, 'good');
+        else if (fn) { toast('Dieser Code wirkt erst in einem laufenden Spiel.', 'warn'); sfx('deny'); }
+        else { toast('Unbekannter Code.', 'warn'); sfx('deny'); }
         inp.value = '';
         break;
       }
     }
     m?.updateHud?.(true);
     m?.refreshUi?.();
-    if (this.panel.classList.contains('open')) this.refresh();
+    if (this.panel.classList.contains('open')) { this.refresh(); if (focusAct) this.panel.querySelector(`[data-act="${focusAct}"]`)?.focus(); }
   }
   open() { this.render(); this.panel.classList.add('open'); sfx('select'); setTimeout(() => this.panel.querySelector('[data-tog]')?.focus(), 30); }
   close() { this.panel.classList.remove('open'); document.activeElement?.blur?.(); }

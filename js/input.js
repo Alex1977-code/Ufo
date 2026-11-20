@@ -10,6 +10,8 @@ class InputSystem extends Emitter {
     this.pad = { connected: false, id: '', buttons: new Array(17).fill(0), axes: [0, 0, 0, 0], type: 'xbox' };
     this.prev = new Array(17).fill(0);
     this.remotePad = null; // vom Smartphone/PC weitergeleiteter Controllerzustand (TV-Modus)
+    this.remotePadTime = 0;
+    this.enabled = true; // false, solang dieses Gerät als TV-Fernbedienung dient
     this.navRepeat = 0;
     this.navDir = null;
     this.lastDevice = 'mouse';
@@ -25,7 +27,7 @@ class InputSystem extends Emitter {
       const any = [...(navigator.getGamepads?.() || [])].some((g) => g && g.connected);
       if (!any) { this.pad.connected = false; this.emit('paddisconnect'); }
     });
-    window.addEventListener('pointerdown', () => { this.setDevice('mouse'); }, true);
+    window.addEventListener('pointerdown', (e) => { this.setDevice(e.pointerType === 'touch' ? 'touch' : 'mouse'); }, true);
   }
 
   _padType(id) {
@@ -40,15 +42,18 @@ class InputSystem extends Emitter {
   }
 
   _key(code, down, e) {
-    if (e && (e.target?.tagName === 'INPUT' || e.target?.tagName === 'SELECT')) return;
-    if (down) {
+    if (!down) { this.keys.delete(code); this.emit('keyup', code, e); return; }
+    if (!this.enabled) return;
+    const tag = e?.target?.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT') return;
+    // Enter/Leertaste auf fokussiertem Button lösen nur den Button aus, nicht zusätzlich ein Tastenkürzel
+    if (tag === 'BUTTON' && (code === 'Enter' || code === 'NumpadEnter' || code === 'Space')) return;
+    if (code === 'Escape') { const scope = this.uiScope(); if (scope && !scope.classList.contains('screen')) { scope.dispatchEvent(new CustomEvent('navback')); return; } }
+    {
       const repeat = this.keys.has(code);
       this.keys.add(code);
       this.setDevice('keyboard');
       if (!repeat) this.emit('keydown', code, e);
-    } else {
-      this.keys.delete(code);
-      this.emit('keyup', code, e);
     }
   }
   injectKey(code, down) { this._key(code, down, null); }
@@ -81,14 +86,18 @@ class InputSystem extends Emitter {
       gp.buttons.forEach((bt, i) => { if (i < 17) b[i] = bt.value || (bt.pressed ? 1 : 0); });
       for (let i = 0; i < 4; i++) a[i] = gp.axes[i] || 0;
     }
+    if (this.remotePad && performance.now() - this.remotePadTime > 400) this.remotePad = null;
     if (this.remotePad) {
       this.remotePad.buttons?.forEach((v, i) => { if (i < 17) b[i] = Math.max(b[i], v); });
       this.remotePad.axes?.forEach((v, i) => { if (i < 4 && Math.abs(v) > Math.abs(a[i])) a[i] = v; });
     }
     let anyActive = false;
+    const comboNow = b[10] > 0.5 && b[11] > 0.5, comboWas = this.prev[10] > 0.5 && this.prev[11] > 0.5;
+    if (b.some((v) => v > 0.5) || a.some((v) => Math.abs(v) > 0.4)) this.setDevice('pad');
+    if (comboNow && !comboWas) this.emit('cheatcombo');
     for (let i = 0; i < 17; i++) {
       const now = b[i] > 0.5, was = this.prev[i] > 0.5;
-      if (now && !was) { this._padPress(BTN[i]); anyActive = true; }
+      if (now && !was && !((i === 10 || i === 11) && comboNow)) { this._padPress(BTN[i]); anyActive = true; }
       if (!now && was) this.emit('padup', BTN[i]);
       this.prev[i] = b[i];
     }
@@ -98,14 +107,14 @@ class InputSystem extends Emitter {
   }
 
   _padPress(name) {
-    // Cheat-Kombination: L3 + R3
-    if ((name === 'L3' && this.btn('R3')) || (name === 'R3' && this.btn('L3'))) { this.emit('cheatcombo'); return; }
+    if (!this.enabled) return;
     const scope = this.uiScope();
     if (scope) {
       if (['UP', 'DOWN', 'LEFT', 'RIGHT'].includes(name)) { this.navigate(scope, name); return; }
       if (name === 'A') { const el = document.activeElement; if (el && scope.contains(el)) { el.click(); } else this.navigate(scope, 'DOWN'); return; }
       if (name === 'B') { scope.dispatchEvent(new CustomEvent('navback')); return; }
       if (name === 'LB' || name === 'RB') { scope.dispatchEvent(new CustomEvent('navtab', { detail: name === 'RB' ? 1 : -1 })); return; }
+      return; // alle anderen Tasten werden geschluckt, solange ein Menü offen ist
     }
     this.emit('pad', name);
   }
@@ -127,7 +136,10 @@ class InputSystem extends Emitter {
     const items = [...scope.querySelectorAll('button:not([disabled]), [data-nav], input[type=range], select')].filter((el) => el.offsetParent !== null);
     if (!items.length) return;
     const cur = document.activeElement;
-    if (!cur || !scope.contains(cur) || !items.includes(cur)) { items[0].focus(); items[0].scrollIntoView?.({ block: 'nearest' }); return; }
+    if (!cur || !scope.contains(cur) || !items.includes(cur)) {
+      const first = scope.querySelector('.modal-foot .primary:not([disabled])') || items.find((el) => !el.hasAttribute('data-close')) || items[0];
+      first.focus(); first.scrollIntoView?.({ block: 'nearest' }); return;
+    }
     if (cur.type === 'range' && (dir === 'LEFT' || dir === 'RIGHT')) {
       const step = parseFloat(cur.step || '1') || 1;
       cur.value = String(parseFloat(cur.value) + (dir === 'RIGHT' ? step : -step));
