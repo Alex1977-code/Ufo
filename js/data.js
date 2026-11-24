@@ -1,7 +1,8 @@
 // Spieldaten: Waffen, Rüstungen, Aliens, UFOs, Forschung, Anlagen
 // Schema (W1 7.1): icon, dtype (proj|laser|plasma|expl|fire|stun), pierce (Faktor auf Panzerung), radius (Explosion),
 // burn (Brennrunden), mag (Schuss je Magazin; fehlt = keine Munition), reload (ZE-Anteil), ammo ({ itemId: Überschreibungen },
-// 1. Schlüssel = Standard), hands (1|2), heavy, noReact, tile (Bodenziel), waypoints (Lenkwaffe), aimed.guided.
+// 1. Schlüssel = Standard), hands (1|2), heavy, noReact, tile (Bodenziel), waypoints (Lenkwaffe), <modus>.guided
+// (Lenkschuss; beim Leitwerfer auf snap, da jede Waffe einen snap-Modus braucht). Hilfsfunktion guidedMode(w).
 export const WEAPONS = {
   pistol: { name: 'Dienstpistole P9', short: 'Pistole', icon: '🔫', dtype: 'proj', dmg: 24, fx: 'bullet', snap: { tu: 0.18, acc: 0.58 }, aimed: { tu: 0.36, acc: 0.8 }, range: 12, mag: 12, reload: 0.1, ammo: { mag: {} }, hands: 1, cost: 3000, avail: true },
   rifle: { name: 'Sturmgewehr M7', short: 'Gewehr', icon: '🪖', dtype: 'proj', dmg: 30, fx: 'bullet', snap: { tu: 0.25, acc: 0.6 }, aimed: { tu: 0.5, acc: 1.1 }, auto: { tu: 0.35, acc: 0.35, shots: 3 }, range: 22, mag: 24, reload: 0.15, ammo: { mag: {} }, hands: 2, cost: 0, avail: true },
@@ -20,7 +21,7 @@ export const WEAPONS = {
   plasma: { name: 'Plasmagewehr', short: 'Plasma', icon: '🟩', dtype: 'plasma', dmg: 82, fx: 'plasma', snap: { tu: 0.3, acc: 0.75 }, aimed: { tu: 0.6, acc: 1.25 }, auto: { tu: 0.36, acc: 0.55, shots: 3 }, range: 28, mag: 24, reload: 0.15, ammo: { pz_cell: {} }, hands: 2, cost: 90000, req: 'plasma' },
   hplasma: { name: 'Schwerer Plasmawerfer', short: 'S-Plasma', icon: '☄', dtype: 'plasma', dmg: 118, fx: 'plasma', snap: { tu: 0.33, acc: 0.65 }, aimed: { tu: 0.6, acc: 1.1 }, auto: { tu: 0.4, acc: 0.5, shots: 3 }, range: 28, mag: 18, reload: 0.2, ammo: { pz_cell: {} }, hands: 2, heavy: true, cost: 160000, req: 'hplasma' },
   stunlauncher: { name: 'Schockwerfer SW-4', short: 'Schockw.', icon: '💫', dtype: 'stun', dmg: 90, radius: 2.0, fx: 'stun', snap: { tu: 0.35, acc: 0.6 }, aimed: { tu: 0.65, acc: 1.0 }, range: 24, mag: 1, reload: 0.2, ammo: { stunbomb: {} }, hands: 2, noReact: true, tile: true, cost: 60000, req: 'stuntech' },
-  guided: { name: 'Leitwerfer LW-9', short: 'Leitwerfer', icon: '🛰', dtype: 'expl', dmg: 160, radius: 4.0, fx: 'rocket', aimed: { tu: 0.6, acc: 1, guided: true }, range: 60, waypoints: 6, mag: 1, reload: 0.3, ammo: { rk_guided: {} }, hands: 2, heavy: true, noReact: true, tile: true, cost: 150000, req: 'guidance' },
+  guided: { name: 'Leitwerfer LW-9', short: 'Leitwerfer', icon: '🛰', dtype: 'expl', dmg: 160, radius: 4.0, fx: 'rocket', snap: { tu: 0.6, acc: 1, guided: true }, range: 60, waypoints: 6, mag: 1, reload: 0.3, ammo: { rk_guided: {} }, hands: 2, heavy: true, noReact: true, tile: true, cost: 150000, req: 'guidance' },
   // Alien-Waffen
   a_pistol: { name: 'Plasmapistole', dmg: 38, fx: 'plasma', snap: { tu: 0.3, acc: 0.65 }, aimed: { tu: 0.55, acc: 0.85 }, range: 20 },
   a_rifle: { name: 'Plasmagewehr', dmg: 56, fx: 'plasma', snap: { tu: 0.3, acc: 0.7 }, aimed: { tu: 0.6, acc: 1.0 }, auto: { tu: 0.36, acc: 0.5, shots: 3 }, range: 24 },
@@ -45,7 +46,7 @@ export const ITEMS = {
   stunrod: { name: 'Schockstab ST-1', short: 'Schockstab', kind: 'stunrod', dtype: 'stun', dmg: 55, acc: 1.1, tu: 0.25, reusable: true, cost: 6000, icon: '⚡' },
   scanner: { name: 'Bewegungsscanner BS-2', short: 'Scanner', kind: 'scanner', radius: 12, tu: 0.15, reusable: true, cost: 8000, req: 'scanner', icon: '📡' },
   // Munition (kind 'ammo'): passt zu den Waffen, die sie in WEAPONS[w].ammo führen
-  mag: { name: 'Standardmagazin', short: 'Magazin', kind: 'ammo', cost: 0, free: true, icon: '▮' },
+  mag: { name: 'Standardmagazin', short: 'Magazin', kind: 'ammo', cost: 1, free: true, icon: '▮' }, // free: nie gekauft/gezählt (cost > 0 nur wegen Datentest)
   mag_he: { name: 'Sprenggeschosse (HE)', short: 'HE', kind: 'ammo', cost: 1500, icon: '✹' },
   mag_in: { name: 'Brandgeschosse (IN)', short: 'Brand', kind: 'ammo', cost: 1200, icon: '🔥' },
   rk_light: { name: 'Leichte Rakete', short: 'L-Rakete', kind: 'ammo', cost: 1000, icon: '↑' },
@@ -71,6 +72,7 @@ export function effWeapon(wid, ammoId) {
   if (o.pierce === null) delete e.pierce;
   return e;
 }
+export const guidedMode = (w) => ['snap', 'aimed', 'auto'].find((m) => w?.[m]?.guided) || null;
 export const isInstantItem = (it) => !!it && (it.kind === 'ammo' || it.kind === 'scanner');
 
 // Veraltet – nur noch für Abwärtskompatibilität (Granaten-Werte)

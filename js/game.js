@@ -1,5 +1,5 @@
 // Kampagnenzustand: Finanzen, Soldaten, Forschung, Lager, Speichern/Laden
-import { WEAPONS, ARMORS, GRENADES, ITEMS, BELT_SLOTS, RESEARCH, FACILITIES, RANKS, RANK_XP, REGIONS, CRAFTS } from './data.js';
+import { WEAPONS, ARMORS, GRENADES, ITEMS, BELT_SLOTS, RESEARCH, FACILITIES, RANKS, RANK_XP, REGIONS, CRAFTS, defaultLoad } from './data.js';
 import { ARTIFACT_PRICES } from './data.js';
 import { randInt, randomName, rand, Emitter } from './util.js';
 
@@ -12,14 +12,14 @@ export function newSoldier() {
     rank: 0, xp: 0, kills: 0, missions: 0,
     tu: randInt(50, 62), hp: randInt(38, 48), acc: randInt(45, 72), react: randInt(35, 65), brave: randInt(30, 70),
     wound: 0, // Heilungstage verbleibend
-    weapon: 'rifle', armor: 'none', grenades: 1, items: ['frag', 'smoke', null],
+    weapon: 'rifle', load: 'mag', armor: 'none', grenades: 1, items: ['frag', 'smoke', null],
     look: { skin: [0xf1c27d, 0xc68642, 0x8d5524, 0xe0ac69, 0xffdbac][randInt(0, 4)], hair: [0x2c1b10, 0x6b4423, 0xd4b06a, 0x111111, 0x8a3b12][randInt(0, 4)] },
   };
 }
 
 export function createCampaign() {
   return {
-    v: 1,
+    v: 2,
     time: 0, // Minuten seit Spielstart
     credits: 4200000,
     base: null, // {lat, lon, name}
@@ -36,7 +36,7 @@ export function createCampaign() {
     artifacts: {},
     researchProgress: {}, researchPaid: {}, // Fortschritt je Projekt / Artefakte bereits verbraucht
     autoPauseHint: false,
-    stock: { sniper: 1, shotgun: 1, frag: 10, smoke: 6, flare: 4, medkit: 2 }, // gekaufte Ausrüstung (Waffen sind wiederverwendbar)
+    stock: { sniper: 1, shotgun: 1, pistol: 2, frag: 10, smoke: 6, flare: 4, medkit: 2, charge: 2, stunrod: 1 }, // gekaufte Ausrüstung (Waffen sind wiederverwendbar)
     score: 0, monthScore: 0,
     regionScore: Object.fromEntries(REGIONS.map((r) => [r.id, 0])),
     funding: Object.fromEntries(REGIONS.map((r) => [r.id, 160000])),
@@ -64,6 +64,21 @@ export function migrateCampaign(c) {
   if (c.stock.smoke == null) c.stock.smoke = 6;
   if (c.stock.flare == null) c.stock.flare = 4;
   if (c.stock.medkit == null) c.stock.medkit = 2;
+  // Version 2 (W1/W2): Magazin je Soldat (soldier.load), neue Waffen/Gegenstände, Startvorrat
+  if ((c.v || 1) < 2) {
+    for (const s of c.soldiers || []) {
+      if (!WEAPONS[s.weapon]) s.weapon = 'rifle';                // Sicherheitsnetz
+      if (s.load === undefined) s.load = defaultLoad(s.weapon);  // rifle/sniper/shotgun → 'mag', laser → null, plasma → 'pz_cell'
+      s.items = s.items.map((id) => (id && !ITEMS[id] ? null : id)); // unbekannte IDs entfernen
+    }
+    // Plasma-Besitzer dürfen nicht mit leerer Waffe starten: Startvorrat an Zellen
+    if (c.stock.pz_cell == null) {
+      const plasmaGuns = (c.stock.plasma || 0) + (c.stock.hplasma || 0);
+      c.stock.pz_cell = (c.researched || []).includes('plasma') ? Math.max(6, 3 * plasmaGuns) : 0;
+    }
+    c.stock.pistol ??= 2; c.stock.charge ??= 2; c.stock.stunrod ??= 1;
+    c.v = 2;
+  }
 }
 
 class GameState extends Emitter {

@@ -53,14 +53,14 @@ const SPEC_DATA = {
   sedan: {
     L: 4.62, H: 1.44,
     W: [[-2.31, 0.86], [-1.9, 0.905], [-1.4, 0.92], [0, 0.92], [1.4, 0.915], [1.9, 0.9], [2.31, 0.86]],
-    yTop: [[-2.31, 1.0], [-2.2, 1.055], [-2.02, 1.075], [-1.55, 1.06], [-1.15, 1.25], [-0.75, 1.395], [-0.3, 1.44], [0, 1.44], [0.25, 1.405], [0.92, 0.99], [1.5, 0.885], [2.0, 0.81], [2.31, 0.76]],
-    yBelt: [[-2.31, 0.98], [-1.6, 1.05], [-1.0, 1.035], [0, 1.0], [0.92, 0.965], [1.5, 0.86], [2.0, 0.78], [2.31, 0.73]],
-    yShoulder: [[-2.31, 0.86], [-1.5, 0.88], [0, 0.86], [1.0, 0.8], [1.8, 0.7], [2.31, 0.645]],
+    yTop: [[-2.31, 1.0], [-2.2, 1.055], [-2.02, 1.075], [-1.55, 1.065], [-1.15, 1.25], [-0.75, 1.395], [-0.3, 1.44], [0, 1.44], [0.25, 1.405], [0.92, 1.0], [1.5, 0.915], [2.0, 0.85], [2.31, 0.8]],
+    yBelt: [[-2.31, 0.98], [-1.6, 1.05], [-1.0, 1.035], [0, 1.0], [0.92, 0.975], [1.5, 0.89], [2.0, 0.825], [2.31, 0.78]],
+    yShoulder: [[-2.31, 0.86], [-1.5, 0.88], [0, 0.865], [1.0, 0.84], [1.8, 0.76], [2.31, 0.7]],
     yBase: [[-2.31, 0.31], [-1.9, 0.25], [-1.4, 0.22], [1.4, 0.22], [1.9, 0.24], [2.31, 0.27]],
     yFloor: [[-2.31, 0.3], [-1.95, 0.18], [-1.5, 0.15], [1.5, 0.15], [1.95, 0.18], [2.31, 0.26]],
     ySill: 0.4, yRail: 1.355, crown: 0.085, k8f: 0.8, wellDepth: 0.3,
     wRail: [[-1.5, 0.62], [-0.75, 0.67], [0, 0.69], [0.6, 0.68], [1.0, 0.66]],
-    front: { zs: 1.92, p: 2.4, ext: [[0.12, 2.17], [0.25, 2.27], [0.4, 2.31], [0.55, 2.31], [0.66, 2.28], [0.74, 2.2], [0.8, 2.12]] },
+    front: { zs: 1.92, p: 2.4, ext: [[0.12, 2.16], [0.25, 2.27], [0.4, 2.31], [0.52, 2.305], [0.64, 2.27], [0.74, 2.2], [0.8, 2.13], [0.85, 2.06]] },
     rear: { zs: -1.92, p: 2.6, ext: [[0.2, -2.15], [0.32, -2.27], [0.5, -2.31], [0.85, -2.31], [1.0, -2.28], [1.08, -2.22]] },
     wheel: { r: 0.33, w: 0.235, rim: 0.2286, zF: 1.38, zR: -1.4, x: 0.785 }, archR: 0.47,
     ws: [0.25, 0.92], cowlW: 0.07, side: [[-1.08, 0.92]], pillars: [[-0.165, -0.085]],
@@ -68,17 +68,17 @@ const SPEC_DATA = {
     seams: [0.8, -0.125, -0.93], seamK: [4, 5, 6],
     regions: [
       { zone: 'F', k: [5], te: [0.3, 0.8], role: 'hl' },
-      { zone: 'F', k: [4], te: [0.8, 1.01], y: [0.47, 9], mat: 'trim', inset: 0.035 },
+      { zone: 'F', k: [4], te: [0.8, 1.01], y: [0.49, 9], mat: 'trim', inset: 0.035 },
       { zone: 'F', k: [3], te: [0.5, 1.01], mat: 'trim', inset: 0.022 },
       { zone: 'R', k: [5], te: [0.22, 1.01], mat: 'taillight', inset: 0.004 },
       { zone: 'R', k: [4], te: [0.84, 1.01], y: [0.52, 0.7], mat: 'paint', inset: 0.014 },
       { zone: 'R', k: [3], te: [0.55, 1.01], mat: 'trim' },
     ],
     shell: [-1.6, 0.92], floorY: 0.33,
-    seats: { front: { z: -0.12, y: 0.52, x: 0.37 }, rear: { z: -0.98, y: 0.54, w: 1.25 } },
+    seats: { front: { z: -0.1, y: 0.52, x: 0.37 }, rear: { z: -0.8, y: 0.53, w: 1.25, hy: 0.55 } },
     steer: { z: 0.42, y: 0.93 }, dashZ: [0.52, 0.9], parcel: { z: [-1.6, -1.2], y: 1.03 }, bulkhead: null,
     mirrorZ: 0.74, handles: [0.06, -0.76],
-    slats: { mat: 'chrome', ys: [0.5, 0.535, 0.57] }, emblemF: 0.612, plateF: 0.34, plateR: 0.61, emblemR: 0.79, wordR: [-0.5, 0.79, 1],
+    slats: { mat: 'chrome', ys: [0.53, 0.57, 0.61] }, emblemF: 0.66, plateF: 0.34, plateR: 0.61, emblemR: 0.79, wordR: [-0.5, 0.79, 1],
     exhaust: { x: [0.52, -0.52], y: 0.29 }, roofRails: false, wiperZ: 0.84,
   },
   suv: {
@@ -205,8 +205,9 @@ function archY(sp, z) {
 function sectionKeys(sp, z, mid) {
   const w = sp.W(z), yF = sp.yFloor(z);
   const yA = mid ? archY(sp, z) : sp.yBase(z);
-  const yR = smax(sp.ySill, yA + 0.05, 0.09);
-  const yS = smax(sp.yShoulder(z), yR + 0.05, 0.05);
+  const yR0 = Math.max(sp.ySill, sp.yBase(z) + 0.05);
+  const yS = Math.max(sp.yShoulder(z), yR0 + 0.08);
+  const yR = Math.min(smax(yR0, yA + 0.05, 0.06), yS - 0.03);
   const yB = Math.max(sp.yBelt(z), yS + 0.04);
   const yT = sp.yTop(z);
   const wF = w - sp.wellDepth;
@@ -238,11 +239,31 @@ function crSeg(p0, p1, p2, p3, n, out, o) {
     }
   }
 }
-function sampleHalf(keys, counts, out) {
+// nb: Nachbarpunkte ohne Radlauf – Stücke ab k4 sehen nur diese, damit der Radlauf nicht in Schulter/Flanke ausstrahlt
+const DENSE = new Float64Array(130);
+function sampleHalf(keys, counts, out, nb = keys) {
   const n = keys.length;
-  const get = (k) => (k < 0 ? [-keys[1][0], keys[1][1]] : k >= n ? [-keys[n - 2][0], keys[n - 2][1]] : keys[k]);
+  const get = (k, src) => (k < 0 ? [-src[1][0], src[1][1]] : k >= n ? [-src[n - 2][0], src[n - 2][1]] : src[k]);
+  // Radlauf aktiv: Stück k4 exakt auf der Kurve ohne Radlauf ab Schnitthöhe yR abtasten
+  let cut = null;
+  if (nb !== keys && keys[4][1] > nb[4][1] + 1e-5) {
+    const D = DENSE; crSeg(get(3, nb), nb[4], nb[5], get(6, nb), 64, D, 0); D[128] = nb[5][0]; D[129] = nb[5][1];
+    let t = 0;
+    for (let q = 0; q < 64; q++) { const y0 = D[q * 2 + 1], y1 = D[q * 2 + 3]; if ((y0 - keys[4][1]) * (y1 - keys[4][1]) <= 0 && y1 !== y0) { t = q + (keys[4][1] - y0) / (y1 - y0); break; } }
+    cut = { D, t };
+    const q = Math.min(Math.floor(t), 63), f = t - q;
+    keys[4] = [lerp(D[q * 2], D[q * 2 + 2], f), keys[4][1]];
+  }
   let o = 0;
-  for (let k = 0; k < n - 1; k++) { crSeg(get(k - 1), keys[k], keys[k + 1], get(k + 2), counts[k], out, o); o += counts[k]; }
+  for (let k = 0; k < n - 1; k++) {
+    if (k === 4 && cut) {
+      for (let c = 0; c < counts[4]; c++) {
+        const u = lerp(cut.t, 64, c / counts[4]), q = Math.min(Math.floor(u), 63), f = u - q;
+        out[(o + c) * 2] = lerp(cut.D[q * 2], cut.D[q * 2 + 2], f); out[(o + c) * 2 + 1] = lerp(cut.D[q * 2 + 1], cut.D[q * 2 + 3], f);
+      }
+    } else { const src = k >= 4 ? nb : keys; crSeg(get(k - 1, src), keys[k], keys[k + 1], get(k + 2, src), counts[k], out, o); }
+    o += counts[k];
+  }
   out[o * 2] = keys[n - 1][0]; out[o * 2 + 1] = keys[n - 1][1];
 }
 
@@ -305,8 +326,9 @@ function buildBodyGrid(sp, lod) {
   for (let i = 0; i < NS; i++) {
     const S = st[i];
     const keys = sectionKeys(sp, S.zNom, S.zone === 'M');
+    const nb = S.zone === 'M' ? sectionKeys(sp, S.zNom, false) : keys;
     if (S.s !== 1) for (const kp of keys) kp[0] *= S.s;
-    sampleHalf(keys, counts, half);
+    sampleHalf(keys, counts, half, nb);
     for (let r = 0; r < NR; r++) {
       const j = r < NH ? r : NR - r, sx = r < NH ? 1 : -1;
       const x = half[j * 2] * sx, y = half[j * 2 + 1];
@@ -376,8 +398,9 @@ function classifyCells(G) {
           if (z > sp.ws[1] && z <= sp.ws[1] + sp.cowlW && k >= 7) return TRIM;
           for (const r of sp.rw) if (r.k.includes(k) && z >= r.z[0] && z <= r.z[1] && (!r.y || (yc >= r.y[0] && yc <= r.y[1]))) return GLASS;
           if (k === 7) {
+            if (last7 && counts[7] >= 3) return PAINT;
             if (inR(sp.pillars, z)) return TRIM;
-            if (inR(sp.side, z) && !(last7 && counts[7] >= 3)) return GLASS;
+            if (inR(sp.side, z)) return GLASS;
           }
           if (k === 6 && z >= sideMin && z <= sideMax) return C(sp.beltMat);
           if (sp.bed && z >= sp.bed[0] && z <= sp.bed[1] && (k === 8 || k === 9)) return TRIM;
@@ -650,7 +673,7 @@ function addPlatesAndBadges(G, parts) {
     parts.add('trim', new THREE.PlaneGeometry(0.54, 0.13), frame(h.p.clone().addScaledVector(h.n, outward - 0.002), h.n));
   };
   plate(ringCross(G, tipF, 'y', sp.plateF, 3, 5), 0.012);
-  plate(ringCross(G, tipR, 'y', sp.plateR, 3, 5), -0.012);
+  plate(ringCross(G, tipR, 'y', sp.plateR, 3, 5), 0.002);
   // Emblem (Sechseck, UV-Bereich unten links im Atlas)
   const emb = (h, R, out) => {
     const g = new THREE.CircleGeometry(R, 6, Math.PI / 6 * 0);
@@ -736,7 +759,7 @@ function addInterior(G, parts, lod) {
     parts.add('interior', rb(rs.w, 0.13, 0.5, 0.05), M4(0, rs.y - 0.065, rs.z));
     parts.add('interior', rb(rs.w, rs.y - sp.floorY, 0.45, 0.03), M4(0, (rs.y + sp.floorY) / 2 - 0.06, rs.z));
     parts.add('interior', rb(rs.w, 0.58, 0.13, 0.05), M4(0, rs.y + 0.27, rs.z - 0.3, -0.25));
-    for (const sx of [rs.w / 2 - 0.25, -(rs.w / 2 - 0.25)]) parts.add('interior', rb(0.25, 0.15, 0.09, 0.04), M4(sx, rs.y + 0.63, rs.z - 0.39, -0.22));
+    for (const sx of [rs.w / 2 - 0.25, -(rs.w / 2 - 0.25)]) parts.add('interior', rb(0.25, 0.15, 0.09, 0.04), M4(sx, rs.y + (rs.hy || 0.63), rs.z - 0.37, -0.22));
   }
   // Lenkrad
   const st = sp.steer, tilt = 0.4, fy = -Math.sin(tilt), fz = Math.cos(tilt);
