@@ -362,7 +362,7 @@ export function propParts() {
     winGlass: std({ color: 0x7d9db4, metalness: 0.15, roughness: 0.04, transparent: true, opacity: 0.42, envMapIntensity: 1.6 }),
     furnWood: rough({ map: t.woodLight, vertexColors: true, roughness: 0.7 }, t.woodD, 0.5),
     furnSoft: rough({ map: t.fabric, vertexColors: true, roughness: 0.95 }, t.plainD, 0.4),
-    paint: std({ color: 0xffffff, metalness: 0.55, roughness: 0.26, envMapIntensity: 1.3 }),
+    paint: std({ color: 0xffffff, metalness: 0.3, roughness: 0.3, envMapIntensity: 1.2 }),
     carDark: std({ vertexColors: true, metalness: 0.35, roughness: 0.6 }),
     carGlass: std({ color: 0x1a2530, metalness: 0.4, roughness: 0.05, envMapIntensity: 1.8 }),
     glow: glowVC(),
