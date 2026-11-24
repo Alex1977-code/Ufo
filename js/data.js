@@ -58,6 +58,12 @@ export const CRAFTS = {
   phantom: { name: 'Phantom', hp: 450, dmg: 140, acc: 0.75, speed: 0.012, cost: 650000, req: 'propulsion' },
 };
 
+// Verkaufspreise für gelagerte Alien-Artefakte (Credits pro Stück)
+export const ARTIFACT_PRICES = {
+  'Vael-Leichnam': 15000, 'Krull-Leichnam': 15000, 'Plasmawaffe': 40000, 'Alien-Legierung': 8000,
+  'Zerium': 30000, 'UFO-Navigationsmodul': 60000, 'Drohnen-Wrack': 25000, 'Hive-Gewebe': 100000,
+};
+
 // Forschungsbaum. 'needs' = Artefakte, 'after' = vorher erforschte Projekte
 export const RESEARCH = [
   { id: 'laser', name: 'Laserwaffen', cost: 160, desc: 'Gebündelte Lichtenergie – präziser und stärker als Projektilwaffen. Schaltet Laser-Gewehre frei.' },

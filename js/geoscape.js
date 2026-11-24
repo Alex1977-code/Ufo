@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { NOISE_GLSL } from './shaders.js';
 import { Game, newSoldier } from './game.js';
-import { UFOS, CRAFTS, RESEARCH, FACILITIES, WEAPONS, ARMORS, GRENADES, ITEMS, RANKS, REGIONS, regionOf, CITY_NAMES } from './data.js';
+import { ARTIFACT_PRICES, UFOS, CRAFTS, RESEARCH, FACILITIES, WEAPONS, ARMORS, GRENADES, ITEMS, RANKS, REGIONS, regionOf, CITY_NAMES } from './data.js';
 import { Input, padLabel } from './input.js';
 import { openEquipment, beltTotals, itemEffect } from './equip.js';
 import { modal, toast, confirmBox, alertBox, anyModalOpen, el, bar, banner } from './ui.js';
@@ -13,12 +13,12 @@ import { clamp, rand, randRange, randInt, choice, latLonToVec, vecToLatLon, angl
 
 // Spielminuten pro Echtzeitsekunde
 const SPEEDS = [
-  { label: '⏸', mps: 0 },
-  { label: '1m', mps: 1 },
-  { label: '5m', mps: 5 },
-  { label: '30m', mps: 30 },
-  { label: '2h', mps: 120 },
-  { label: '12h', mps: 720 },
+  { label: '⏸', mps: 0, tip: 'Pause – die Zeit steht' },
+  { label: '1m', mps: 1, tip: '1 Spielminute pro Sekunde' },
+  { label: '5m', mps: 5, tip: '5 Spielminuten pro Sekunde' },
+  { label: '30m', mps: 30, tip: '30 Spielminuten pro Sekunde' },
+  { label: '2h', mps: 120, tip: '2 Spielstunden pro Sekunde' },
+  { label: '12h', mps: 720, tip: '12 Spielstunden pro Sekunde' },
 ];
 const HM_VERT = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 
@@ -407,8 +407,8 @@ export class Geoscape {
     hud.innerHTML = `
       <div id="geo-labels"></div>
       <div class="geo-top panel">
-        <div class="geo-clock"><div id="g-date">–</div><div id="g-time">–</div></div>
-        <div class="speeds" id="g-speeds">${SPEEDS.map((s, i) => `<button class="btn sp" data-sp="${i}">${s.label}</button>`).join('')}</div>
+        <div class="geo-clock"><div id="g-date">–</div><div id="g-time">–</div><div id="g-pause" class="pause-badge" hidden>PAUSE</div></div>
+        <div class="speeds-wrap"><div class="speeds" id="g-speeds">${SPEEDS.map((s, i) => `<button class="btn sp" data-sp="${i}" title="${s.tip}" aria-label="${s.tip}">${s.label}</button>`).join('')}</div><small class="speeds-cap">Spielzeit pro Sekunde</small></div>
         <div class="geo-cred"><span class="lbl">Budget</span><span id="g-cred">–</span></div>
       </div>
       <div class="geo-events panel" id="g-events"></div>
@@ -436,10 +436,25 @@ export class Geoscape {
     h.innerHTML = `<span>${padLabel('A')} Auswählen</span><span>${padLabel('LB')}/${padLabel('RB')} Tempo</span><span>${padLabel('X')} Basis</span><span>${padLabel('Y')} Forschung</span><span>${padLabel('LT')}/${padLabel('RT')} Zoom</span><span>${padLabel('START')} Menü</span><span>L3+R3 Cheats</span>`;
   }
 
-  setSpeed(i) {
+  // reason: nur gesetzt, wenn die Simulation die Zeit automatisch anhält
+  setSpeed(i, reason) {
     if (!Game.c.base) i = 0;
     this.speed = clamp(i, 0, SPEEDS.length - 1);
     this.hud.querySelectorAll('[data-sp]').forEach((b) => b.classList.toggle('active', +b.dataset.sp === this.speed));
+    this.updatePauseBadge(reason);
+  }
+  updatePauseBadge(reason) {
+    const p = document.getElementById('g-pause');
+    if (!p) return;
+    const paused = this.speed === 0 && !!Game.c.base;
+    p.hidden = !paused;
+    clearTimeout(this._pauseT);
+    if (!paused) { p.textContent = 'PAUSE'; delete p.dataset.why; return; }
+    if (!reason) { if (!p.dataset.why) p.textContent = 'PAUSE'; return; }
+    p.dataset.why = '1';
+    p.textContent = `PAUSE – ${reason}`;
+    this._pauseT = setTimeout(() => { p.textContent = 'PAUSE'; delete p.dataset.why; }, 6000);
+    if (!Game.c.autoPauseHint) { Game.c.autoPauseHint = true; toast('Wichtige Ereignisse halten die Zeit automatisch an.', 'info', 5000); }
   }
 
   log(msg, type = 'info') {
@@ -462,6 +477,7 @@ export class Geoscape {
     document.getElementById('g-time').textContent = d.time;
     document.getElementById('g-cred').textContent = fmtMoney(c.credits);
     if (force) { this.setSpeed(this.speed); this.renderEvents(); }
+    else { const p = document.getElementById('g-pause'); if (p) p.hidden = !(this.speed === 0 && !!c.base); }
   }
 
   // ---------- Eingabe ----------
@@ -733,7 +749,7 @@ export class Geoscape {
           this.addSite({ kind: 'terror', name: city.name, lat: city.lat, lon: city.lon, ufoType: u.type, expires: 18 * 60, region: city.region });
           this.log(`TERRORANGRIFF in ${city.name}!`, 'bad');
           toast(`⚠ Terrorangriff in ${city.name}! Sende sofort ein Einsatzteam.`, 'bad', 6000);
-          sfx('alert'); this.setSpeed(0); this.focusOn(city.lat, city.lon);
+          sfx('alert'); this.setSpeed(0, 'Terrorangriff'); this.focusOn(city.lat, city.lon);
           u.state = 'leave'; u.target = latLonToVec(Math.asin(rand() * 1.6 - 0.8), rand() * 6.28);
           return;
         }
@@ -743,7 +759,7 @@ export class Geoscape {
           u.state = 'landed'; u.landTimer = randRange(180, 540);
           if (u.detected) {
             this.addSite({ kind: 'landed', name: `${u.name} (gelandet)`, lat: ll.lat, lon: ll.lon, ufoType: u.type, ufoId: u.id, region: regionOf(ll.lat, ll.lon) });
-            this.log(`${u.name} ist gelandet.`, 'warn'); toast(`${u.name} (${UFOS[u.type].name}) ist gelandet – Bodeneinsatz möglich!`, 'warn'); sfx('alert'); this.setSpeed(0);
+            this.log(`${u.name} ist gelandet.`, 'warn'); toast(`${u.name} (${UFOS[u.type].name}) ist gelandet – Bodeneinsatz möglich!`, 'warn'); sfx('alert'); this.setSpeed(0, 'UFO gelandet');
           }
         } else u.target = this.pickWaypoint();
       }
@@ -757,7 +773,7 @@ export class Geoscape {
         u.detected = true;
         const first = !u.reported; u.reported = true;
         this.log(`${u.name} ${first ? 'geortet' : 'erneut geortet'}: ${spec.name}`, 'warn');
-        if (first) { toast(`📡 UFO geortet: ${spec.name} – ${u.mission === 'terror' ? 'Kurs auf ' + u.city : 'Kurs unbekannt'}`, 'warn'); sfx('alert'); this.setSpeed(0); }
+        if (first) { toast(`📡 UFO geortet: ${spec.name} – ${u.mission === 'terror' ? 'Kurs auf ' + u.city : 'Kurs unbekannt'}`, 'warn'); sfx('alert'); this.setSpeed(0, 'UFO geortet'); }
         if (Input.lastDevice === 'pad') this.focusOn(ll.lat, ll.lon);
         if (u.state === 'landed' && !this.sites.find((s) => s.ufoId === u.id)) this.addSite({ kind: 'landed', name: `${u.name} (gelandet)`, lat: ll.lat, lon: ll.lon, ufoType: u.type, ufoId: u.id, region: regionOf(ll.lat, ll.lon) });
       }
@@ -854,7 +870,7 @@ export class Geoscape {
 
   // ---------- Luftkampf ----------
   airCombat(cr, u) {
-    this.setSpeed(0);
+    this.setSpeed(0, 'Luftkampf');
     sfx('alert');
     const spec = CRAFTS[cr.type], us = UFOS[u.type];
     u.engaged = true;
@@ -1061,7 +1077,7 @@ export class Geoscape {
   }
 
   arrival(site) {
-    this.setSpeed(0);
+    this.setSpeed(0, 'Einsatzteam angekommen');
     sfx('alert');
     const t = Game.c.transport;
     modal({
@@ -1091,7 +1107,7 @@ export class Geoscape {
 
   researchDone(id) {
     const r = RESEARCH.find((x) => x.id === id);
-    sfx('research'); this.setSpeed(0);
+    sfx('research'); this.setSpeed(0, 'Forschung abgeschlossen');
     this.log(`Forschung abgeschlossen: ${r.name}`, 'good');
     modal({ title: '⚗ Forschung abgeschlossen', html: `<h3>${r.name}</h3><p>${r.desc}</p>`, buttons: [{ label: 'Neues Projekt', action: () => setTimeout(() => this.action('research'), 200) }, { label: 'OK', primary: true }] });
   }
@@ -1105,7 +1121,7 @@ export class Geoscape {
 
   monthEnd() {
     const rep = Game.monthlyReport();
-    sfx('alert'); this.setSpeed(0);
+    sfx('alert'); this.setSpeed(0, 'Monatsbericht');
     const d = fmtDate(Game.c.time - 1440);
     const over = rep.gameOver && !Game.cheats.god;
     if (over) Game.c.lost = true;
@@ -1179,18 +1195,23 @@ export class Geoscape {
     const c = Game.c;
     const avail = Game.researchAvailable();
     const cur = c.research ? RESEARCH.find((r) => r.id === c.research.id) : null;
+    const needsText = (r) => {
+      const ns = Game.researchNeeds(r);
+      if (!ns.length) return 'Keine Artefakte nötig';
+      if (Game.researchPaid(r.id)) return 'Artefakte bereits verbraucht';
+      return 'Verbraucht beim Start: ' + ns.map((a) => `${a.n}× ${a.name} (vorhanden: ${c.artifacts[a.name] || 0})`).join(', ');
+    };
     const h = modal({
       title: '⚗ Forschung', wide: true,
       html: `${cur ? `<div class="cur-research"><b>${cur.name}</b>${bar(c.research.progress, cur.cost, 'good')}<small>ca. ${Math.ceil((cur.cost - c.research.progress) / c.scientists)} Tage · ${c.scientists} Wissenschaftler</small></div>` : '<p class="warn">Kein laufendes Projekt!</p>'}
-        <h4>Verfügbare Projekte</h4>${avail.filter((r) => r.id !== cur?.id).map((r) => `<button class="btn wide research-item" data-r="${r.id}"><b>${r.name}</b><small>${r.desc}</small><i>${r.cost} WT</i></button>`).join('') || '<p class="muted">Keine – birg Alien-Artefakte, um neue Projekte freizuschalten.</p>'}
+        <h4>Verfügbare Projekte</h4>${avail.filter((r) => r.id !== cur?.id).map((r) => `<button class="btn wide research-item" data-r="${r.id}"><b>${r.name}</b><small>${r.desc}</small><small class="res-needs">${needsText(r)}</small><i>${r.cost} WT</i></button>`).join('') || '<p class="muted">Keine – birg Alien-Artefakte, um neue Projekte freizuschalten.</p>'}
         <h4>Artefakte im Lager</h4><p class="muted">${Object.entries(c.artifacts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ×${n}`).join(' · ') || 'Keine'}</p>
         <h4>Abgeschlossen</h4><p class="muted">${c.researched.map((id) => RESEARCH.find((r) => r.id === id).name).join(' · ') || '—'}</p>`,
       buttons: [{ label: 'Schließen', primary: true }],
     });
     h.el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-r]'); if (!b) return;
-      if (c.research) c.researchProgress[c.research.id] = c.research.progress;
-      c.research = { id: b.dataset.r, progress: c.researchProgress[b.dataset.r] || 0 };
+      if (!Game.startResearch(b.dataset.r)) { sfx('deny'); toast('Nicht genug Artefakte.', 'warn'); return; }
       sfx('select'); toast(`Forschung gestartet: ${RESEARCH.find((r) => r.id === b.dataset.r).name}`);
       h.close();
     });
@@ -1214,16 +1235,19 @@ export class Geoscape {
     ];
     const cons = Object.entries(ITEMS).filter(([k]) => Game.itemAvailable(k));
     const crafts = Object.entries(CRAFTS).filter(([, cr]) => !cr.req || Game.has(cr.req));
+    const arts = Object.entries(c.artifacts).filter(([k, n]) => n > 0 && ARTIFACT_PRICES[k]);
     const h = modal({
       title: '⚙ Beschaffung', wide: true,
       html: `<p>Budget: <b>${fmtMoney(c.credits)}</b></p><div class="shop">${items.map((i) => `<button class="btn shop-item" data-buy="${i.k}"><b>${i.name}</b><small>${i.info} · Lager: ${c.stock[i.k] || 0}</small><i>${fmtMoney(i.cost)}</i></button>`).join('')}</div>
         <h4>Verbrauchsgüter</h4><div class="shop">${cons.map(([k, it]) => `<div class="shop-pair"><span><b>${it.icon} ${it.name}</b><br><small class="muted">${itemEffect(it)} · Lager: ${c.stock[k] || 0}</small></span><button class="btn" data-buy="${k}" data-n="1">+1 · ${fmtMoney(it.cost)}</button><button class="btn" data-buy="${k}" data-n="5">+5 · ${fmtMoney(it.cost * 5)}</button></div>`).join('')}</div>
         <h4>Abfangjäger</h4><div class="shop">${crafts.map(([k, cr]) => `<button class="btn shop-item" data-craft="${k}" ${c.crafts.length >= c.facilities.hangar + 1 ? 'disabled' : ''}><b>${cr.name}</b><small>Hülle ${cr.hp} · Schaden ${cr.dmg}</small><i>${fmtMoney(cr.cost)}</i></button>`).join('')}</div>
-        <p class="muted">Hangarplätze: ${c.crafts.length}/${c.facilities.hangar + 1}</p>`,
+        <p class="muted">Hangarplätze: ${c.crafts.length}/${c.facilities.hangar + 1}</p>
+        <h4>Verkauf von Alien-Artefakten</h4><div class="shop" id="artifact-sale">${arts.map(([k, n]) => { const need = Game.artifactNeededFor(k); return `<div class="shop-pair"><span><b>${k}</b> ×${n}<br><small class="muted">${fmtMoney(ARTIFACT_PRICES[k])} pro Stück</small>${need.length ? `<br><small class="warn">⚠ Wird noch für Forschung gebraucht: ${need.map((r) => r.name).join(', ')}</small>` : ''}</span><button class="btn" data-sell="${k}" data-n="1">1 verkaufen</button><button class="btn" data-sell="${k}" data-n="all">alle verkaufen</button></div>`; }).join('') || '<p class="muted">Keine Artefakte im Lager.</p>'}</div>`,
       buttons: [{ label: 'Schließen', primary: true }],
     });
     h.el.addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.sell) { const got = Game.sellArtifact(b.dataset.sell, b.dataset.n === 'all' ? Infinity : 1); if (got) { sfx('select'); toast(`Verkauft: +${fmtMoney(got)}`); } else sfx('deny'); h.close(); this.shopMenu(); this.updateHud(); return; }
       const k = b.dataset.buy || b.dataset.craft; if (!k) return;
       const n = +(b.dataset.n || 1);
       const cost = b.dataset.buy ? (ITEMS[k] ? ITEMS[k].cost * n : items.find((i) => i.k === k).cost) : CRAFTS[k].cost;

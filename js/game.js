@@ -1,5 +1,6 @@
 // Kampagnenzustand: Finanzen, Soldaten, Forschung, Lager, Speichern/Laden
 import { WEAPONS, ARMORS, GRENADES, ITEMS, BELT_SLOTS, RESEARCH, FACILITIES, RANKS, RANK_XP, REGIONS, CRAFTS } from './data.js';
+import { ARTIFACT_PRICES } from './data.js';
 import { randInt, randomName, rand, Emitter } from './util.js';
 
 const SAVE_KEY = 'aegis_save_v1';
@@ -33,6 +34,8 @@ export function createCampaign() {
     researched: [],
     research: null, // {id, progress}
     artifacts: {},
+    researchProgress: {}, researchPaid: {}, // Fortschritt je Projekt / Artefakte bereits verbraucht
+    autoPauseHint: false,
     stock: { sniper: 1, shotgun: 1, frag: 10, smoke: 6, flare: 4, medkit: 2 }, // gekaufte Ausrüstung (Waffen sind wiederverwendbar)
     score: 0, monthScore: 0,
     regionScore: Object.fromEntries(REGIONS.map((r) => [r.id, 0])),
@@ -54,6 +57,9 @@ export function migrateCampaign(c) {
     }
     while (s.items.length < BELT_SLOTS) s.items.push(null);
   }
+  c.researchProgress ||= {}; c.researchPaid ||= {};
+  if (c.research) c.researchPaid[c.research.id] = true; // laufende Altprojekte gelten als bezahlt
+  for (const id of Object.keys(c.researchProgress)) c.researchPaid[id] = true;
   c.stock ||= {};
   if (c.stock.smoke == null) c.stock.smoke = 6;
   if (c.stock.flare == null) c.stock.flare = 4;
@@ -103,10 +109,41 @@ class GameState extends Emitter {
   itemAvailable(id) { const it = ITEMS[id]; return !!it && (!it.req || this.has(it.req) || this.cheats.allGear); }
   grenadeAvailable(id) { const g = GRENADES[id]; return g && (!g.req || this.has(g.req) || this.cheats.allGear); }
 
+  // needs normalisieren: ['X', {name:'Y', n:2}] -> [{name, n}]
+  researchNeeds(r) { return (r.needs || []).map((a) => (typeof a === 'string' ? { name: a, n: 1 } : { name: a.name, n: a.n || 1 })); }
+  researchPaid(id) { return !!(this.c.researchPaid && this.c.researchPaid[id]); }
   researchAvailable() {
     return RESEARCH.filter((r) => !this.has(r.id)
-      && (r.needs || []).every((a) => (this.c.artifacts[a] || 0) > 0 || this.cheats.allResearch)
+      && (this.researchPaid(r.id) || this.cheats.allResearch || this.researchNeeds(r).every((a) => (this.c.artifacts[a.name] || 0) >= a.n))
       && (r.after || []).every((t) => this.has(t)));
+  }
+  // Startet/wechselt ein Projekt: Artefakte werden beim ersten Start einmalig verbraucht.
+  startResearch(id) {
+    const c = this.c, r = RESEARCH.find((x) => x.id === id);
+    if (!r || this.has(id)) return false;
+    c.researchProgress ||= {}; c.researchPaid ||= {};
+    if (!c.researchPaid[id] && !this.cheats.allResearch) {
+      const needs = this.researchNeeds(r);
+      if (!needs.every((a) => (c.artifacts[a.name] || 0) >= a.n)) return false;
+      for (const a of needs) c.artifacts[a.name] -= a.n;
+      c.researchPaid[id] = true;
+    }
+    if (c.research) c.researchProgress[c.research.id] = c.research.progress;
+    c.research = { id, progress: c.researchProgress[id] || 0 };
+    return true;
+  }
+  // Verkauft Artefakte; gibt den Erlös zurück (0 = nichts verkauft)
+  sellArtifact(name, n = 1) {
+    const have = this.c.artifacts[name] || 0, price = ARTIFACT_PRICES[name] || 0;
+    const k = Math.min(have, n);
+    if (!k || !price) return 0;
+    this.c.artifacts[name] = have - k; this.c.credits += k * price;
+    this.emit('change');
+    return k * price;
+  }
+  // Wird ein Artefakt noch für ein offenes, unbezahltes Projekt gebraucht?
+  artifactNeededFor(name) {
+    return RESEARCH.filter((r) => !this.has(r.id) && !this.researchPaid(r.id) && this.researchNeeds(r).some((a) => a.name === name));
   }
 
   completeResearch(id) {

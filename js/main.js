@@ -315,21 +315,98 @@ function openSettings() {
 }
 
 function openHelp() {
-  modal({
-    title: '🎮 Steuerung & Anleitung', wide: true,
-    html: `<div class="grid2"><div>
-      <h4>Geoscape (Weltkarte)</h4>
-      <ul><li>Ziehen / Stick: Globus drehen · Mausrad / Pinch / LT-RT: Zoom</li><li>Marker antippen: UFOs abfangen, Einsätze starten</li><li>Zeit: Tasten 1–6, Leertaste = Pause · Controller ${padLabel('LB')}/${padLabel('RB')}</li><li>B Basis · R Forschung · I Abfangjäger</li></ul>
-      <h4>Bodenkampf – Maus &amp; Touch</h4>
-      <ul><li>Feld anklicken: Soldat bewegt sich (Touch: zweimal tippen)</li><li>Alien anklicken = Ziel wählen, erneut klicken = Feuer</li><li>Linke Maus ziehen: Kamera schwenken · Rechte Maus: drehen · Rad: Zoom</li><li>Zwei Finger: Zoom &amp; Drehen</li></ul>
-      <h4>Bodenkampf – Tastatur</h4>
-      <ul><li>WASD/Pfeile: Kamera · Q/E: drehen · R/V: Zoom</li><li>Tab: nächster Soldat · 1–4: Schussmodus/Granate · F: Feuer</li><li>K: Knien · T: nächstes Alien · Enter: Zug beenden · Esc: Menü</li></ul></div>
-      <div><h4>Bodenkampf – Controller</h4>
-      <ul><li>Linker Stick: Cursor · Rechter Stick: Kamera · ${padLabel('LT')}/${padLabel('RT')}: Zoom</li><li>${padLabel('A')}: Bewegen / Ziel / Feuer · ${padLabel('B')}: Abbrechen</li><li>${padLabel('X')}: Schussmodus · ${padLabel('Y')}: Knien</li><li>${padLabel('LB')}/${padLabel('RB')}: Soldat wechseln · Steuerkreuz ◀▶: Aliens durchschalten</li><li>Steuerkreuz ▼: Granate · ${padLabel('SELECT')}: Zug beenden · ${padLabel('START')}: Menü</li><li><b>L3 + R3: Cheat-Menü</b></li></ul>
-      <h4>Regeln</h4>
-      <ul><li>Jede Aktion kostet Zeiteinheiten (ZE). Gezielte Schüsse treffen besser, kosten aber mehr.</li><li>Halbe Deckung (Zäune, Felsen, Autos) senkt die Trefferchance des Gegners um 30 %.</li><li>Knien erhöht die Präzision. Unverbrauchte ZE ermöglichen Reaktionsfeuer.</li><li>Granaten und Fehlschüsse zerstören die Umgebung.</li><li>Rückzug: Soldaten in der Landezone (beim Transporter) werden evakuiert.</li></ul></div></div>`,
+  const P = padLabel;
+  const tbl = (rows, head = ['Aktion', 'Maus / Touch', 'Tastatur', 'Controller']) => `<div class="help-scroll"><table class="help-tbl"><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, i) => (i ? `<td>${c}</td>` : `<th scope="row">${c}</th>`)).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const dl = (items) => `<dl class="help-gloss">${items.map(([t, d]) => `<dt>${t}</dt><dd>${d}</dd>`).join('')}</dl>`;
+  const tabs = [
+    ['Weltkarte', () => `<p class="muted">Die Weltkarte ist dein Lagezentrum: Hier läuft die Zeit, UFOs tauchen auf und du steuerst Basis, Forschung und Einkauf.</p>` + tbl([
+      ['Globus drehen', 'Ziehen', 'WASD / Pfeiltasten', 'Linker / Rechter Stick'],
+      ['Zoom', 'Mausrad · Zwei Finger (Pinch)', '+ / −', `${P('RT')} näher · ${P('LT')} weiter`],
+      ['Marker wählen (UFO, Einsatz, Basis)', 'Anklicken / Antippen', '–', `${P('A')} (Fadenkreuz in der Mitte)`],
+      ['Pause / Weiter', 'Button ⏸', 'Leertaste', P('SELECT')],
+      ['Zeitstufe wählen', 'Zeit-Buttons oben', 'Tasten 1–6 (1 = Pause)', `${P('LB')} langsamer · ${P('RB')} schneller`],
+      ['Abfangjäger', 'Button „Abfangen“', 'I', '▲ Steuerkreuz'],
+      ['Basis (3D)', 'Button „Basis“', 'B', P('X')],
+      ['Forschung', 'Button „Forschung“', 'R', P('Y')],
+      ['Soldaten', 'Button „Soldaten“', '–', '▼ Steuerkreuz'],
+      ['Beschaffung', 'Button „Beschaffung“', '–', '◀ Steuerkreuz'],
+      ['Finanzen', 'Button „Finanzen“', 'F', '▶ Steuerkreuz'],
+      ['Menü / Hilfe', 'Button ☰', 'Esc', P('START')],
+    ])],
+    ['Bodenkampf', () => `<p class="muted">Rundenbasiert: Du ziehst mit allen Soldaten, dann die Aliens. Jede Aktion kostet Zeiteinheiten (ZE).</p>` + tbl([
+      ['Soldat wählen', 'Soldat anklicken · Buttons ◀ ▶', 'Tab / Shift+Tab', `${P('LB')} / ${P('RB')}`],
+      ['Bewegen', 'Feld anklicken (Touch: zweimal tippen)', '–', `Linker Stick = Cursor, ${P('A')}`],
+      ['Ziel wählen &amp; Feuer', 'Alien anklicken, erneut anklicken = Feuer · Button FEUER', 'T = nächstes Alien · F = Feuer', `◀ ▶ = Alien wählen, ${P('A')} = Feuer`],
+      ['Schussmodus', 'Buttons Schnellschuss / Gezielt / Salve', '1 / 2 / 3', `${P('X')} schaltet durch (auch Gürtel)`],
+      ['Gürtel-Ausrüstung', 'Button „Gürtel“ 1–3, dann Zielfeld', '4 / 5 / 6 · G = erster Wurfgegenstand', '▼ schaltet Plätze durch'],
+      ['Knien / Aufstehen', 'Button „Knien“', 'K oder C', P('Y')],
+      ['Auswahl abbrechen', 'Rechtsklick', 'Esc', P('B')],
+      ['Kamera schwenken', 'Linke Maustaste ziehen · ein Finger', 'WASD / Pfeiltasten', 'Linker Stick (Cursor)'],
+      ['Kamera drehen', 'Rechte Maustaste ziehen · zwei Finger drehen', 'Q / E', 'Rechter Stick'],
+      ['Zoom', 'Mausrad · Pinch', 'R = näher · V = weiter', `${P('RT')} näher · ${P('LT')} weiter`],
+      ['Auf Soldat zentrieren', '–', 'Leertaste', '▲ Steuerkreuz'],
+      ['Zug beenden', 'Button „Zug beenden“', 'Enter', P('SELECT')],
+      ['Rückzug', 'Button ⚑ · Menü', '–', `${P('START')} → Menü`],
+      ['Menü', 'Button ☰', 'Esc (wenn nichts gewählt)', P('START')],
+    ])],
+    ['Abfangkampf & Basis', () => `<h4>3D-Abfangkampf (Jäger gegen UFO)</h4>` + tbl([
+      ['Annähern', 'Button „Annähern“', '1 · ↑ · W', '▲ Steuerkreuz · Stick hoch'],
+      ['Auf Distanz bleiben', 'Button „Distanz“', '2 · ↓ · S', '▼ Steuerkreuz · Stick runter'],
+      ['Ausweichen (Feuer pausiert kurz)', 'Button „Ausweichen“', '3 · E · Shift links', `${P('X')} · ${P('LB')}`],
+      ['Feuer frei (Raketensalve)', 'Button „Feuer frei“', '4 · Leertaste · F · Enter', `${P('A')} · ${P('RT')}`],
+      ['Abbrechen (zweimal drücken)', 'Button „Abbrechen“', '5 · Rücktaste · Q', P('B')],
+      ['Pause', '–', 'Esc · P', `${P('START')} (dann ${P('A')} weiter, ${P('B')} Rückzug)`],
+    ]) + `<h4>Basis (3D)</h4>` + tbl([
+      ['Ansicht drehen / neigen', 'Ziehen', 'WASD / Pfeiltasten', 'Rechter Stick'],
+      ['Ansicht verschieben', 'Rechte Maustaste oder Shift + ziehen · zwei Finger', '–', '–'],
+      ['Zoom', 'Mausrad · Pinch', '+ / − · Bild ↑ / ↓', `${P('RT')} näher · ${P('LT')} weiter`],
+      ['Modul wählen', 'Anklicken / Antippen', 'Q / E', `Steuerkreuz / Linker Stick · ${P('LB')} / ${P('RB')}`],
+      ['Info ein / aus', 'Modul antippen', 'Enter · Leertaste', P('A')],
+      ['Bauen / Ausbauen', 'Button im Infofenster', 'B', P('X')],
+      ['Ansicht zurücksetzen', '–', 'R', P('Y')],
+      ['Zurück zur Weltkarte', 'Button zum Schließen', 'Esc', P('B')],
+    ]) + `<h4>Ausrüstung &amp; Menüs</h4>` + tbl([
+      ['Soldat wechseln', 'Buttons ◀ ▶ · Soldat in der Liste', 'Tab-Navigation', `${P('LB')} / ${P('RB')}`],
+      ['Waffe, Rüstung, Gürtel ändern', 'Platz anklicken, Gegenstand wählen', 'Tab / Enter', `Steuerkreuz, ${P('A')}`],
+      ['Schließen / Zurück', 'Button „Fertig“ · ✕', 'Esc', P('B')],
+    ])],
+    ['Begriffe', () => `<p class="muted">Werte stammen aus dem aktuellen Spielstand der Regeln und können sich durch Balancing ändern.</p>` + dl([
+      ['Zeiteinheiten (ZE)', 'Dein Aktionsbudget pro Zug. Gehen kostet 4 ZE je Feld (diagonal 6), Knien 4 ZE, Aufstehen 6 ZE. Schüsse und Gürtel-Gegenstände kosten einen Anteil deiner Maximal-ZE.'],
+      ['Schnellschuss / Gezielt / Salve', 'Schnellschuss: billig (Gewehr 25 % der ZE), mittlere Treffsicherheit. Gezielt: teurer (50 %), aber deutlich genauer. Salve: 3 Schüsse (35 %), jeder einzelne ungenauer.'],
+      ['Trefferchance', 'Treffsicherheit des Soldaten × Waffenwert. Besser durch: Knien (+15 %), Forschung „Autopsie“ (+5 % je Alienart). Schlechter durch: große Entfernung (ab 12 Feldern −1,5 % je Feld, außerhalb der Reichweite halbiert), Ziel in halber Deckung (−30 %), Ziel kniend (−8 %), Ziel im Rauch (−40 %). Immer zwischen 5 und 95 %. Bei Nacht sehen Soldaten nur 10 statt 20 Felder weit.'],
+      ['Reaktionsfeuer', 'Bewegt sich eine Einheit in Sichtweite, kann der Gegner sofort einen Schnellschuss abgeben. Chance: Reaktionswert × Anteil verbliebener ZE × 0,85. Spare dir ZE auf, damit deine Soldaten selbst reagieren können.'],
+      ['Deckung (halbe Deckung)', 'Zäune, Felsen, Autos zwischen Schütze und Ziel senken dessen Trefferchance um 30 %. Gilt nicht, wenn der Schütze direkt daneben steht.'],
+      ['Knien', 'Kostet 4 ZE (Aufstehen 6). Erhöht die eigene Genauigkeit um 15 %, macht dich aber nicht unverwundbar. Beim Laufen steht der Soldat wieder auf.'],
+      ['Nebel des Krieges', 'Du siehst nur, was deine Soldaten sehen (20 Felder, nachts 10). Bereits erkundete Felder bleiben sichtbar, Aliens nur solange sie im Blick sind.'],
+      ['Gürtel-Ausrüstung', 'Splittergranate (Schaden 55, Radius 2,6) und Alien-Granate (95, Radius 3,2) kosten 30 % der ZE. Nebelgranate (25 %): 3 Runden Rauch, Radius 2,5. Leuchtfackel (20 %): leuchtet nachts Radius 6 für 4 Runden aus. Medi-Kit (30 %): heilt 25 LP, 3 Anwendungen – auf sich selbst oder einen angrenzenden Soldaten. Granaten und Fehlschüsse zerstören Deckung.'],
+      ['Landezone &amp; Rückzug', 'Die Landezone liegt beim Transporter. Beim Rückzug (⚑) werden nur Soldaten in der Landezone evakuiert – alle anderen gelten als vermisst.'],
+      ['Forschung &amp; Artefakte', 'Aus abgeschossenen UFOs und gefallenen Aliens bergen deine Truppen Artefakte (z. B. Leichname). Manche Projekte brauchen bestimmte Artefakte. Wissenschaftler im Labor erforschen sie; neue Waffen, Rüstungen und Fähigkeiten folgen.'],
+      ['Radar / Ortung', 'Deine Basis ortet UFOs nur innerhalb des Radarkreises. Weitere Radaranlagen vergrößern ihn um 35 %, die Forschung „Navigation“ um 60 %.'],
+      ['Finanzierung &amp; Monatsbericht', 'Jeden Monat zahlen die Regionen je nach Erfolg: Bei guter Wertung steigt die Förderung (bis +25 %), bei schlechter sinkt sie (bis −30 %). Abgezogen werden Gehälter (Soldat 20.000 ¢, Wissenschaftler 25.000 ¢), Unterhalt (Anlage 40.000 ¢, Jäger 60.000 ¢). Zwei schlechte Monate in Folge beenden das Projekt.'],
+      ['Zeitsteuerung', 'Die Weltkarte läuft in Echtzeit mit sechs Stufen (Pause, 1 Min., 5 Min., 30 Min., 2 Std., 12 Std. Spielzeit pro Sekunde). Fenster und Menüs halten die Zeit an. Bei UFO-Kontakt am besten auf kleine Stufen schalten.'],
+    ])],
+    ['Cheats', () => `<p class="muted">Die Cheat-Konsole ist für Tests und zum Ausprobieren gedacht.</p>` + tbl([
+      ['Cheat-Konsole öffnen / schließen', 'Menü-Eintrag', 'F10 oder ^', `${P('L3')} + ${P('R3')} gleichzeitig (Stickklick)`],
+    ]) + `<h4>Cheat-Codes (im Eingabefeld der Konsole)</h4>` + tbl([
+      ['GELDREGEN', '+5.000.000 ¢'], ['UNSTERBLICH', 'Gottmodus an'], ['ADLERAUGE', 'Karte und alle UFOs aufdecken'], ['EINSTEIN', 'Gesamte Forschung abschließen'],
+    ], ['Code', 'Wirkung']) + `<h4>Schalter &amp; Sofort-Aktionen</h4><p>Gottmodus, unendliche ZE, 100 % Trefferchance, Ein-Treffer-Kills, Karte aufdecken, kein Alien-Reaktionsfeuer, alle UFOs orten, Sofort-Forschung, Sofort-Bau, alle Ausrüstung. Dazu: Geld, Forschung, Heilen, UFO/Terrorangriff/Hive erzeugen, Aliens vernichten, Mission gewinnen.</p>`],
+  ];
+  let cur = 0;
+  const h = modal({
+    title: '🎮 Steuerung & Anleitung', wide: true, cls: 'help-modal',
+    html: `<div class="help-tabs" role="tablist">${tabs.map((t, i) => `<button class="btn help-tab" role="tab" data-tab="${i}">${t[0]}</button>`).join('')}</div><div class="help-body" role="tabpanel"></div><p class="muted help-pad">Reiter wechseln mit ${P('LB')} / ${P('RB')} · Schließen mit ${P('B')} oder Esc</p>`,
     buttons: [{ label: 'OK', primary: true }],
   });
+  const body = h.el.querySelector('.help-body');
+  const show = (i) => {
+    cur = (i + tabs.length) % tabs.length;
+    body.innerHTML = tabs[cur][1]();
+    h.el.querySelectorAll('.help-tab').forEach((b, k) => { b.classList.toggle('on', k === cur); b.setAttribute('aria-selected', k === cur); });
+    h.el.querySelector('.modal-body').scrollTop = 0;
+  };
+  h.el.querySelectorAll('.help-tab').forEach((b) => b.addEventListener('click', () => { sfx('click'); show(+b.dataset.tab); }));
+  h.el.addEventListener('navtab', (e) => { sfx('click'); show(cur + e.detail); });
+  show(0);
 }
 
 function victory() {

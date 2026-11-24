@@ -12,12 +12,45 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Orbitron:wght@600;800&display=swap">
   <link rel="stylesheet" href="css/style.css">
   <script type="importmap">
     { "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
   </script>
+  <link rel="preload" href="fonts/orbitron-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/rajdhani-600-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="modulepreload" href="js/main.js">
+  <link rel="modulepreload" href="vendor/three/three.module.min.js">
+  <link rel="modulepreload" href="js/engine.js">
+  <link rel="modulepreload" href="vendor/three/addons/postprocessing/EffectComposer.js">
+  <link rel="modulepreload" href="vendor/three/addons/shaders/CopyShader.js">
+  <link rel="modulepreload" href="vendor/three/addons/postprocessing/ShaderPass.js">
+  <link rel="modulepreload" href="vendor/three/addons/postprocessing/Pass.js">
+  <link rel="modulepreload" href="vendor/three/addons/postprocessing/MaskPass.js">
+  <link rel="modulepreload" href="vendor/three/addons/postprocessing/RenderPass.js">
+  <link rel="modulepreload" href="vendor/three/addons/postprocessing/UnrealBloomPass.js">
+  <link rel="modulepreload" href="vendor/three/addons/shaders/LuminosityHighPassShader.js">
+  <link rel="modulepreload" href="vendor/three/addons/postprocessing/OutputPass.js">
+  <link rel="modulepreload" href="vendor/three/addons/shaders/OutputShader.js">
+  <link rel="modulepreload" href="vendor/three/addons/postprocessing/GTAOPass.js">
+  <link rel="modulepreload" href="vendor/three/addons/shaders/GTAOShader.js">
+  <link rel="modulepreload" href="vendor/three/addons/shaders/PoissonDenoiseShader.js">
+  <link rel="modulepreload" href="vendor/three/addons/math/SimplexNoise.js">
+  <link rel="modulepreload" href="js/util.js">
+  <link rel="modulepreload" href="js/input.js">
+  <link rel="modulepreload" href="js/game.js">
+  <link rel="modulepreload" href="js/data.js">
+  <link rel="modulepreload" href="js/geoscape.js">
+  <link rel="modulepreload" href="js/shaders.js">
+  <link rel="modulepreload" href="js/equip.js">
+  <link rel="modulepreload" href="js/ui.js">
+  <link rel="modulepreload" href="js/audio.js">
+  <link rel="modulepreload" href="js/basescape.js">
+  <link rel="modulepreload" href="js/models.js">
+  <link rel="modulepreload" href="js/aircombat.js">
+  <link rel="modulepreload" href="js/tactical.js">
+  <link rel="modulepreload" href="js/tacmap.js">
+  <link rel="modulepreload" href="js/cheats.js">
+  <link rel="modulepreload" href="js/cast.js">
 </head>
 <body data-mode="menu">
   <div id="game"></div>

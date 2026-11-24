@@ -6,6 +6,7 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const DEG = Math.PI / 180;
 
 let seed = (Date.now() ^ 0x5bd1e995) >>> 0;
+export function setSeed(n) { seed = n >>> 0; }
 export function rand() {
   seed = (seed + 0x6d2b79f5) >>> 0;
   let t = seed;

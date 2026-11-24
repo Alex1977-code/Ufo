@@ -1,0 +1,13 @@
+{
+  "name": "aegis-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:unit": "node --test unit/*.test.mjs",
+    "test:e2e": "node --test --test-timeout=240000 e2e/*.test.mjs",
+    "test": "npm run test:unit && npm run test:e2e"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
