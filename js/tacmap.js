@@ -59,6 +59,9 @@ export const WALLS = {
   tent: { full: false, move: true, hp: 10, h: 1.4, cover: 1 },
   milcrate: { full: false, move: true, hp: 60, h: 1.0, cover: 1 },
   chainlink: { full: false, move: true, hp: 20, h: 2.0, cover: 0 },
+  // Stadtmobiliar als halbe Deckung (Modell = deco:bench / deco:bin aus models.js)
+  bench: { full: false, move: true, hp: 25, h: 0.8, cover: 1 },
+  bin: { full: false, move: true, hp: 20, h: 1.0, cover: 1 },
   // Tiefes Wasser: unpassierbar, Sicht frei, NICHT zerstörbar. Schadenscode (damageWall/Explosionen)
   // muss Felder mit WALLS[t].indestructible überspringen; hp ist nur ein Sicherheitsnetz.
   water: { full: false, move: true, hp: 99999, h: 0, cover: 0, indestructible: true },
@@ -614,7 +617,14 @@ function genUrban(map, at, setWall) {
     const t = Object.keys(want).find((k) => want[k] > 0 && rand() < 0.5); if (!t) continue;
     if (map.deco.some((d) => d.x === w.x && d.y === w.y)) continue;
     const [dx, dy] = roadDir(w.x, w.y);
-    const edge = t === 'bench' ? 0.45 : 0.75;
+    if (t === 'bench' || t === 'bin') {
+      // Bänke und Mülleimer sind echte (halbe) Deckung; nicht vor Türen, keine Riegel
+      if (DIR4.some(([ex, ey]) => at(w.x + ex, w.y + ey)?.door || at(w.x + ex, w.y + ey)?.wall)) continue;
+      setWall(w.x, w.y, t); const cw = at(w.x, w.y).wall;
+      if (cw) { cw.rot = ((-Math.round(Math.atan2(dx, dy) / (Math.PI / 2))) % 4 + 4) % 4; cw.variant = randInt(0, 3); want[t]--; }
+      continue;
+    }
+    const edge = 0.75;
     deco(map, t, w.x, w.y, { ox: dx * edge + (dy ? (rand() - 0.5) * 1.2 : 0), oz: dy * edge + (dx ? (rand() - 0.5) * 1.2 : 0), rot: Math.atan2(dx, dy), s: 1 });
     want[t]--;
   }
