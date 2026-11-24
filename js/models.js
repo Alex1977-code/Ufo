@@ -1461,17 +1461,41 @@ function limb(len, rad, mat) {
   return g;
 }
 
-function gun(fx, scale = 1) {
+// fx: 'bullet' | 'laser' | 'plasma' | 'rocket' | 'stun', optional mit Variante 'fx:pistol|tube|heavy|rifle' (W2)
+function gun(fx = 'bullet', scale = 1) {
+  const [kind, v0] = String(fx).split(':');
+  const variant = v0 || (kind === 'rocket' || kind === 'stun' ? 'tube' : 'rifle');
   const g = new THREE.Group();
-  const col = fx === 'plasma' ? 0x2a3a30 : fx === 'laser' ? 0x3a3a48 : 0x222222;
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, 0.9 * scale), um('gun' + col, { color: col, metalness: 0.8, roughness: 0.35 }));
-  body.castShadow = true;
-  g.add(body);
-  if (fx === 'plasma' || fx === 'laser') {
-    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.6 * scale), um('glow' + fx, { color: 0, emissive: fx === 'plasma' ? 0x50ff80 : 0xff4040, emissiveIntensity: 3 }));
-    glow.position.set(0.07, 0.03, 0); g.add(glow);
+  const col = kind === 'plasma' ? 0x2a3a30 : kind === 'laser' ? 0x3a3a48 : kind === 'stun' ? 0x2a3242 : variant === 'tube' ? 0x3a4430 : 0x222222;
+  const mat = um('gun' + col, { color: col, metalness: 0.8, roughness: 0.35 });
+  const glowC = kind === 'plasma' ? 0x50ff80 : kind === 'laser' ? 0xff4040 : kind === 'stun' ? 0x60a0ff : 0;
+  let len;
+  if (variant === 'pistol') { // einhändig: kurzer Lauf + Griff
+    len = 0.42 * scale;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.13, len), mat); body.castShadow = true; g.add(body);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.1), mat); grip.position.set(0, -0.13, -0.1 * scale); grip.rotation.x = 0.25; g.add(grip);
+  } else if (variant === 'tube') { // Werfer: Rohr auf der Schulter
+    len = 1.1 * scale;
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, len, 12).rotateX(Math.PI / 2), mat); tube.castShadow = true; tube.position.y = 0.06; g.add(tube);
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.1, 12).rotateX(Math.PI / 2), um('gunring', { color: 0x1a1a1a, metalness: 0.6, roughness: 0.5 }));
+    ring.position.set(0, 0.06, len / 2 - 0.05); g.add(ring);
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.18, 0.08), mat); grip.position.set(0, -0.1, -0.05); g.add(grip);
+    if (kind === 'stun') { const tip = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), um('glowstun', { color: 0, emissive: 0x60a0ff, emissiveIntensity: 3 })); tip.position.set(0, 0.06, len / 2); g.add(tip); }
+  } else if (variant === 'heavy') { // schwer: dicker, länger, Zweibein-Stummel
+    len = 0.9 * scale * 1.25;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.2, len), mat); body.castShadow = true; g.add(body);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.4 * scale, 8).rotateX(Math.PI / 2), mat); barrel.position.set(0, 0.02, len / 2 + 0.15 * scale); g.add(barrel);
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.2), um('gunmag', { color: 0x30342a, roughness: 0.6 })); box.position.set(0, -0.16, 0); g.add(box);
+    len += 0.3 * scale;
+  } else {
+    len = 0.9 * scale;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.16, len), mat); body.castShadow = true; g.add(body);
   }
-  const muzzle = new THREE.Object3D(); muzzle.position.z = 0.48 * scale; g.add(muzzle); g.userData.muzzle = muzzle;
+  if (glowC && variant !== 'tube') {
+    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, len * 0.66), um('glow' + kind, { color: 0, emissive: glowC, emissiveIntensity: 3 }));
+    glow.position.set(variant === 'heavy' ? 0.095 : 0.07, 0.03, 0); g.add(glow);
+  }
+  const muzzle = new THREE.Object3D(); muzzle.position.set(0, variant === 'tube' ? 0.06 : 0, len / 2 + 0.03); g.add(muzzle); g.userData.muzzle = muzzle;
   return g;
 }
 

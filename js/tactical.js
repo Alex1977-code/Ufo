@@ -736,6 +736,11 @@ export class Tactical {
     // Brand: Restrunden, Ausbreitungsgeneration, Nachrauch je Feld + ein Licht für das Brandzentrum
     this.fireCells = new Uint8Array(this.N); this.fireGen = new Uint8Array(this.N); this.fireSmoke = new Uint8Array(this.N);
     this.fireLight = new THREE.PointLight(0xff7a30, 0, 18, 1.6); this.scene.add(this.fireLight);
+    this.flames = []; // flackernde Flammen-Sprites für brennende Felder (Pool, max. 40 Felder)
+    for (let i = 0; i < 40; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: pt, color: new THREE.Color(2.6, 1.1, 0.25), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      sp.visible = false; sp.userData.ph = rand() * 10; this.scene.add(sp); this.flames.push(sp);
+    }
     // Scanner-Blips (gelbe, pulsierende Ringe) und Bodenziel-Markierung
     this.blipRings = [];
     for (let i = 0; i < BLIPS; i++) { const r = add(new THREE.Mesh(new THREE.RingGeometry(0.45, 0.62, 24).rotateX(-Math.PI / 2), ringMat(0xffe040, 0.85))); r.visible = false; r.position.y = 0.08; this.blipRings.push(r); }
@@ -1905,16 +1910,19 @@ export class Tactical {
     this.losDirty = true;
   }
   updateFire(dt) {
-    if (!this.fireCount) { this.fireLight.intensity = 0; return; }
+    if (!this.fireCount) { this.fireLight.intensity = 0; for (const f of this.flames) f.visible = false; return; }
     let n = 0, sx = 0, sz = 0;
-    const v = this._fv || (this._fv = new THREE.Vector3());
+    const v = this._fv || (this._fv = new THREE.Vector3()), t = this.engine.time;
     for (let i = 0; i < this.N && n < 40; i++) {
       if (!this.fireCells[i] || !this.explored[i]) continue;
-      n++;
       const p = this.cellPos(i % this.W, (i / this.W) | 0); sx += p.x; sz += p.z;
-      if (rand() < dt * 22) { v.set(p.x + randRange(-0.7, 0.7), 0.15, p.z + randRange(-0.7, 0.7)); this.emit(v, new THREE.Color(3, 1 + rand() * 0.9, 0.15), 1.6, 0.35, 0.45 + rand() * 0.3); }
-      if (rand() < dt * 3) { v.set(p.x + randRange(-0.5, 0.5), 1.2, p.z + randRange(-0.5, 0.5)); this.emit(v, new THREE.Color(0.2, 0.19, 0.18), 0.8, 0.4, 1.6, false, true); }
+      const f = this.flames[n++], ph = f.userData.ph, fl = 0.75 + 0.25 * Math.sin(t * 13 + ph) * Math.sin(t * 7.3 + ph * 2);
+      f.visible = true; f.position.set(p.x + Math.sin(t * 3 + ph) * 0.12, 0.7 + 0.15 * fl, p.z + Math.cos(t * 2.7 + ph) * 0.12);
+      f.scale.set(1.5 * fl, 1.9 + 0.5 * fl, 1); f.material.opacity = 0.65 + 0.35 * fl;
+      if (rand() < dt * 30) { v.set(p.x + randRange(-0.7, 0.7), 0.15, p.z + randRange(-0.7, 0.7)); this.emit(v, new THREE.Color(3, 1 + rand() * 0.9, 0.15), 1.8, 0.35, 0.5 + rand() * 0.3); }
+      if (rand() < dt * 3) { v.set(p.x + randRange(-0.5, 0.5), 1.4, p.z + randRange(-0.5, 0.5)); this.emit(v, new THREE.Color(0.2, 0.19, 0.18), 0.8, 0.4, 1.6, false, true); }
     }
+    for (let k = n; k < this.flames.length; k++) this.flames[k].visible = false;
     if (n) { this.fireLight.position.set(sx / n, 1.6, sz / n); this.fireLight.intensity = (this.map.night ? 30 : 14) * (0.85 + 0.15 * Math.sin(this.engine.time * 17)); this.fireLight.distance = 10 + Math.min(14, n); } else this.fireLight.intensity = 0;
   }
 
@@ -2519,7 +2527,7 @@ export class Tactical {
       if (this.grenadeTarget && this.grenadeTarget.x === x && this.grenadeTarget.y === y) {
         this.grenadeArea.visible = false; this.clearPath();
         await this.useBelt(u, this.beltSlot, x, y);
-        this.grenadeTarget = null; this.mode = 'snap'; this.afterAction(); return;
+        this.grenadeTarget = null; this.mode = this.firstMode(u); this.afterAction(); return;
       }
       this.grenadeTarget = { x, y }; sfx('click'); this.updateHover(); this.refreshUi(); return;
     }
@@ -2606,7 +2614,7 @@ export class Tactical {
       const a = pts[k - 1], b = pts[k], L = Math.hypot(b.x - a.x, b.y - a.y);
       for (let s = 0.25; s <= L + 1e-6; s += 0.25) {
         const fx = a.x + (b.x - a.x) * s / L, fy = a.y + (b.y - a.y) * s / L, cx = Math.round(fx), cy = Math.round(fy);
-        samples.push({ fx, fy, blocked: !!hit });
+        samples.push({ fx, fy, blocked: !!hit, seg: k });
         if (hit) continue;
         if (cx === u.x && cy === u.y) continue;
         if (!this.inb(cx, cy)) { hit = last; samples[samples.length - 1].blocked = true; continue; }
@@ -2718,24 +2726,83 @@ export class Tactical {
     let col = new THREE.Color(2, 2, 2);
     const item = u && this.mode === 'belt' ? this.beltEntry(u) : null;
     const it = item && ITEMS[item.id];
-    if (u && this.phase === 'player' && !this.busy) {
-      if (it && it.kind === 'medkit') {
+    const ownInRadius = (cx, cy, r) => this.units.some((o) => o.team === 'player' && (o.alive || o.ko) && Math.hypot(o.x - cx, o.y - cy) <= r);
+    const showArea = (cx, cy, r, kind) => {
+      const pp = this.cellPos(cx, cy);
+      this.grenadeArea.visible = true; this.grenadeArea.position.set(pp.x, 0.07, pp.z); this.grenadeArea.scale.setScalar(r * TILE);
+      this.grenadeArea.material.color.set(ITEM_COLORS[kind] || ITEM_COLORS.grenade).multiplyScalar(2.2);
+      this.grenadeArea.material.opacity = 0.18;
+    };
+    const wEff = u && this.weaponOf(u), dk = wEff?.dtype === 'stun' ? 'stun' : wEff?.dtype === 'fire' ? 'fire' : 'grenade';
+    const warn = (cx, cy, r) => (ownInRadius(cx, cy, r) ? ' · ⚠ eigener Soldat im Radius' : '');
+    const koHere = this.koAt(x, y);
+    if (u && this.phase === 'player' && !this.busy && this.isGuided(u)) {
+      // Lenkschuss-Vorschau: Polygonzug (Cyan) bis zum ersten Hindernis, danach rot; nummerierte Wegpunkte
+      const w = WEAPONS[u.weapon], wp = this.waypoints;
+      const tentative = !other && !wp.some((q) => q.x === x && q.y === y) && !(x === u.x && y === u.y) && wp.length < (w.waypoints || 6);
+      const pts = tentative ? [...wp, { x, y }] : wp;
+      if (pts.length) {
+        const tr = this.guidedTrace(u, pts), p0 = this.cellPos(0, 0), mtx = new THREE.Matrix4(), c = new THREE.Color();
+        const step = Math.max(2, Math.ceil(tr.samples.length / 80));
+        let n = 0;
+        for (let i = 0; i < tr.samples.length && n < 80; i += step) {
+          const s = tr.samples[i];
+          const tent = tentative && s.seg === pts.length; // noch nicht gesetzter Abschnitt zum Cursor: blasser
+          mtx.makeTranslation(p0.x + s.fx * TILE, 0.9, p0.z + s.fy * TILE); this.pathDots.setMatrixAt(n, mtx);
+          this.pathDots.setColorAt(n, s.blocked ? c.setRGB(2.6, 0.35, 0.3) : tent ? c.setRGB(0.6, 1.6, 2) : c.setRGB(0.3, 2.2, 2.8));
+          n++;
+        }
+        this.pathDots.count = n; this.pathDots.instanceMatrix.needsUpdate = true; if (this.pathDots.instanceColor) this.pathDots.instanceColor.needsUpdate = true;
+        wp.forEach((q, i) => this.pathLabelData.push({ x: q.x, y: q.y, v: `WP ${i + 1}`, cls: 'ok' }));
+        const lastP = pts[pts.length - 1], early = tr.hit.x !== lastP.x || tr.hit.y !== lastP.y;
+        this.pathLabelData.push({ x: tr.hit.x, y: tr.hit.y, v: early ? '💥 Aufschlag' : '💥', cls: early ? 'no' : 'mv' });
+        showArea(tr.hit.x, tr.hit.y, w.radius || 4, 'grenade');
+        const len = this.polyLength(u, pts);
+        this.hoverInfo = `Lenkschuss: ${wp.length}/${w.waypoints || 6} Wegpunkte · Strecke ${len.toFixed(0)}/${w.range} F. · ${this.modeCost(u, this.mode)} ZE${early ? ' · ⚠ Hindernis – Aufschlag vorher' : ''}${warn(tr.hit.x, tr.hit.y, w.radius || 4)}${wp.length ? ' · letzten Wegpunkt erneut wählen = Abfeuern' : ' · Feld wählen = Wegpunkt setzen'}`;
+        col = len > w.range ? new THREE.Color(2.5, 0.4, 0.3) : new THREE.Color(0.4, 2.2, 2.8);
+      } else { this.hoverInfo = `Lenkschuss: Wegpunkte auf Felder setzen (max. ${w.waypoints || 6}), dann „Abfeuern“`; col = new THREE.Color(0.4, 2.2, 2.8); }
+      if (this.needsReload(u)) this.hoverInfo += ' · Kein Geschoss geladen (N)';
+    } else if (u && this.phase === 'player' && !this.busy) {
+      if (it && it.kind === 'stunrod') {
+        const near = other && other.team === 'alien' && other.alive && this.isVisibleAlien(other) && Math.max(Math.abs(other.x - u.x), Math.abs(other.y - u.y)) <= 1;
+        if (near) { this.hoverInfo = `Schockstab: ${other.name} · Treffer ${Math.round(this.stunrodChance(u, other, it) * 100)} % · ${this.itemCost(u, item.id)} ZE${other.stun ? ` · Betäubung ${other.stun}/${other.hp}` : ''}`; col = new THREE.Color(0.6, 1.4, 3); }
+        else { this.hoverInfo = 'Schockstab: angrenzendes, sichtbares Alien wählen'; col = new THREE.Color(2, 0.6, 0.3); }
+      } else if (it && isInstantItem(it)) {
+        this.hoverInfo = it.kind === 'ammo' ? `${it.icon} ${it.name}: Ⓐ/Klick = nachladen (${this.reloadCost(u)} ZE)` : `${it.name}: Ⓐ/Klick = scannen (${this.itemCost(u, item.id)} ZE, Radius ${it.radius} F.)`;
+      } else if (it && it.kind === 'medkit') {
+        if (koHere && koHere.team === 'player' && !other) {
+          const nearKo = Math.max(Math.abs(koHere.x - u.x), Math.abs(koHere.y - u.y)) <= 1;
+          this.hoverInfo = nearKo ? `Medi-Kit: ${koHere.name} wecken (bewusstlos) – ${this.itemCost(u, item.id)} ZE` : `${koHere.name} ist bewusstlos – Medi-Kit nur auf angrenzende Felder`;
+          col = nearKo ? new THREE.Color(0.5, 2.8, 1.2) : new THREE.Color(2, 0.6, 0.3);
+        } else {
         const near = other && other.team === 'player' && other.alive && Math.max(Math.abs(other.x - u.x), Math.abs(other.y - u.y)) <= 1;
         const left = Game.cheats.allGear ? '∞' : item.uses;
         if (!near) { this.hoverInfo = `Medi-Kit (${left} Ladung${item.uses === 1 ? '' : 'en'}): eigenen Soldaten – selbst oder angrenzend – wählen`; col = new THREE.Color(2, 0.6, 0.3); }
         else if (other.hp >= other.maxHp) { this.hoverInfo = `${other.name}: unverletzt (${other.hp}/${other.maxHp} LP)`; col = new THREE.Color(1.5, 1.5, 1.5); }
         else { this.hoverInfo = `Medi-Kit: ${other === u ? 'selbst' : other.name} heilen (+${Math.min(it.heal, other.maxHp - other.hp)} LP) – ${this.itemCost(u, item.id)} ZE · ${left} Ladung${item.uses === 1 ? '' : 'en'}`; col = new THREE.Color(0.5, 2.8, 1.2); }
+        }
       } else if (it) {
-        this.grenadeArea.visible = true; this.grenadeArea.position.set(p.x, 0.07, p.z); this.grenadeArea.scale.setScalar(it.radius * TILE);
-        this.grenadeArea.material.color.set(ITEM_COLORS[it.kind] || ITEM_COLORS.grenade).multiplyScalar(2.2);
+        const area = it.radius || (it.kind === 'mine' ? it.trigger : 1);
+        showArea(x, y, area, it.kind);
         this.grenadeArea.material.opacity = it.kind === 'flare' ? 0.1 : 0.18;
-        const d = Math.hypot(x - u.x, y - u.y);
-        this.hoverInfo = d > THROW_RANGE ? 'Außer Reichweite' : `${it.name} werfen – ${this.itemCost(u, item.id)} ZE${this.grenadeTarget ? ' · erneut bestätigen' : ''}`;
-        col = d > THROW_RANGE ? new THREE.Color(2, 0.6, 0.3) : new THREE.Color(2.5, 1.2, 0.3);
+        const d = Math.hypot(x - u.x, y - u.y), range = it.throwRange || THROW_RANGE;
+        const verb = it.kind === 'mine' ? 'legen' : it.kind === 'charge' ? 'platzieren (zündet am Zugende)' : 'werfen';
+        this.hoverInfo = d > range ? `Außer Reichweite (max. ${range} F.)` : `${it.name} ${verb} – ${this.itemCost(u, item.id)} ZE${this.grenadeTarget ? ' · erneut bestätigen' : ''}${it.dmg ? warn(x, y, area) : ''}`;
+        col = d > range ? new THREE.Color(2, 0.6, 0.3) : new THREE.Color(2.5, 1.2, 0.3);
       } else if (other && other.team === 'alien' && this.isVisibleAlien(other)) {
         const c = this.hitChance(u, other, this.mode);
-        this.hoverInfo = `${other.name} · Treffer ${Math.round(c * 100)} % · ${this.modeCost(u, this.mode)} ZE${this.coverBetween(u, other) ? ' · in Deckung' : ''}${this.inSmoke(other.x, other.y) ? ' · im Rauch' : ''}`;
+        this.hoverInfo = `${other.name} · Treffer ${Math.round(c * 100)} % · ${this.modeCost(u, this.mode)} ZE${this.coverBetween(u, other) ? ' · in Deckung' : ''}${this.inSmoke(other.x, other.y) ? ' · im Rauch' : ''}${other.stun ? ` · ⚡ ${other.stun}/${other.hp}` : ''}`;
+        if (wEff?.radius) { showArea(other.x, other.y, wEff.radius, dk); this.hoverInfo += warn(other.x, other.y, wEff.radius); }
+        if (this.needsReload(u)) this.hoverInfo += ' · Magazin leer (N)';
         col = new THREE.Color(3, 0.4, 0.4);
+      } else if (!other && this.canGround(u) && (this.groundAim || (this.groundTarget && this.groundTarget.x === x && this.groundTarget.y === y) || !(this.reach && this.reach.dist[y * this.W + x] > 0 && this.reach.dist[y * this.W + x] < Infinity)) && this.vis[y * this.W + x] && !(x === u.x && y === u.y)) {
+        // Bodenziel
+        const r = wEff.radius || 1;
+        showArea(x, y, r, dk);
+        const see = this.canSee(u, x, y);
+        const c = see ? this.hitChance(u, { x, y, kneel: false, flying: false, ground: true }, this.mode) : 0;
+        this.hoverInfo = see ? `Bodenziel · Treffer ${Math.round(c * 100)} % · ${this.modeCost(u, this.mode)} ZE${warn(x, y, r)}${this.groundTarget?.x === x && this.groundTarget?.y === y ? ' · erneut wählen = Feuer' : ''}${this.needsReload(u) ? ' · Magazin leer (N)' : ''}` : 'Bodenziel: keine Sichtlinie';
+        col = see ? new THREE.Color(2.8, 1.2, 0.3) : new THREE.Color(2, 0.6, 0.3);
       } else if (!other && this.reach) {
         const d = this.reach.dist[y * this.W + x];
         if (d < Infinity && d > 0) {
@@ -2760,10 +2827,12 @@ export class Tactical {
           }
           this.pathDots.count = n;
           this.pathDots.instanceMatrix.needsUpdate = true; if (this.pathDots.instanceColor) this.pathDots.instanceColor.needsUpdate = true;
-          this.hoverInfo = `Bewegen: ${d} ZE${u.kneel ? ` (inkl. Aufstehen ${STAND_TU})` : ''} (Rest ${Math.max(0, left)})${this.pendingMove ? ' · erneut tippen zum Bestätigen' : ''}`;
+          this.hoverInfo = `Bewegen: ${d} ZE${u.kneel ? ` (inkl. Aufstehen ${STAND_TU})` : ''} (Rest ${Math.max(0, left)})${this.pendingMove ? ' · erneut tippen zum Bestätigen' : ''}${this.burning(x, y) ? ' · 🔥 Feuer!' : ''}${this.charges.some((q) => Math.hypot(q.x - x, q.y - y) <= ITEMS[q.id].radius) ? ' · ⚠ im Sprengradius' : ''}`;
           col = new THREE.Color(0.5, 2.5, 1.5);
-        } else if (this.explored[y * this.W + x]) { this.hoverInfo = 'Nicht erreichbar'; col = new THREE.Color(2, 0.6, 0.3); }
+        } else if (this.explored[y * this.W + x]) { this.hoverInfo = koHere ? `${koHere.name} · bewusstlos` : 'Nicht erreichbar'; col = new THREE.Color(2, 0.6, 0.3); }
       }
+      if (!it && this.groundTarget && !(this.groundTarget.x === x && this.groundTarget.y === y) && wEff?.radius) showArea(this.groundTarget.x, this.groundTarget.y, wEff.radius, dk);
+      if (this.charges.some((q) => Math.hypot(q.x - u.x, q.y - u.y) <= ITEMS[q.id].radius) && !this.hoverInfo.includes('Sprengradius')) this.hoverInfo += `${this.hoverInfo ? ' · ' : ''}⚠ ${u.name} im Sprengradius`;
     }
     this.syncPathLabels();
     this.cursorMesh.material.color.copy(col);
@@ -2781,6 +2850,12 @@ export class Tactical {
         <button class="btn icon" id="t-menu" title="Menü">☰</button>
       </div>
       <div class="tac-hover" id="t-hover"></div>
+      <div class="panel" id="t-guide" style="display:none;position:fixed;top:calc(96px + var(--safe-t, 0px));left:50%;transform:translateX(-50%);gap:6px;align-items:center;padding:6px 8px;max-width:94vw;flex-wrap:wrap;justify-content:center;z-index:5">
+        <span id="t-guide-txt" style="font-weight:600">⌖ Lenkschuss</span>
+        <button class="btn" data-a="g-fire" title="Rakete starten (F)">⤳ Abfeuern</button>
+        <button class="btn" data-a="g-undo" title="Letzten Wegpunkt zurücknehmen (Rechtsklick / Rücktaste / Ⓑ)">↶ Wegpunkt</button>
+        <button class="btn" data-a="g-cancel" title="Alle Wegpunkte verwerfen (Esc)">✖ Abbrechen</button>
+      </div>
       <div class="tac-bottom">
         <div class="panel unit-card" id="t-unit"></div>
         <div class="tac-actions" id="t-actions">
@@ -2798,7 +2873,7 @@ export class Tactical {
       </div>
       <div class="pad-hints" id="t-padhint"></div>`;
     // HUD-Buttons behalten keinen Fokus, damit Leertaste/Enter weiter als Tastenkürzel wirken
-    hud.querySelectorAll('.tac-actions .btn, #t-menu').forEach((b) => b.addEventListener('pointerdown', (e) => e.preventDefault()));
+    hud.querySelectorAll('.tac-actions .btn, #t-menu, #t-guide .btn').forEach((b) => b.addEventListener('pointerdown', (e) => e.preventDefault()));
     hud.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => { b.blur(); this.setMode(b.dataset.mode); }));
     hud.querySelectorAll('[data-a]').forEach((b) => b.addEventListener('click', () => { b.blur(); this.btnAction(b.dataset.a); }));
     hud.querySelectorAll('[data-belt]').forEach((b) => b.addEventListener('click', () => { b.blur(); this.setBelt(+b.dataset.belt); }));
@@ -2851,7 +2926,8 @@ export class Tactical {
     if (!a || this.busy || this.phase !== 'player') return;
     this.cursor = { x: a.x, y: a.y };
     this.camT.x = a.obj.position.x; this.camT.z = a.obj.position.z;
-    if (this.mode === 'belt') this.mode = 'snap';
+    if (this.mode === 'belt' || this.isGuided()) { this.mode = this.mode === 'belt' ? this.firstMode(this.selected) : this.mode; this.waypoints = []; }
+    this.groundTarget = null; this.groundAim = false;
     this.target = a; this.tgtRing.visible = true; sfx('select');
     this.updateHover(); this.refreshUi();
   }
@@ -2869,18 +2945,23 @@ export class Tactical {
     document.body.classList.toggle('alien-phase', this.phase !== 'player');
     const card = document.getElementById('t-unit');
     if (u) {
-      card.innerHTML = `<div class="uc-head"><span class="rank r${u.rank}">${'★'.repeat(u.rank) || '•'}</span><b>${u.name}</b><small>${RANKS[u.rank]} · ${WEAPONS[u.weapon].name}${u.kneel ? ' · kniend' : ''}</small></div>
+      const W0 = WEAPONS[u.weapon], ld = u.load && ITEMS[u.load.id];
+      const magTxt = W0.mag ? ` · <span class="${u.load?.rounds > 0 ? '' : 'bad'}">${ld?.icon || '▮'} ${u.load?.rounds ?? 0}/${W0.mag}${ld && u.load.id !== defaultLoad(u.weapon) ? ` ${ld.short}` : ''}</span>` : ' · ∞';
+      card.innerHTML = `<div class="uc-head"><span class="rank r${u.rank}">${'★'.repeat(u.rank) || '•'}</span><b>${u.name}</b><small>${RANKS[u.rank]} · ${W0.icon ? W0.icon + ' ' : ''}${W0.name}${magTxt}${u.kneel ? ' · kniend' : ''}</small></div>
         <div class="uc-bars"><label>ZE</label>${bar(Game.cheats.infTU ? u.maxTu : u.tu, u.maxTu, 'tu')}<label>LP</label>${bar(u.hp, u.maxHp, u.hp < u.maxHp * 0.4 ? 'bad' : 'good')}</div>
-        <div class="uc-extra uc-belt">Gürtel: ${(u.belt || []).filter((b) => b && ITEMS[b.id]).map((b) => `<span>${ITEMS[b.id].icon} ${ITEMS[b.id].short}${ITEMS[b.id].kind === 'medkit' ? ` (${Game.cheats.allGear ? '∞' : b.uses})` : ''}</span>`).join(' · ') || 'leer'}</div>
-        <div class="uc-extra">Kills: ${u.kills} · Treff: ${u.acc}${this.inSmoke(u.x, u.y) ? ' · im Rauch' : ''}</div>`;
-      const w = WEAPONS[u.weapon];
+        <div class="uc-extra uc-belt">Gürtel: ${(u.belt || []).filter((b) => b && ITEMS[b.id]).map((b) => `<span>${ITEMS[b.id].icon} ${ITEMS[b.id].short}${ITEMS[b.id].kind === 'medkit' ? ` (${Game.cheats.allGear ? '∞' : b.uses})` : ITEMS[b.id].kind === 'ammo' ? ` ${b.rounds ?? W0.mag}` : ''}</span>`).join(' · ') || 'leer'}</div>
+        <div class="uc-extra">Kills: ${u.kills}${u.captures ? ` · Gefangene: ${u.captures}` : ''} · Treff: ${u.acc}${u.stun ? ` · ⚡ ${u.stun}` : ''}${this.inSmoke(u.x, u.y) ? ' · im Rauch' : ''}${this.burning(u.x, u.y) ? ' · 🔥' : ''}</div>`;
+      const w = WEAPONS[u.weapon], empty = this.needsReload(u);
+      const LBL = { snap: '⌖ Schnellschuss', aimed: '⌖ Gezielt', auto: '⌖ Salve' };
       for (const m of ['snap', 'aimed', 'auto']) {
         const b = document.querySelector(`[data-mode="${m}"]`);
         const ok = !!w[m];
         b.disabled = !ok || this.phase !== 'player';
         b.classList.toggle('active', this.mode === m);
-        const chance = this.target && ok ? ` · ${Math.round(this.hitChance(u, this.target, m) * 100)}%` : '';
-        document.getElementById('m-' + m).textContent = ok ? `${this.modeCost(u, m)} ZE${chance}` : '—';
+        const lb = w[m]?.guided ? '⌖ Lenkschuss' : LBL[m];
+        if (b.firstElementChild && b.firstElementChild.textContent !== lb) b.firstElementChild.textContent = lb;
+        const chance = this.target && ok && !w[m].guided ? ` · ${Math.round(this.hitChance(u, this.target, m) * 100)}%` : '';
+        document.getElementById('m-' + m).textContent = ok ? (empty ? 'leer' : `${this.modeCost(u, m)} ZE${chance}`) : '—';
       }
       // Gürtel: bis zu BELT_SLOTS Buttons (leere Plätze ausgeblendet)
       const slots = this.beltSlots(u);
@@ -2888,18 +2969,34 @@ export class Tactical {
         const bt = document.querySelector(`[data-belt="${k}"]`); if (!bt) continue;
         const b = this.beltEntry(u, k), it = b && ITEMS[b.id];
         bt.style.display = it || (!slots.length && k === 0) ? '' : 'none';
-        const html = it ? `<b><span class="bi">${it.icon}</span>${it.short}</b><small>${this.itemCost(u, b.id)} ZE${it.kind === 'medkit' ? ` · ${Game.cheats.allGear ? '∞' : b.uses}×` : ''}</small>` : '<b>Gürtel</b><small>leer</small>';
+        const html = it ? `<b><span class="bi">${it.icon}</span>${it.short}${it.kind === 'ammo' ? ` ${b.rounds ?? w.mag}` : ''}</b><small>${it.kind === 'ammo' ? `Laden · ${this.reloadCost(u)} ZE` : `${this.itemCost(u, b.id)} ZE`}${it.kind === 'medkit' ? ` · ${Game.cheats.allGear ? '∞' : b.uses}×` : ''}</small>` : '<b>Gürtel</b><small>leer</small>';
         if (bt._h !== html) { bt.innerHTML = html; bt._h = html; }
-        bt.title = it ? `${it.name} (Taste ${k + 4})` : 'Gürtel leer';
+        bt.title = it ? `${it.name}${it.kind === 'ammo' ? ' – antippen = sofort nachladen' : it.kind === 'scanner' ? ' – antippen = scannen' : ''} (Taste ${k + 4})` : 'Gürtel leer';
         bt.disabled = !it || this.phase !== 'player' || this.busy;
         bt.classList.toggle('active', this.mode === 'belt' && this.beltSlot === k && !!it);
       }
       const bi = this.mode === 'belt' ? this.beltEntry(u) : null;
       const fb = document.querySelector('[data-a="fire"]');
-      fb.disabled = this.phase !== 'player' || !((this.target && this.mode !== 'belt') || (bi && this.grenadeTarget));
+      const guided = this.isGuided(u), reloadNow = !bi && empty;
+      fb.disabled = this.phase !== 'player' || this.busy || !(reloadNow ? this.autoAmmoSlot(u) != null : guided ? this.waypoints.length > 0 : ((this.target || this.groundTarget) && this.mode !== 'belt') || (bi && this.grenadeTarget) || (!bi && this.canGround(u)));
+      const fl = reloadNow ? 'Nachladen' : guided ? 'Start' : 'FEUER';
+      if (fb.firstElementChild && fb.firstElementChild.textContent !== fl) fb.firstElementChild.textContent = fl;
       { const mk = document.getElementById('m-kneel'); if (mk) { mk.textContent = `${u.kneel ? STAND_TU : KNEEL_TU} ZE`; mk.previousElementSibling.textContent = u.kneel ? 'Aufstehen' : 'Knien'; } }
-      document.getElementById('m-fire').textContent = this.target && this.mode !== 'belt' ? `${Math.round(this.hitChance(u, this.target, this.mode) * 100)} %` : bi && this.grenadeTarget ? 'werfen' : bi && ITEMS[bi.id].kind === 'medkit' ? 'Soldat wählen' : 'Ziel wählen';
-    }
+      document.getElementById('m-fire').textContent = reloadNow ? (this.autoAmmoSlot(u) != null ? `${this.reloadCost(u)} ZE` : 'kein Magazin') : guided ? `${this.waypoints.length} WP` : this.target && this.mode !== 'belt' ? `${Math.round(this.hitChance(u, this.target, this.mode) * 100)} %` : this.groundTarget && !bi ? 'Bodenziel' : bi && this.grenadeTarget ? (ITEMS[bi.id].kind === 'mine' ? 'legen' : 'werfen') : bi && ITEMS[bi.id].kind === 'medkit' ? 'Soldat wählen' : bi && ITEMS[bi.id].kind === 'stunrod' ? 'Alien wählen' : this.groundAim ? 'Feld wählen' : this.canGround(u) ? 'Ziel/Boden' : 'Ziel wählen';
+      // Lenkschuss-Leiste
+      const gp = document.getElementById('t-guide');
+      if (gp) {
+        const show = guided && this.phase === 'player';
+        gp.style.display = show ? 'flex' : 'none';
+        if (show) {
+          const wm = WEAPONS[u.weapon];
+          document.getElementById('t-guide-txt').textContent = `⌖ Lenkschuss · ${this.waypoints.length}/${wm.waypoints || 6} Wegpunkte`;
+          gp.querySelector('[data-a="g-fire"]').disabled = this.busy || !this.waypoints.length || empty;
+          gp.querySelector('[data-a="g-undo"]').disabled = this.busy || !this.waypoints.length;
+          gp.querySelector('[data-a="g-cancel"]').disabled = this.busy || !this.waypoints.length;
+        }
+      }
+    } else { const gp = document.getElementById('t-guide'); if (gp) gp.style.display = 'none'; }
     document.querySelectorAll('.tac-actions .btn').forEach((b) => { if (!b.dataset.mode && b.dataset.belt == null && b.dataset.a !== 'fire') b.disabled = this.phase !== 'player' || this.busy && b.dataset.a !== 'abort'; });
     document.getElementById('m-end').textContent = this.phase === 'player' ? `Runde ${this.turn}` : '…';
     this.updateAlienBadges();
@@ -2966,7 +3063,7 @@ export class Tactical {
       this.pointers.delete(e.pointerId);
       if (!p || p.moved || this.pointers.size) return;
       if (performance.now() - p.t > 700) return;
-      if (p.btn === 2) { this.clearTarget(); this.updateHover(); this.refreshUi(); return; }
+      if (p.btn === 2) { if (this.isGuided() && this.guidedUndo()) return; this.clearTarget(); this.updateHover(); this.refreshUi(); return; }
       if (p.btn > 0) return;
       const c = pick(e.clientX, e.clientY);
       if (!c) return;
@@ -2988,7 +3085,7 @@ export class Tactical {
       if (this.phase !== 'player' || this.busy) return;
       const map = {
         A: () => this.actAt(this.cursor.x, this.cursor.y, false),
-        B: () => { this.clearTarget(); this.mode = this.mode === 'belt' ? 'snap' : this.mode; this.updateHover(); this.refreshUi(); },
+        B: () => { if (this.isGuided() && this.guidedUndo()) return; this.clearTarget(); this.mode = this.mode === 'belt' ? this.firstMode(this.selected) : this.mode; this.updateHover(); this.refreshUi(); },
         X: () => this.cycleMode(), Y: () => this.toggleKneel(),
         LB: () => this.cycleUnit(-1), RB: () => this.cycleUnit(1),
         LEFT: () => this.cycleAlien(-1), RIGHT: () => this.cycleAlien(1),
@@ -3001,13 +3098,18 @@ export class Tactical {
     this.unsub.push(Input.on('keydown', (code, e) => {
       if (code === 'Tab' && this.active) e?.preventDefault();
       if (!this.active || anyModalOpen()) return;
-      if (code === 'Escape') { if (this.target || this.mode === 'belt') { this.clearTarget(); this.mode = 'snap'; this.updateHover(); this.refreshUi(); } else this.hooks.openMenu(); return; }
+      if (code === 'Escape') {
+        if (this.isGuided() && this.waypoints.length) { this.waypoints = []; this.updateHover(); this.refreshUi(); return; }
+        if (this.target || this.mode === 'belt' || this.groundTarget || this.groundAim) { this.clearTarget(); this.mode = this.mode === 'belt' ? this.firstMode(this.selected) : this.mode; this.updateHover(); this.refreshUi(); } else this.hooks.openMenu();
+        return;
+      }
       if (this.phase !== 'player' || this.busy) return;
       const map = {
         Tab: () => { e?.preventDefault(); this.cycleUnit(e?.shiftKey ? -1 : 1); },
         Digit1: () => this.setMode('snap'), Digit2: () => this.setMode('aimed'), Digit3: () => this.setMode('auto'), Digit4: () => this.setBelt(0), Digit5: () => this.setBelt(1), Digit6: () => this.setBelt(2), KeyG: () => this.setMode('belt'),
         KeyF: () => this.btnAction('fire'), KeyK: () => this.toggleKneel(), KeyC: () => this.toggleKneel(), Enter: () => this.confirmEndTurn(),
         Space: () => this.recenter(), KeyT: () => this.cycleAlien(1),
+        KeyN: () => this.reloadAuto(), Backspace: () => { if (this.isGuided()) this.guidedUndo(); },
       };
       map[code]?.();
     }));
@@ -3117,6 +3219,8 @@ export class Tactical {
     this.fx = this.fx.filter((f) => f(dt));
     if (this.water) this.water.time.value += dt; // Wellen der Wasserflächen
     if (this.smokes.length || this.flares.length) this.updateEffects(dt, time);
+    if (this.fireCount || this.fireLight.intensity) this.updateFire(dt);
+    if (this.blips.length) for (const b of this.blipRings) if (b.visible) { const s = 1 + 0.25 * Math.sin(time * 5); b.scale.setScalar(s); b.material.opacity = 0.5 + 0.4 * Math.sin(time * 5); }
     this.updateBuildings();
     this.placePathLabels();
     this.updateFog(dt);
@@ -3144,6 +3248,7 @@ export class Tactical {
     this.scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     this.envRT?.dispose(); this.fogTex.dispose(); this.water?.mask.dispose(); this.groundTex.dispose(); this.particleTex?.dispose(); this.smokeTex?.dispose();
     this.smokePool?.forEach((s) => s.material.dispose());
+    this.flames?.forEach((s) => s.material.dispose());
     this.sun?.dispose?.();
     this.scene.traverse((o) => { if (o.isInstancedMesh) o.dispose(); if (o.material && !o.isSprite) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (!m.userData.shared) m.dispose(); }); });
     document.getElementById('hud').innerHTML = '';

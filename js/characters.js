@@ -117,13 +117,13 @@ export async function loadCharacterLibrary({ quality = 'high', bases = CHARACTER
 }
 
 /** Fremde (importierte) Figur registrieren. Ohne eigene Clips werden die CC0-Clips von `animSource` retargetet. */
-export function registerCharacterBase(id, gltf, { sex = 'm', animSource = null } = {}) {
+export function registerCharacterBase(id, gltf, { sex = 'm', animSource = null, physique = true } = {}) {
   let animations = gltf.animations || [];
   if ((!animations.length || animSource) && (animSource || LIB.bases.size)) {
     const src = LIB.bases.get(animSource || [...LIB.bases.keys()][0]);
     if (src) animations = retargetClips(src, gltf.scene);
   }
-  const base = { id, sex, gltf, template: gltf.scene, clips: new Map(animations.map((c) => [c.name, c])), an: null, cache: new Map(), mats: {} };
+  const base = { id, sex, physique, gltf, template: gltf.scene, clips: new Map(animations.map((c) => [c.name, c])), an: null, cache: new Map(), mats: {} };
   LIB.bases.set(id, base);
   return base;
 }
@@ -289,17 +289,23 @@ function patchMaterial(mat, { key, defines = {}, uniforms = {}, vHead = '', vMai
 function makeSkinMaterial(src) {
   const T = textures();
   const m = new THREE.MeshPhysicalMaterial({
-    name: 'skin', map: src.map, normalMap: src.normalMap, normalScale: src.normalScale ? src.normalScale.clone() : new THREE.Vector2(1, 1),
+    name: 'skin', map: src.map, normalMap: src.normalMap, normalScale: new THREE.Vector2(0.6, 0.6),
     roughnessMap: src.roughnessMap, roughness: 1, metalness: 0, color: src.color.clone(),
-    sheen: 0.3, sheenRoughness: 0.75, sheenColor: new THREE.Color(1.0, 0.86, 0.8), specularIntensity: 0.7, ior: 1.4,
+    sheen: 0.18, sheenRoughness: 0.8, sheenColor: new THREE.Color(1.0, 0.86, 0.8), specularIntensity: 0.55, ior: 1.4,
   });
   return patchMaterial(m, {
     key: 'aegis-skin-1', defines: { SKIN_SSS: '', SKIN_DETAIL: '' },
     uniforms: { uSssColor: { value: new THREE.Color(1.0, 0.32, 0.18) }, uSssWrap: { value: 0.55 }, uSssTrans: { value: 0.55 },
-      uDetailMap: { value: T.pores }, uDetailRepeat: { value: new THREE.Vector2(44, 44) }, uDetailStrength: { value: 0.2 }, uRoughVar: { value: 0.45 } },
+      uDetailMap: { value: T.pores }, uDetailRepeat: { value: new THREE.Vector2(44, 44) }, uDetailStrength: { value: 0.09 }, uRoughVar: { value: 0.2 }, uSkinSmooth: { value: 0.65 } },
     vHead: 'attribute float aThin; varying float vThin;', vMain: 'vThin = aThin;',
-    fHead: 'varying float vThin; uniform vec3 uSssColor; uniform float uSssWrap; uniform float uSssTrans; uniform sampler2D uDetailMap; uniform vec2 uDetailRepeat; uniform float uDetailStrength; uniform float uRoughVar;',
+    fHead: 'varying float vThin; uniform vec3 uSssColor; uniform float uSssWrap; uniform float uSssTrans; uniform sampler2D uDetailMap; uniform vec2 uDetailRepeat; uniform float uDetailStrength; uniform float uRoughVar; uniform float uSkinSmooth;',
     fAfter: {
+      map_fragment: `
+      #ifdef USE_MAP
+      { // klare Haut: Albedo mit unscharfer Mip-Stufe mischen (entfernt Flecken, Farbverlauf bleibt)
+        vec4 blurC = texture2D( map, vMapUv, 3.5 );
+        diffuseColor.rgb = mix( diffuseColor.rgb, blurC.rgb * diffuse, uSkinSmooth ); }
+      #endif`,
       normal_fragment_maps: `
       #if defined( SKIN_DETAIL ) && defined( USE_NORMALMAP_TANGENTSPACE )
       { vec4 dt = texture2D( uDetailMap, vNormalMapUv * uDetailRepeat );
@@ -360,6 +366,55 @@ function blendMatrix(out, Mj, idx4, w4) {
   for (let k = 0; k < 4; k++) { const w = w4[k]; if (!w) continue; const s = Mj[idx4[k]].elements; for (let i = 0; i < 16; i++) e[i] += w * s[i]; }
   return out;
 }
+// Athletische Statur (einmal je Basis, auf Haut UND Kleidung, entlang der Normalen, in Metern):
+// Werte = PHYSIQUE[sex]; Muskelregionen per weicher Gewichtung, danach Laplace-geglättet → keine Kanten.
+export const PHYSIQUE = {
+  m: { deltoid: 0.013, arm: 0.011, forearm: 0.007, chest: 0.013, lats: 0.014, traps: 0.007, neck: 0.005, quads: 0.011, calves: 0.009, waistFront: -0.016, waistSide: -0.008 },
+  f: { deltoid: 0.006, arm: 0.005, forearm: 0.003, chest: 0.002, lats: 0.006, traps: 0.003, neck: 0.0, quads: 0.007, calves: 0.006, waistFront: -0.022, waistSide: -0.011 },
+};
+function applyPhysique(sex, { P, N, reg, side, n, index, key, lscale, meshOf }) {
+  const c = PHYSIQUE[sex] || PHYSIQUE.m, d = new Float32Array(n);
+  const shY = (key.shoulderL.y + key.shoulderR.y) / 2, hipsY = key.hips.y;
+  const g = (x, m, w) => Math.exp(-(((x - m) / w) ** 2));
+  const t01 = (i, A, B) => { const dx = B.x - A.x, dy = B.y - A.y, dz = B.z - A.z; return clamp(((P[i * 3] - A.x) * dx + (P[i * 3 + 1] - A.y) * dy + (P[i * 3 + 2] - A.z) * dz) / (dx * dx + dy * dy + dz * dz), 0, 1); };
+  for (let i = 0; i < n; i++) {
+    const y = P[i * 3 + 1], nx = N[i * 3], ny = N[i * 3 + 1], nz = N[i * 3 + 2], s = side[i] || (P[i * 3] > 0 ? 1 : -1), r = reg[i];
+    const L = s > 0 ? 'L' : 'R', lat = Math.max(0, nx * s);
+    let v = 0;
+    if (r === R.upperarm || r === R.shoulder) {
+      const t = t01(i, key['shoulder' + L], key['elbow' + L]);
+      v += c.arm * Math.pow(Math.sin(Math.PI * t), 0.8) * (r === R.upperarm ? 1 : 0.3);
+      v += c.deltoid * (1 - smooth01(0.05, 0.5, t)) * Math.max(lat, ny * 0.6);
+    }
+    if (r === R.forearm) v += c.forearm * (1 - smooth01(0.15, 0.8, t01(i, key['elbow' + L], key['wrist' + L])));
+    if (r === R.torso || r === R.shoulder || r === R.hips) {
+      v += c.chest * Math.max(0, nz) * g(y, shY - 0.13, 0.08);
+      v += c.lats * Math.abs(nx) * g(y, shY - 0.17, 0.09) * (nz < 0.3 ? 1 : 0.5);
+      v += c.traps * Math.max(0, ny) * smooth01(shY - 0.09, shY - 0.01, y);
+      const w = g(y, hipsY + 0.13, 0.085);
+      v += c.waistFront * Math.max(0, nz) * w + c.waistSide * Math.abs(nx) * w;
+    }
+    if (r === R.neck) v += c.neck;
+    if (r === R.thigh) v += c.quads * Math.pow(Math.sin(Math.PI * t01(i, key['hip' + L], key['knee' + L])), 0.7) * (0.55 + 0.45 * Math.max(0, nz + lat));
+    if (r === R.shin) v += c.calves * Math.max(0, -nz) * Math.sin(Math.PI * clamp(t01(i, key['knee' + L], key['ankle' + L]) / 0.6, 0, 1));
+    d[i] = v;
+  }
+  // glätten (Nachbarschaft über den gemeinsamen Index; Haut und Kleidung getrennt)
+  const nb = Array.from({ length: n }, () => []);
+  for (let t = 0; t < index.length; t += 3) for (let e = 0; e < 3; e++) { const a = index[t + e], b = index[t + (e + 1) % 3]; nb[a].push(b); nb[b].push(a); }
+  for (let it = 0; it < 4; it++) { const cp = d.slice(); for (let i = 0; i < n; i++) { const l = nb[i]; if (!l.length) continue; let sum = 0; for (const j of l) sum += cp[j]; d[i] = cp[i] * 0.4 + (sum / l.length) * 0.6; } }
+  for (const [mesh, off, cnt] of meshOf) {
+    const g2 = mesh.geometry, pa = g2.attributes.position, na = g2.attributes.normal, out = new Float32Array(cnt * 3), v = new THREE.Vector3(), nn = new THREE.Vector3();
+    for (let l = 0; l < cnt; l++) {
+      const i = off + l, k = d[i] / (lscale[i] || 1);
+      v.fromBufferAttribute(pa, l); nn.fromBufferAttribute(na, l).normalize();
+      out[l * 3] = v.x + nn.x * k; out[l * 3 + 1] = v.y + nn.y * k; out[l * 3 + 2] = v.z + nn.z * k;
+      P[i * 3] += N[i * 3] * d[i]; P[i * 3 + 1] += N[i * 3 + 1] * d[i]; P[i * 3 + 2] += N[i * 3 + 2] * d[i];
+    }
+    g2.setAttribute('position', new THREE.BufferAttribute(out, 3));
+    const ar = g2.attributes.aRest; if (ar) { for (let l = 0; l < cnt; l++) ar.setXYZ(l, P[(off + l) * 3], P[(off + l) * 3 + 1], P[(off + l) * 3 + 2]); ar.needsUpdate = true; }
+  }
+}
 function analyze(base) {
   if (base.an) return base.an;
   const T = base.template;
@@ -380,7 +435,7 @@ function analyze(base) {
   const nSkin = skin.geometry.attributes.position.count;
   const n = surfaces.reduce((a, m) => a + m.geometry.attributes.position.count, 0);
   const P = new Float32Array(n * 3), N = new Float32Array(n * 3), reg = new Uint8Array(n), side = new Int8Array(n), srcOf = new Uint8Array(n);
-  const SI = new Uint16Array(n * 4), SW = new Float32Array(n * 4), UV = new Float32Array(n * 2), indexList = [];
+  const SI = new Uint16Array(n * 4), SW = new Float32Array(n * 4), UV = new Float32Array(n * 2), indexList = [], lscale = new Float32Array(n), meshOf = [];
   const A = new THREE.Matrix4(), nm = new THREE.Matrix3(), v = new THREE.Vector3(), i4 = [0, 0, 0, 0], w4 = [0, 0, 0, 0];
   let off = 0;
   surfaces.forEach((mesh, si0) => {
@@ -390,7 +445,7 @@ function analyze(base) {
     for (let l = 0; l < c; l++) {
       const i = off + l; let best = 0, bw = -1;
       for (let k = 0; k < 4; k++) { i4[k] = Math.max(0, remap[si.getComponent(l, k)]); w4[k] = sw.getComponent(l, k); SI[i * 4 + k] = i4[k]; SW[i * 4 + k] = w4[k]; if (w4[k] > bw) { bw = w4[k]; best = i4[k]; } }
-      blendMatrix(A, Mj, i4, w4).multiply(mesh.bindMatrix);
+      blendMatrix(A, Mj, i4, w4).multiply(mesh.bindMatrix); lscale[i] = Math.hypot(A.elements[0], A.elements[1], A.elements[2]);
       v.fromBufferAttribute(pos, l).applyMatrix4(A); P[i * 3] = v.x; P[i * 3 + 1] = v.y; P[i * 3 + 2] = v.z; rp.set([v.x, v.y, v.z], l * 3);
       nm.getNormalMatrix(A); v.fromBufferAttribute(nor, l).applyMatrix3(nm).normalize(); N[i * 3] = v.x; N[i * 3 + 1] = v.y; N[i * 3 + 2] = v.z; rn.set([v.x, v.y, v.z], l * 3);
       if (uva) { UV[i * 2] = uva.getX(l); UV[i * 2 + 1] = uva.getY(l); }
@@ -399,7 +454,7 @@ function analyze(base) {
     const ix = g.index ? g.index.array : Uint32Array.from({ length: c }, (_, k) => k);
     for (let k = 0; k < ix.length; k++) indexList.push(ix[k] + off);
     if (si0 > 0 && !g.attributes.aRest) { g.setAttribute('aRest', new THREE.BufferAttribute(rp, 3)); g.setAttribute('aRestN', new THREE.BufferAttribute(rn, 3)); }
-    off += c;
+    meshOf.push([mesh, off, c]); off += c;
   });
   const index = Uint32Array.from(indexList);
   const skinIndex = skin.geometry.index ? skin.geometry.index.array : Uint32Array.from({ length: nSkin }, (_, k) => k);
@@ -423,6 +478,7 @@ function analyze(base) {
   for (let i = 0; i < n; i++) if (reg[i] === R.head && P[i * 3 + 2] > eyeC.z - 0.03 && Math.abs(P[i * 3]) < 0.02 && (!chin || P[i * 3 + 1] < chin.y)) chin = new THREE.Vector3(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
   const torsoZ = []; for (let i = 0; i < n; i++) if (reg[i] === R.torso && Math.abs(P[i * 3 + 1] - key.spine01.y) < 0.08) torsoZ.push(P[i * 3 + 2]);
   const zc = torsoZ.length ? (Math.min(...torsoZ) + Math.max(...torsoZ)) / 2 : key.spine01.z;
+  if (base.physique !== false) applyPhysique(base.sex, { P, N, reg, side, n, index, key, lscale, meshOf });
   // dünne Stellen (Ohren, Nase, Finger) für den Durchschein-Anteil
   const thin = new Float32Array(nSkin);
   for (let i = 0; i < nSkin; i++) {
@@ -447,6 +503,10 @@ function analyze(base) {
     hand[s] = { palm: palm.applyMatrix4(inv), d: d.applyQuaternion(qi), a: a.applyQuaternion(qi), n: pn.applyQuaternion(qi), len };
   }
   const spineFwdLocal = new THREE.Vector3(0, 0, 1).applyQuaternion(wquat(bone('spine01')).invert());
+  // Sohlenrichtung (Ferse→Zehen, waagerecht in Ruhepose) im lokalen Raum des Fuß-Bones
+  const soleLocal = {};
+  for (const s of ['L', 'R']) { const f = bone('foot.' + s), t = bone('toe3-1.' + s); if (!f) continue;
+    const d = t ? wpos(t).sub(wpos(f)) : new THREE.Vector3(0, 0, 1); d.y = 0; d.normalize(); soleLocal[s] = d.applyQuaternion(wquat(f).invert()); }
   const headRestInv = new THREE.Matrix4().copy(bone('head').matrixWorld).invert();
   const height = topY;
   // Ruhepose sichern, natürliche Schrittgeschwindigkeiten messen, Ruhepose wiederherstellen
@@ -472,7 +532,7 @@ function analyze(base) {
   for (const [o, p, q, s] of restLocal) { o.position.copy(p); o.quaternion.copy(q); o.scale.copy(s); }
   T.updateMatrixWorld(true);
   base.an = { skin, skel, bones, bi, bone, byMat, Mj, P, N, SI, SW, UV, reg, side, srcOf, n, nSkin, index, skinIndex, key, eyeC, headBox, topY, chin, zc, hand,
-    spineFwdLocal, headRestInv, hairMesh, hairRest, speeds, height };
+    spineFwdLocal, soleLocal, headRestInv, hairMesh, hairRest, speeds, height };
   return base.an;
 }
 
@@ -623,6 +683,7 @@ function buildFootwear(base, side, kind, clearance, lay) {
   }
   const soleY = Math.min(...F.map((p) => p[1])), heelZ = Math.min(...F.map((p) => p[2])), toeZ = Math.max(...F.map((p) => p[2]));
   const footTop = Math.max(...F.map((p) => p[1]));
+  if (globalThis.__g5dbg) globalThis.__g5dbg.push({ side, nF: F.length, soleY, heelZ, toeZ, footTop, X: X.toArray(), Z: Z.toArray(), O: O.toArray() });
   const NB = 12, L = toeZ - heelZ;
   const bins = Array.from({ length: NB }, (_, k) => ({ z: heelZ + (k + 0.5) / NB * L, x0: 1, x1: -1, h: soleY + 0.04 }));
   for (const [x, y, z] of F) { const b = bins[clamp(Math.floor((z - heelZ) / L * NB), 0, NB - 1)]; if (y < soleY + 0.045) { b.x0 = Math.min(b.x0, x); b.x1 = Math.max(b.x1, x); } if (z > 0.02 || y < 0.12) b.h = Math.max(b.h, y); }
@@ -729,6 +790,16 @@ function buildFootwear(base, side, kind, clearance, lay) {
     // Zehen-Gewichte auf den Fuß-Bone legen: Schuh bleibt formstabil
     const fIdx = an.bi('foot.' + side), fb = an.bones[fIdx];
     for (let q2 = 0; q2 < SI.length; q2++) { const b = an.bones[SI[q2]]; if (b !== fb && SW[q2] > 0) { let x = b.parent, inFoot = false; while (x && x.isBone) { if (x === fb) { inFoot = true; break; } x = x.parent; } if (inFoot) SI[q2] = fIdx; } }
+    // Vorderfuß, Sohle und Fußteil starr am Fuß-Bone (sonst flacht der Schuh beim Beugen des Sprunggelenks ab); nur der Schaft folgt dem Unterschenkel
+    for (let v = 0; v < SI.length / 4; v++) {
+      const y = pos[v * 3 + 1], zl = (pos[v * 3] - O.x) * Z.x + (pos[v * 3 + 2] - O.z) * Z.z;
+      const r = Math.max(1 - smooth01(soleTop + 0.035, soleTop + 0.11, y), smooth01(0.015, 0.05, zl));
+      if (r <= 0) continue;
+      let slot = -1; for (let q2 = 0; q2 < 4; q2++) { SW[v * 4 + q2] *= 1 - r; if (SI[v * 4 + q2] === fIdx && SW[v * 4 + q2] > 0) slot = q2; }
+      if (slot < 0) { slot = 0; for (let q2 = 1; q2 < 4; q2++) if (SW[v * 4 + q2] < SW[v * 4 + slot]) slot = q2; const lost = SW[v * 4 + slot]; SW[v * 4 + slot] = 0; SI[v * 4 + slot] = fIdx; const rest = 1 - r - lost; for (let q2 = 0; q2 < 4; q2++) if (q2 !== slot && rest > 0) SW[v * 4 + q2] *= (1 - r) / Math.max(1e-6, 1 - r - lost) * 0 + (rest > 0 ? (1 - r) / (1 - r) : 0) * 1; }
+      SW[v * 4 + slot] += r;
+      let sum = 0; for (let q2 = 0; q2 < 4; q2++) sum += SW[v * 4 + q2]; for (let q2 = 0; q2 < 4; q2++) SW[v * 4 + q2] /= sum || 1;
+    }
     out[k] = finalizeSkinned(an, { pos: Float32Array.from(pos), nrm: Float32Array.from(nrm), uv: Float32Array.from(merged.attributes.uv.array), index: null, SI, SW });
     gs.forEach((g) => g.dispose()); merged.dispose(); list.forEach((g) => g.dispose());
   }
@@ -778,7 +849,7 @@ function buildHelmet(base, type) {
   const box = (w, h, d, p, lookOut, tiltX = 0) => { const bg = new THREE.BoxGeometry(w, h, d); if (tiltX) bg.rotateX(tiltX); const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), lookOut); bg.applyQuaternion(q); bg.translate(p.x, p.y, p.z); return bg.toNonIndexed(); };
   if (!power) {
     const pf = at(0, f + 0.022, 0.004), nf = pf.clone().sub(c).setY(0).normalize();
-    parts.dark.push(box(0.05, 0.035, 0.012, pf, nf, -0.25));
+    parts.dark.push(box(0.038, 0.026, 0.009, pf, nf, -0.25));
     for (const sgn of [-1, 1]) {
       for (let k = 0; k < 3; k++) { const ph = sgn * (Math.PI / 2 + (k - 1) * 0.28); const y = rimY(ph) + 0.022; const p = at(ph, y, 0.003); const nrm = p.clone().sub(c).setY(0).normalize(); parts.dark.push(box(0.03, 0.016, 0.01, p, nrm)); }
       // Kinnriemen
@@ -922,7 +993,7 @@ function outfitParts(base, o) {
         const x = Math.abs(an.P[i * 3]), y = an.P[i * 3 + 1], front = an.P[i * 3 + 2] > an.zc;
         if (!torsoRegs.has(an.reg[i]) || y < bottom) return false;
         if (an.reg[i] === R.neck) return y < shY + 0.06;
-        if (x >= 0.05 && x <= (power ? 0.2 : 0.115) && y <= shY + 0.08 && (power || an.srcOf[i])) return true; // Schultergurte / Schulterteil
+        if (power && x >= 0.05 && x <= 0.2 && y <= shY + 0.08) return true; // Schulterteil (Power)
         if (x < plateW) return y <= (front ? frontTop : backTop);
         return y <= sideTop;
       };
@@ -940,6 +1011,7 @@ function outfitParts(base, o) {
       return buildShell(an, all3(ok), outer, offL(0.009), { smooth: power ? 1 : 2 });
     });
     res.skinned.push({ geo: vest, mat: power ? 'plate' : 'vest', shadow: true });
+    if (personal) res.skinned.push({ geo: cached(base, 'straps:' + layKey, () => buildStraps(an, lay, shY, hipsY)), mat: 'vest', shadow: !q });
     // Taschen (Magazintaschen vorn, Mehrzwecktaschen seitlich)
     if (personal) {
       const pouches = cached(base, 'pouches', () => {
@@ -1010,6 +1082,43 @@ function outfitParts(base, o) {
     }
   }
   return res;
+}
+
+/** Schultergurte des Plattenträgers: Band über die Schulter, Profil aus der Körperoberfläche abgetastet */
+function buildStraps(an, lay, shY, hipsY) {
+  const geos = [];
+  for (const S of [1, -1]) {
+    const x0 = S * 0.088, C = new THREE.Vector3(x0, shY - 0.1, an.zc), pts = [];
+    for (let k = 0; k <= 16; k++) {
+      const a = -Math.PI / 2 + (Math.PI * k) / 16, dir = new THREE.Vector3(0, Math.cos(a) * 0 + Math.sin(-a) * 0, 0).set(0, Math.cos(a), Math.sin(a));
+      let best = 0.05;
+      for (let i = 0; i < an.n; i++) {
+        if (an.reg[i] !== R.torso && an.reg[i] !== R.shoulder && an.reg[i] !== R.neck) continue;
+        const px = an.P[i * 3] + an.N[i * 3] * lay(i); if (Math.abs(px - x0) > 0.018) continue;
+        const dy = an.P[i * 3 + 1] + an.N[i * 3 + 1] * lay(i) - C.y, dz = an.P[i * 3 + 2] + an.N[i * 3 + 2] * lay(i) - C.z;
+        const along = dy * dir.y + dz * dir.z, perp = Math.abs(dy * dir.z - dz * dir.y);
+        if (along > 0 && perp < 0.015) best = Math.max(best, along);
+      }
+      pts.push(new THREE.Vector3(x0, C.y + dir.y * (best + 0.013), C.z + dir.z * (best + 0.013)));
+    }
+    // nur der obere Bogen (vorn bis hinten oberhalb der Platten)
+    const arc = pts.filter((p) => p.y > shY - 0.12);
+    for (let it = 0; it < 2; it++) for (let k = 1; k < arc.length - 1; k++) arc[k].lerpVectors(arc[k], arc[k - 1].clone().add(arc[k + 1]).multiplyScalar(0.5), 0.5);
+    const W = 0.042, T = 0.007, pos = [], ind = [];
+    arc.forEach((p, k) => {
+      const tng = arc[Math.min(arc.length - 1, k + 1)].clone().sub(arc[Math.max(0, k - 1)]).normalize();
+      const out = new THREE.Vector3().crossVectors(tng, new THREE.Vector3(1, 0, 0)).normalize(); if (out.dot(p.clone().sub(C)) < 0) out.negate();
+      for (const [dx, dn] of [[-W / 2, 0], [W / 2, 0], [W / 2, T], [-W / 2, T]]) pos.push(p.x + dx, p.y + out.y * dn, p.z + out.z * dn);
+    });
+    for (let k = 0; k < arc.length - 1; k++) for (let q = 0; q < 4; q++) { const a = k * 4 + q, b = k * 4 + ((q + 1) % 4); ind.push(a, b, a + 4, b, b + 4, a + 4); }
+    let g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(ind); g = g.toNonIndexed(); g.computeVertexNormals();
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); geos.push(g);
+  }
+  const m = mergeGeometries(geos); geos.forEach((g) => g.dispose());
+  const cand = []; for (let i = 0; i < an.n; i++) if (an.reg[i] === R.torso || an.reg[i] === R.shoulder) cand.push(i);
+  const pos = m.attributes.position.array, { SI, SW } = knnSkin(an, pos, cand, 6);
+  const out = finalizeSkinned(an, { pos: Float32Array.from(pos), nrm: Float32Array.from(m.attributes.normal.array), uv: Float32Array.from(m.attributes.uv.array), index: null, SI, SW });
+  m.dispose(); void hipsY; return out;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1133,6 +1242,7 @@ export function makeCharacter(opts = {}) {
   // --- Klon + gemeinsames Skelett
   const clone = SkeletonUtils.clone(base.template);
   const group = new THREE.Group(); group.name = 'character:' + baseId; group.add(clone);
+  const heightScale = opts.heightScale ?? (soldier ? 1.0 + rnd() * 0.05 : 0.97 + rnd() * 0.06); group.scale.setScalar(heightScale);
   const meshes = {}; clone.traverse((x) => { if (x.isSkinnedMesh) { (meshes[x.material.name] = meshes[x.material.name] || []).push(x); x.frustumCulled = false; } });
   const skinMesh = (meshes.skin || [])[0] || Object.values(meshes).flat()[0];
   const skeleton = skinMesh.skeleton;
@@ -1192,7 +1302,7 @@ export function makeCharacter(opts = {}) {
     if (parts.helmet.geos.visor) {
       const vm = armor.type === 'power'
         ? own(physical({ color: 0x1a1208, metalness: 1.0, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.02 }))
-        : own(physical({ color: 0xc8d4dc, metalness: 0, roughness: 0.04, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide, specularIntensity: 1 }));
+        : own(physical({ color: 0xdfe6ea, metalness: 0, roughness: 0.04, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide, specularIntensity: 1 }));
       const vmesh = new THREE.Mesh(parts.helmet.geos.visor, vm); vmesh.renderOrder = 2; hg.add(vmesh);
     }
     headBone.add(hg); attached.push(hg);
@@ -1222,7 +1332,7 @@ export function makeCharacter(opts = {}) {
   const rifle = weapon === 'rifle';
   const ch = {
     root: group, mixer, actions, base: baseId, role, seed, options: { ...opts, armor, weapon, clothes, quality, base: baseId },
-    state: null, prevState: 'idle', speedMps: 0, aimPitch: 0, footIK: quality !== 'low', footLock: true, height: an.height,
+    state: null, prevState: 'idle', speedMps: 0, aimPitch: 0, footIK: quality !== 'low', footLock: true, height: an.height * heightScale, heightScale,
     weapon: weaponObj, muzzle, bones: { head: headBone, spine01: B('spine01'), wristR, wristL, footL: B('foot.L'), footR: B('foot.R'), hips: B('root') },
     onStateEnd: null,
   };
@@ -1363,16 +1473,17 @@ export function makeCharacter(opts = {}) {
   }
 
   function footIK(dt, ground) {
-    if (!ch.footIK || !legs.length) return;
+    if (!legs.length) return;
+    const ikOn = ch.footIK && quality !== 'low';
     const k = 1 - Math.exp(-dt * 14);
     const rootY = group.position.y;
     const stationary = STATIONARY.has(ch.state) && ch.speedMps < 0.05 && stateTime > 0.35;
     const ank = legs.map((l) => wpos(l.c, new THREE.Vector3()));
     let minD = 0;
     legs.forEach((l, i) => {
-      const want = ground ? clamp(ground(ank[i].x, ank[i].z) - rootY, -0.45, 0.45) : 0;
+      const want = ground && ikOn ? clamp(ground(ank[i].x, ank[i].z) - rootY, -0.45, 0.45) : 0;
       l.dy += (want - l.dy) * k; minD = Math.min(minD, l.dy);
-      if (ch.footLock && stationary) {
+      if (ikOn && ch.footLock && stationary) {
         if (!l.lock) l.lock = ank[i].clone();
         l.lockW = Math.min(1, l.lockW + dt * 4);
         const d = Math.hypot(l.lock.x - ank[i].x, l.lock.z - ank[i].z);
@@ -1380,21 +1491,28 @@ export function makeCharacter(opts = {}) {
       } else { l.lockW = Math.max(0, l.lockW - dt * 5); if (l.lockW === 0) l.lock = null; }
     });
     const needs = legs.some((l) => Math.abs(l.dy) > 0.003 || l.lockW > 0.01) || Math.abs(hipDrop) > 0.002;
-    if (!needs) return;
-    hipDrop += (minD - hipDrop) * k;
-    if (hips && Math.abs(hipDrop) > 1e-4) { const hp = wpos(hips, _v[0]); hp.y += hipDrop; hips.position.copy(hips.parent.worldToLocal(hp)); hips.updateMatrixWorld(true); }
+    if (needs) {
+      hipDrop += (minD - hipDrop) * k;
+      if (hips && Math.abs(hipDrop) > 1e-4) { const hp = wpos(hips, _v[0]); hp.y += hipDrop; hips.position.copy(hips.parent.worldToLocal(hp)); hips.updateMatrixWorld(true); }
+    }
     const bendFallback = new THREE.Vector3(-1, 0, 0).applyQuaternion(wquat(group, _q[1]));
     legs.forEach((l, i) => {
       const t = ank[i].clone(); t.y += l.dy;
       if (l.lock && l.lockW > 0) { t.x += (l.lock.x - t.x) * l.lockW; t.z += (l.lock.z - t.z) * l.lockW; }
       const fq = wquat(l.c, saveQ);
-      twoBoneIK(l.a, l.b, l.c, t, null, bendFallback);
-      // Fuß an Bodenneigung anpassen
-      if (ground) {
-        const e = 0.12, gx = (ground(t.x + e, t.z) - ground(t.x - e, t.z)) / (2 * e), gz = (ground(t.x, t.z + e) - ground(t.x, t.z - e)) / (2 * e);
-        const nrm = _v[6].set(-gx, 1, -gz).normalize();
-        const contact = 1 - smooth01(0.04, 0.14, ank[i].y - rootY - (an.key.ankleL.y));
-        if (nrm.y < 0.999 && contact > 0) { const tilt = saveQ2.setFromUnitVectors(UP, nrm); const ang = Math.min(2 * Math.acos(clamp(tilt.w, -1, 1)), 0.45); tilt.copy(new THREE.Quaternion().setFromAxisAngle(_v[7].set(tilt.x, tilt.y, tilt.z).normalize(), ang * contact)); fq.premultiply(tilt); }
+      if (needs) twoBoneIK(l.a, l.b, l.c, t, null, bendFallback);
+      // Sohle bei Bodenkontakt auf den Boden legen (Clips kippen den Fuß teils nach vorn; Schuhe würden einsinken)
+      const sl = an.soleLocal[l.s];
+      const gy = ground ? ground(t.x, t.z) : rootY;
+      const contact = 1 - smooth01(0.035, 0.12, t.y - gy - an.key.ankleL.y * group.scale.y);
+      if (sl && contact > 0) {
+        const nrm = _v[6].set(0, 1, 0);
+        if (ground) { const e = 0.12; nrm.set(-(ground(t.x + e, t.z) - ground(t.x - e, t.z)) / (2 * e), 1, -(ground(t.x, t.z + e) - ground(t.x, t.z - e)) / (2 * e)).normalize(); if (nrm.y < 0.88) nrm.set(0, 1, 0); }
+        const d = _v[7].copy(sl).applyQuaternion(fq);
+        const dWant = d.clone().addScaledVector(nrm, -d.dot(nrm)).normalize();
+        const corr = saveQ2.setFromUnitVectors(d, dWant);
+        const ang = 2 * Math.acos(clamp(corr.w, -1, 1));
+        if (ang > 1e-3) { const f = Math.min(1, 0.6 / ang) * contact; corr.slerpQuaternions(_q[0].identity(), corr.clone(), f); fq.premultiply(corr); }
       }
       setWorldQuat(l.c, fq); l.c.updateMatrixWorld(true);
     });
@@ -1407,7 +1525,7 @@ export function makeCharacter(opts = {}) {
     group.updateMatrixWorld(true);
     if (hips) hips.updateMatrixWorld(true);
     rifleIK(dt);
-    if (quality !== 'low') footIK(dt, groundHeightFn || null);
+    footIK(dt, groundHeightFn || null);
     return ch;
   };
   ch.setFootIK = (on) => { ch.footIK = !!on; return ch; };
@@ -1476,3 +1594,4 @@ export function retargetClips(srcBase, targetScene, { fps = 30, clipNames = null
   src.updateMatrixWorld(true);
   return out;
 }
+export const __g5debug = { LIB, analyze, buildFootwear };
