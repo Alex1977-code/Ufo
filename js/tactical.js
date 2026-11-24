@@ -2518,6 +2518,7 @@ export class Tactical {
     if (u && this.isGuided(u)) { await this.guidedClick(u, x, y, other); return; }
     if (other && other.team === 'player' && other !== u) { this.select(other); return; }
     if (!u) return;
+    if (other === u && !item && this.needsReload(u)) { this.reload(u); return; } // eigenen Soldaten antippen/Ⓐ bei leerem Magazin = Nachladen
     if (ik === 'medkit') { toast('Medi-Kit: eigenen Soldaten (selbst oder angrenzend) wählen.', 'warn'); sfx('deny'); return; }
     if (ik === 'stunrod') {
       if (other && other.team === 'alien' && this.isVisibleAlien(other)) { await this.useBelt(u, this.beltSlot, x, y); this.afterAction(); return; }
@@ -2739,7 +2740,7 @@ export class Tactical {
     if (u && this.phase === 'player' && !this.busy && this.isGuided(u)) {
       // Lenkschuss-Vorschau: Polygonzug (Cyan) bis zum ersten Hindernis, danach rot; nummerierte Wegpunkte
       const w = WEAPONS[u.weapon], wp = this.waypoints;
-      const tentative = !other && !wp.some((q) => q.x === x && q.y === y) && !(x === u.x && y === u.y) && wp.length < (w.waypoints || 6);
+      const tentative = !(other && this.knownBlocker(u, other)) && !wp.some((q) => q.x === x && q.y === y) && !(x === u.x && y === u.y) && wp.length < (w.waypoints || 6);
       const pts = tentative ? [...wp, { x, y }] : wp;
       if (pts.length) {
         const tr = this.guidedTrace(u, pts), p0 = this.cellPos(0, 0), mtx = new THREE.Matrix4(), c = new THREE.Color();
