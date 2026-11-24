@@ -887,15 +887,16 @@ export class Tactical {
 
   dijkstra(u, maxCost = Infinity, ignoreUnits = false) {
     const N = this.N, W = this.W;
-    const dist = new Float32Array(N).fill(Infinity);
+    const dist = new Float32Array(N).fill(Infinity); // echte ZE-Kosten entlang des gewählten Wegs
+    const score = new Float32Array(N).fill(Infinity); // ZE + Strafkosten (Feuer) für die Wegwahl
     const prev = new Int32Array(N).fill(-1);
     const s = u.y * W + u.x;
-    dist[s] = 0;
+    dist[s] = 0; score[s] = 0;
     const stand = u.kneel ? STAND_TU : 0; // kniender Soldat zahlt vor dem ersten Schritt das Aufstehen
     const h = new Heap(); h.push(s, 0);
     while (h.size) {
       const [d, i] = h.pop();
-      if (d > dist[i]) continue;
+      if (d > score[i]) continue;
       const x = i % W, y = (i / W) | 0;
       for (const [dx, dy] of DIRS) {
         const nx = x + dx, ny = y + dy;
@@ -904,9 +905,10 @@ export class Tactical {
         if (dx && dy && (this.blocksMove(x + dx, y, u) || this.blocksMove(x, y + dy, u))) continue;
         const j = ny * W + nx;
         if (!ignoreUnits && this.occ[j] >= 0 && this.occ[j] !== u.id && this.knownBlocker(u, this.units[this.occ[j]])) continue;
-        const nd = d + (dx && dy ? 6 : 4) + (i === s ? stand : 0) + (this.fireCells[j] ? 12 : 0); // Feuer meiden (alle Parteien)
-        if (nd > maxCost || nd >= dist[j]) continue;
-        dist[j] = nd; prev[j] = i; h.push(j, nd);
+        const nt = dist[i] + (dx && dy ? 6 : 4) + (i === s ? stand : 0);
+        const nd = d + (nt - dist[i]) + (this.fireCells[j] ? 12 : 0); // Feuer meiden (alle Parteien), zählt nicht als ZE
+        if (nt > maxCost || nd >= score[j]) continue;
+        dist[j] = nt; score[j] = nd; prev[j] = i; h.push(j, nd);
       }
     }
     return { dist, prev };
@@ -1151,11 +1153,12 @@ export class Tactical {
   bodyPoint(u) { return new THREE.Vector3(u.obj.position.x, u.kneel ? 0.9 : u.obj.userData.hover ? 1.5 : 1.2, u.obj.position.z); }
 
   async fire(u, t, mode, reaction = false) {
-    const w = WEAPONS[u.weapon];
+    const w = this.weaponOf(u);
     const m = w[mode];
-    if (!m) return false;
+    if (!m || m.guided) return false;
     const cost = this.modeCost(u, mode);
     if (this.ended || !u.alive) return false;
+    if (this.needsReload(u)) { if (u.team === 'player' && !reaction) { toast('Magazin leer – nachladen (N)', 'warn'); sfx('deny'); } return false; }
     if (!this.hasTu(u, cost)) { if (u.team === 'player') { toast('Nicht genügend Zeiteinheiten.', 'warn'); sfx('deny'); } return false; }
     const wasBusy = this.busy; this.busy = true;
     this.spendTu(u, cost);
@@ -1163,9 +1166,11 @@ export class Tactical {
     const showShot = u.team === 'player' || t.team === 'player' || (u.team === 'alien' && this.isVisibleAlien(u)) || !!this.vis[t.y * this.W + t.x];
     if (u.team === 'alien' && showShot) { u.revealed = true; u.obj.visible = true; this.updateAlienBadges(); }
     if (showShot) { this.camT.x = (u.obj.position.x + t.obj.position.x) / 2; this.camT.z = (u.obj.position.z + t.obj.position.z) / 2; await sleep(160 / (this.engine.settings.animSpeed || 1)); }
-    const shots = m.shots || 1;
+    const ammo = u.team === 'player' && w.mag ? u.load : null;
+    const shots = ammo ? Math.min(m.shots || 1, ammo.rounds) : m.shots || 1;
     for (let s = 0; s < shots; s++) {
       if (!u.alive || this.ended) break;
+      if (ammo) ammo.rounds = Math.max(0, ammo.rounds - 1);
       const chance = this.hitChance(u, t, mode);
       const hit = t.alive && rand() < chance;
       await this.shoot(u, t, hit, w, showShot);
@@ -1183,10 +1188,10 @@ export class Tactical {
       sfx('melee');
       u.obj.userData.body.position.z = 0.4; setTimeout(() => { u.obj.userData.body.position.z = 0; }, 200);
       await sleep(150);
-      if (hit) this.damage(t, w.dmg, u); else this.floatAt(t, 'Verfehlt', '#aaa');
+      if (hit) this.damage(t, w.dmg, u, { dtype: w.dtype }); else this.floatAt(t, 'Verfehlt', '#aaa');
       return;
     }
-    if (hit) to = this.bodyPoint(t).add(new THREE.Vector3(randRange(-0.15, 0.15), randRange(-0.2, 0.2), randRange(-0.15, 0.15)));
+    if (hit) to = t.ground ? (() => { const gp = this.cellPos(t.x, t.y); return new THREE.Vector3(gp.x, 0.1, gp.z); })() : this.bodyPoint(t).add(new THREE.Vector3(randRange(-0.15, 0.15), randRange(-0.2, 0.2), randRange(-0.15, 0.15)));
     else {
       // Fehlschuss: abweichende Flugbahn verfolgen
       const dx = t.x - u.x, dy = t.y - u.y, len = Math.hypot(dx, dy) || 1;
@@ -1209,23 +1214,37 @@ export class Tactical {
       to = new THREE.Vector3(p.x + end.fx * TILE, end.unit ? 1.1 : end.wall ? randRange(0.6, 1.8) : 0.05, p.z + end.fy * TILE);
       impact = end;
     }
+    // Explosiv-, Brand- oder Schockgeschoss: auch ein Fehlschuss detoniert am Aufschlagpunkt (W1 4.3)
+    if (w.radius) {
+      let c;
+      if (hit) c = { x: t.x, y: t.y };
+      else if (impact?.wall) c = { ...impact.wall };
+      else if (impact?.unit) c = { x: impact.unit.x, y: impact.unit.y };
+      else c = { x: clamp(Math.round(impact.fy !== undefined ? impact.fx : t.x), 0, this.W - 1), y: clamp(Math.round(impact.fy ?? t.y), 0, this.H - 1) };
+      if (!hit && show && t.team) this.floatAt(t, 'Verfehlt', '#9aa');
+      await this.projectile(from, to, w.fx, show);
+      await this.explode(c.x, c.y, w.dmg, w.radius, u, { dtype: w.dtype, burn: w.burn || 0 });
+      return;
+    }
     await this.projectile(from, to, w.fx, show);
-    if (hit) this.damage(t, w.dmg, u);
+    const opts = { dtype: w.dtype, pierce: w.pierce };
+    if (hit) this.damage(t, w.dmg, u, opts);
     else {
       if (show && t.team) this.floatAt(t, 'Verfehlt', '#9aa');
       if (impact?.wall) this.damageWall(impact.wall.x, impact.wall.y, w.dmg * randRange(0.5, 1.5));
-      if (impact?.unit) this.damage(impact.unit, w.dmg, u);
+      if (impact?.unit) this.damage(impact.unit, w.dmg, u, opts);
       if (this.losDirty) { this.losDirty = false; this.updateVisibility(); }
       this.spark(to, FX_COLORS[w.fx], 10);
+      await this.flushBlasts();
     }
   }
 
   async projectile(from, to, fx, show) {
     const spd = this.engine.settings.animSpeed || 1;
     if (!show) return;
-    sfx(fx === 'bullet' ? 'bullet' : fx);
-    this.flash(from, FX_COLORS[fx], 8);
-    const col = new THREE.Color(FX_COLORS[fx]).multiplyScalar(fx === 'bullet' ? 3 : 5);
+    sfx(fx === 'rocket' ? 'launch' : fx === 'stun' ? 'plasma' : fx);
+    this.flash(from, FX_COLORS[fx] ?? 0xffffff, 8);
+    const col = new THREE.Color(FX_COLORS[fx] ?? 0xffffff).multiplyScalar(fx === 'bullet' ? 3 : 5);
     const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
     const mesh = new THREE.Mesh(this.tracerGeo, mat);
     const len = from.distanceTo(to);
@@ -1235,9 +1254,10 @@ export class Tactical {
       mesh.scale.set(fx === 'beam' ? 2.5 : 1.6, fx === 'beam' ? 2.5 : 1.6, len);
       let t = 0; while (t < 0.18 / spd) { const dt = await this.frame(); t += dt; mat.opacity = 1 - t / (0.18 / spd); }
     } else {
-      const speed = (fx === 'plasma' ? 40 : 110) * spd;
-      const tl = fx === 'plasma' ? 1.6 : 2.4;
-      const w = fx === 'plasma' ? 3.5 : 1;
+      const glob = fx === 'plasma' || fx === 'stun';
+      const speed = (fx === 'rocket' ? 30 : glob ? 40 : 110) * spd;
+      const tl = fx === 'rocket' ? 0.9 : glob ? 1.6 : 2.4;
+      const w = fx === 'rocket' ? 2.6 : glob ? 3.5 : 1;
       let d = 0;
       while (d < len) {
         const dt = await this.frame();
@@ -1245,31 +1265,133 @@ export class Tactical {
         const head = Math.min(d, len), tail = Math.max(0, head - tl);
         mesh.position.copy(from).lerp(to, tail / len);
         mesh.scale.set(w, w, Math.max(0.05, head - tail));
-        if (fx === 'plasma') this.emit(mesh.position.clone().lerp(to, 0.0), col, 1, 0.25, 0.4);
+        if (glob) this.emit(mesh.position.clone(), col, 1, 0.25, 0.4);
+        else if (fx === 'rocket') { this.emit(mesh.position.clone(), new THREE.Color(0.35, 0.34, 0.33), 0.2, 0.25, 1.1, false, true); this.emit(mesh.position.clone(), new THREE.Color(3, 1.5, 0.4), 0, 0.3, 0.25); }
       }
     }
     this.scene.remove(mesh); mat.dispose();
-    this.flash(to, FX_COLORS[fx], 5);
+    this.flash(to, FX_COLORS[fx] ?? 0xffffff, 5);
   }
 
-  damage(t, raw, src) {
+  // Schadensformel (P3) mit Schadensart: Resistenz je Alien, Panzerung ×0,3 bei Brand, ×0,5 bei Betäubung, pierce bei PB
+  rollDamage(t, raw, opts = {}) {
+    const dt = opts.dtype || 'proj';
+    const res = t.team === 'alien' ? (ALIENS[t.spec]?.resist?.[dt] ?? 1) : 1;
+    if (res === 0) return null;
+    const armorEff = t.armor * (dt === 'fire' ? 0.3 : dt === 'stun' ? 0.5 : (opts.pierce ?? 1));
+    const roll = raw * res * randRange(0.5, 1.5);
+    return Math.max(Math.round(roll * 0.15), Math.round(roll - armorEff));
+  }
+  hurt(u, raw, src, opts) { if (u.alive) this.damage(u, raw, src, opts); else if (u.ko) this.hurtKo(u, raw, src, opts); }
+  damage(t, raw, src, opts = {}) {
     if (!t.alive || this.disposed) return;
-    const roll = raw * randRange(0.5, 1.5);
-    let dmg = Math.max(Math.round(roll * 0.15), Math.round(roll - t.armor));
+    let dmg = this.rollDamage(t, raw, opts);
+    if (dmg === null) { this.floatAt(t, 'Immun', '#9ab'); return; }
+    if (opts.dtype === 'stun') {
+      if (src?.team === 'player' && Game.cheats.oneHit && t.team !== 'player') dmg = 9999;
+      if (t.team === 'player' && Game.cheats.god) dmg = 0;
+      t.stun = (t.stun || 0) + dmg;
+      this.spark(this.bodyPoint(t), 0x60a0ff, 12); sfx('hit');
+      this.floatAt(t, `⚡ ${Math.min(dmg, 999)}`, '#8fd0ff', dmg > 30);
+      if (t.stun >= t.hp) this.knockOut(t, src);
+      else if (t.team === 'player' && t === this.selected) this.refreshUi();
+      return;
+    }
     if (src?.team === 'player' && Game.cheats.oneHit && t.team !== 'player') dmg = 9999;
     if (t.team === 'player' && Game.cheats.god) dmg = 0;
     t.hp -= dmg; t.dmgTaken += dmg;
-    this.spark(this.bodyPoint(t), t.team === 'alien' ? 0x80ff60 : 0xff3030, 14);
+    this.spark(this.bodyPoint(t), opts.dtype === 'fire' ? 0xff8020 : t.team === 'alien' ? 0x80ff60 : 0xff3030, 14);
     sfx('hit');
-    this.floatAt(t, dmg > 0 ? `−${dmg}` : 'Abgeprallt', dmg > 0 ? (t.team === 'player' ? '#ff5a5a' : '#ffe680') : '#9ab', dmg > 30);
+    this.floatAt(t, dmg > 0 ? `${opts.dtype === 'fire' ? '🔥 ' : ''}−${dmg}` : 'Abgeprallt', dmg > 0 ? (t.team === 'player' ? '#ff5a5a' : '#ffe680') : '#9ab', dmg > 30);
     if (t.team === 'player' && dmg > 0) Input.rumble(0.8, 0.5, 220);
     if (t.team === 'player' && t === this.selected) this.refreshUi();
     if (t.hp <= 0) this.kill(t, src);
   }
 
+  // Betäubung (W1 4.5): bewusstlos statt tot – liegt sichtbar, Feld wird frei, zählt für den Missionssieg
+  knockOut(t, src) {
+    t.alive = false; t.ko = true; t.koTurn = this.turn; t.kneel = false;
+    if (this.occ[t.y * this.W + t.x] === t.id) this.occ[t.y * this.W + t.x] = -1;
+    if (src && t.team === 'alien' && src.team === 'player') { src.captures = (src.captures || 0) + 1; t.koBy = src; }
+    this.koEffects(t);
+    this.floatAt(t, '⚡ BEWUSSTLOS', '#8fd0ff', true);
+    if (t.team === 'player') toast(`⚡ ${t.name} ist bewusstlos.`, 'bad', 2600);
+    else if (this.isVisibleAlien(t) || t.obj.visible) toast(`⚡ ${t.name} betäubt.`, 'good', 1800);
+    if (this.target === t) this.target = null;
+    this.updateAlienBadges(); this.checkEnd();
+    if (t === this.selected && !this.ended) { this.selected = null; if (this.phase === 'player') this.cycleUnit(1); }
+  }
+  // Treffer auf Bewusstlose (nur Flächenwirkung: Explosion, Brand, Schock)
+  hurtKo(t, raw, src, opts = {}) {
+    if (!t.ko || this.disposed) return;
+    let dmg = this.rollDamage(t, raw, opts); if (dmg === null) return;
+    if (opts.dtype === 'stun') { t.stun += dmg; return; }
+    if (t.team === 'player' && Game.cheats.god) dmg = 0;
+    t.hp -= dmg; t.dmgTaken += dmg;
+    if (dmg > 0) this.floatAt(t, `−${dmg}`, t.team === 'player' ? '#ff5a5a' : '#ffe680');
+    if (t.hp <= 0) { t.ko = false; if (t.koBy) { t.koBy.captures = Math.max(0, t.koBy.captures - 1); t.koBy = null; } this.kill(t, src); }
+  }
+  koEffects(t) {
+    const obj = t.obj, ud = obj.userData, cp = this.cellPos(t.x, t.y);
+    obj.rotation.order = 'YXZ';
+    t.koSave = { limbs: {}, by: ud.body?.position.y || 0 };
+    for (const n of ['armL', 'armR', 'legL', 'legR']) if (ud[n]) t.koSave.limbs[n] = [ud[n].rotation.x, ud[n].rotation.z];
+    this.spark(this.bodyPoint(t), 0x60a0ff, 16);
+    // blauer Ring am Boden: „bewusstlos, nicht tot“
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.7, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 0.9, 2.4), transparent: true, opacity: 0.8, depthWrite: false }));
+    ring.position.set(cp.x, 0.06, cp.z); this.scene.add(ring); t.koRing = ring;
+    const side = rand() < 0.5 ? -1 : 1;
+    const limbT = { armL: [-0.2, 0.6], armR: [0.2, -0.5], legL: [0.1, -0.2], legR: [-0.15, 0.25] };
+    const from = {}; for (const n in t.koSave.limbs) from[n] = t.koSave.limbs[n];
+    if (ud.body && !ud.hover) ud.body.position.y = 0;
+    t.dying = true;
+    let k = 0, ph = 0;
+    this.fx.push((dt) => {
+      if (this.disposed || !t.ko) return false;
+      if (k < 1) {
+        k = Math.min(1, k + dt / 0.8); const e = k * k;
+        obj.rotation.z = side * Math.PI / 2 * e; obj.rotation.x = 0;
+        for (const n in from) { ud[n].rotation.x = from[n][0] + (limbT[n][0] - from[n][0]) * e; ud[n].rotation.z = from[n][1] + (limbT[n][1] - from[n][1]) * e; }
+        this.groundCorpse(obj, cp);
+        if (k >= 1) { t.dying = false; this.refreshCorpseVis(t); }
+      }
+      ph += dt; ring.material.opacity = 0.45 + 0.35 * Math.sin(ph * 3);
+      ring.visible = obj.visible;
+      if (obj.visible && rand() < dt * 1.5) this.emit(obj.position.clone().setY(0.6), new THREE.Color(0.6, 1.2, 3), 0.4, 0.2, 0.6);
+      return true;
+    });
+  }
+  // Aufwachen: Animation rückwärts, Feld wieder belegen
+  standUp(u) {
+    const obj = u.obj, ud = obj.userData, cp = this.cellPos(u.x, u.y);
+    if (u.koRing) { this.scene.remove(u.koRing); u.koRing.geometry.dispose(); u.koRing.material.dispose(); u.koRing = null; }
+    const z0 = obj.rotation.z, lim = u.koSave?.limbs || {};
+    const cur = {}; for (const n in lim) if (ud[n]) cur[n] = [ud[n].rotation.x, ud[n].rotation.z];
+    obj.visible = u.team !== 'alien' || this.isVisibleAlien(u);
+    let k = 0;
+    this.fx.push((dt) => {
+      if (this.disposed) return false;
+      k = Math.min(1, k + dt / 0.6); const e = 1 - (1 - k) * (1 - k);
+      obj.rotation.z = z0 * (1 - e);
+      for (const n in cur) { ud[n].rotation.x = cur[n][0] + (lim[n][0] - cur[n][0]) * e; ud[n].rotation.z = cur[n][1] + (lim[n][1] - cur[n][1]) * e; }
+      obj.position.x = cp.x; obj.position.z = cp.z; obj.position.y = 0;
+      return k < 1;
+    });
+  }
+  wake(u, tu) {
+    u.ko = false; u.alive = true; u.koTurn = null; u.dying = false; u.koBy = null;
+    this.occ[u.y * this.W + u.x] = u.id;
+    u.tu = tu;
+    this.standUp(u);
+    this.floatAt(u, 'erwacht', '#ffd080');
+    if (u.team === 'player') toast(`${u.name} ist wieder bei Bewusstsein.`, 'good', 2200);
+    this.updateAlienBadges();
+  }
+
   kill(t, src) {
-    t.alive = false; t.dying = true;
-    this.occ[t.y * this.W + t.x] = -1;
+    t.alive = false; t.dying = true; t.ko = false;
+    if (this.occ[t.y * this.W + t.x] === t.id) this.occ[t.y * this.W + t.x] = -1;
+    if (t.koRing) { this.scene.remove(t.koRing); t.koRing.geometry.dispose(); t.koRing.material.dispose(); t.koRing = null; }
     if (src && src !== t && t.team === 'alien' && src.team === 'player') src.kills++;
     sfx(t.team === 'alien' ? 'alienDeath' : 'death');
     if (t.team === 'alien') {
@@ -1374,8 +1496,9 @@ export class Tactical {
     this.deadRing(t.x, t.y);
     t.glow = [];
     this.deaden(obj, drone, t.glow);
-    if (!drone) this.tossGun(t, cp);
     const finish = () => { t.dying = false; this.refreshCorpseVis(t); if (drone) this.startWreck(t); };
+    if (t.koTurn != null) { finish(); return; } // lag schon bewusstlos am Boden
+    if (!drone) this.tossGun(t, cp);
     if (drone) {
       const tx = (rand() - 0.5) * 0.4, tz = (rand() - 0.5) * 0.6;
       const y0 = obj.position.y, yaw = obj.rotation.y, by0 = ud.body.position.y;
@@ -1463,7 +1586,24 @@ export class Tactical {
       for (let i = 0; i < 14; i++) this.emit(pos, new THREE.Color(0.5, 0.45, 0.4), 0, 1.6, 1.2, false, true);
       this.scorch(x, y, 0.5);
       this.losDirty = true;
+      if (WALLS[t]?.explosive) this.blastQueue.push({ x, y, type: t }); // Treibstoff: explodiert (flushBlasts)
+      if (this.fireCells[y * this.W + x] && !FLAMMABLE_FLOOR.has(c.floor)) this.fireCells[y * this.W + x] = Math.min(this.fireCells[y * this.W + x], 1);
     }
+  }
+  // Explosionen zerstörter Treibstofffässer/Zapfsäulen nacheinander auslösen (Kettenreaktion begrenzt)
+  async flushBlasts() {
+    if (this._flushing || !this.blastQueue.length) return;
+    this._flushing = true;
+    let n = 0;
+    while (this.blastQueue.length && n < CHAIN_MAX && !this.ended && !this.disposed) {
+      const b = this.blastQueue.shift(); n++;
+      const pump = b.type === 'fuelpump';
+      if (this.vis[b.y * this.W + b.x] || this.explored[b.y * this.W + b.x]) toast(pump ? '💥 Zapfsäule explodiert!' : '💥 Treibstofffass explodiert!', 'warn', 1600);
+      await this.explode(b.x, b.y, pump ? 85 : 65, pump ? 3 : 2.2, null, { dtype: 'expl', burn: 0 });
+      if (!this.ended) this.igniteArea(b.x, b.y, pump ? 1.6 : 1.2, 2);
+    }
+    this.blastQueue.length = 0;
+    this._flushing = false;
   }
 
   scorch(x, y, r) {
@@ -1481,7 +1621,7 @@ export class Tactical {
     const acc = u.team === 'player' && Game.cheats.aimbot ? 1 : clamp(u.acc / 100 + 0.2, 0.3, 0.95);
     if (rand() > acc) { tx = clamp(tx + randInt(-2, 2), 0, this.W - 1); ty = clamp(ty + randInt(-2, 2), 0, this.H - 1); }
     const kind = ITEMS[id]?.kind || 'grenade';
-    const glow = id === 'alien' ? 0x50ff80 : kind === 'smoke' ? 0x9aa0a8 : kind === 'flare' ? 0xffd080 : 0xff6020;
+    const glow = id === 'alien' ? 0x50ff80 : kind === 'smoke' ? 0x9aa0a8 : kind === 'flare' ? 0xffd080 : kind === 'mine' ? 0xff3030 : 0xff6020;
     const from = this.muzzleWorld(u);
     const tp = this.cellPos(tx, ty);
     const to = new THREE.Vector3(tp.x, 0.2, tp.z);
@@ -1514,12 +1654,44 @@ export class Tactical {
     const b = this.beltEntry(u, slot), it = b && ITEMS[b.id];
     const deny = (msg, type = 'warn') => { toast(msg, type); sfx('deny'); return false; };
     if (!it) return deny('Gürtelplatz leer.');
+    if (it.kind === 'ammo') return this.reload(u, slot);
     const cost = this.itemCost(u, b.id);
     if (!this.hasTu(u, cost)) return deny('Nicht genügend Zeiteinheiten.');
-    if (it.kind === 'medkit') {
+    if (it.kind === 'scanner') {
+      this.spendTu(u, cost); sfx('select');
+      this.scan(u, it);
+      this.refreshUi();
+      return true;
+    }
+    if (it.kind === 'stunrod') {
       const t = this.unitAt(tx, ty);
-      if (!t || t.team !== 'player' || !t.alive) return deny('Medi-Kit: eigenen Soldaten (selbst oder angrenzend) wählen.');
+      if (!t || t.team !== 'alien' || !t.alive || !this.isVisibleAlien(t)) return deny('Schockstab: angrenzendes, sichtbares Alien wählen.');
+      if (Math.max(Math.abs(t.x - u.x), Math.abs(t.y - u.y)) > 1) return deny('Zu weit entfernt – Schockstab nur gegen angrenzende Aliens.');
+      this.busy = true;
+      this.spendTu(u, cost); this.faceTo(u, t.x, t.y);
+      const c = this.stunrodChance(u, t, it);
+      sfx('melee');
+      if (u.obj.userData.body) { u.obj.userData.body.position.z = 0.4; setTimeout(() => { if (u.obj.userData.body) u.obj.userData.body.position.z = 0; }, 200); }
+      await sleep(150);
+      this.spark(this.bodyPoint(t), 0x60a0ff, 18); this.flash(this.bodyPoint(t), 0x60a0ff, 6);
+      if (rand() < c) this.damage(t, it.dmg, u, { dtype: 'stun' }); else this.floatAt(t, 'Verfehlt', '#aaa');
+      this.busy = !!this.ended;
+      if (!this.ended) this.refreshUi();
+      return true;
+    }
+    if (it.kind === 'medkit') {
+      const t = this.unitAt(tx, ty) || this.koAt(tx, ty);
+      if (!t || t.team !== 'player' || !(t.alive || t.ko)) return deny('Medi-Kit: eigenen Soldaten (selbst oder angrenzend) wählen.');
       if (Math.max(Math.abs(t.x - u.x), Math.abs(t.y - u.y)) > 1) return deny('Zu weit entfernt – nur angrenzende Felder.');
+      if (t.ko) { // bewusstlosen Soldaten wecken: Betäubung weg, wacht mit 0 ZE auf
+        if (this.occ[t.y * this.W + t.x] >= 0) return deny('Feld des Bewusstlosen ist besetzt – erst Platz machen.');
+        this.spendTu(u, cost);
+        t.stun = 0; this.wake(t, 0);
+        this.consumeBelt(u, slot);
+        this.faceTo(u, t.x, t.y);
+        this.spark(this.bodyPoint(t), 0x60ff90, 12); sfx('select');
+        return true;
+      }
       if (t.hp >= t.maxHp) return deny(`${t.name} ist unverletzt.`, 'info');
       this.spendTu(u, cost);
       const heal = Math.min(it.heal, t.maxHp - t.hp);
@@ -1531,14 +1703,24 @@ export class Tactical {
       sfx('select');
       return true;
     }
-    if (Math.hypot(tx - u.x, ty - u.y) > THROW_RANGE) return deny(`Zu weit entfernt (max. ${THROW_RANGE} Felder).`);
+    const range = it.throwRange || THROW_RANGE;
+    if (Math.hypot(tx - u.x, ty - u.y) > range) return deny(`Zu weit entfernt (max. ${range} Felder).`);
     this.busy = true;
     this.spendTu(u, cost);
     this.consumeBelt(u, slot);
     const p = await this.lobObject(u, tx, ty, b.id);
-    if (it.kind === 'grenade') await this.explode(p.x, p.y, it.dmg, it.radius, u);
+    if (it.kind === 'grenade') await this.explode(p.x, p.y, it.dmg, it.radius, u, { dtype: it.dtype || 'expl' });
     else if (it.kind === 'smoke') this.addSmoke(p.x, p.y, it);
     else if (it.kind === 'flare') this.addFlare(p.x, p.y, it);
+    else if (it.kind === 'mine') {
+      const c = this.freeCellNear(p.x, p.y, u);
+      this.mines.push({ x: c.x, y: c.y, id: b.id, owner: u, counted: !Game.cheats.allGear, obj: this.makeMineObj(c) });
+      sfx('click'); toast('◎ Sensormine scharf – löst bei Alien-Bewegung im Umkreis aus.', 'info', 2200);
+    } else if (it.kind === 'charge') {
+      this.charges.push({ x: p.x, y: p.y, id: b.id, owner: u, obj: this.makeChargeObj(p) });
+      sfx('click'); toast('🧨 Sprengladung scharf – zündet am Ende deines Zuges!', 'warn', 2600);
+      this.floatCell(p.x, p.y, '💥 Zugende', '#ff9a50', true);
+    }
     if (it.kind !== 'grenade' && !this.ended) this.updateVisibility();
     this.busy = !!this.ended;
     if (!this.ended) this.refreshUi();
@@ -1547,7 +1729,7 @@ export class Tactical {
   // Verbrauch zählen (nicht mit Cheat „alle Ausrüstung“); Medi-Kit zählt erst, wenn alle Ladungen weg sind
   consumeBelt(u, slot) {
     if (Game.cheats.allGear) return;
-    const b = u.belt?.[slot]; if (!b) return;
+    const b = u.belt?.[slot]; if (!b || ITEMS[b.id]?.reusable) return;
     b.uses--;
     if (b.uses <= 0) { u.belt[slot] = null; this.result.itemsUsed[b.id] = (this.result.itemsUsed[b.id] || 0) + 1; }
   }
@@ -1582,6 +1764,7 @@ export class Tactical {
         const i = y * this.W + x; this.smokeCells[i] = Math.max(this.smokeCells[i], c.turns);
       }
     }
+    if (this.fireCells) for (let i = 0; i < this.N; i++) if ((this.fireCells[i] || this.fireSmoke[i]) && !this.smokeCells[i]) this.smokeCells[i] = 1;
   }
 
   // ---- Leuchtfackel: Licht + glühendes Objekt für it.turns Runden ----
@@ -1610,6 +1793,7 @@ export class Tactical {
   }
   // Rauch und Fackeln nehmen bei jedem Rundenwechsel ab
   decayEffects() {
+    this.burnTick();
     for (const c of this.smokes) if (c.turns > 0) c.turns--;
     for (const f of this.flares) if (f.turns > 0) f.turns--;
     this.rebuildSmoke();
@@ -1642,28 +1826,187 @@ export class Tactical {
     if (this.flares.some((f) => f.dead)) this.flares = this.flares.filter((f) => !f.dead);
   }
 
-  async explode(cx, cy, dmg, radius, src) {
+  // Flächenwirkung (W1 4.3): dtype expl (wie bisher) | fire (Brand + brennende Felder) | stun (blauer Blitz, nur Betäubung)
+  async explode(cx, cy, dmg, radius, src, opts = {}) {
+    const { dtype = 'expl', wallMul = 1.4, burn = 0 } = opts;
+    if (this.disposed) return;
     const p = this.cellPos(cx, cy);
     const pos = new THREE.Vector3(p.x, 0.6, p.z);
-    sfx('explosion'); Input.rumble(1, 0.8, 450);
-    this.shake = 0.9;
-    this.flash(pos, 0xff9040, 60, 0.5);
-    for (let i = 0; i < 40; i++) this.emit(pos, new THREE.Color(3, 1.4 + rand(), 0.3), 0, 4 + rand() * 4, 0.7 + rand() * 0.4);
-    for (let i = 0; i < 25; i++) this.emit(pos, new THREE.Color(0.25, 0.23, 0.22), 0, 2 + rand() * 2, 2 + rand(), false, true);
-    this.scorch(cx, cy, radius * 0.8);
-    const R = Math.ceil(radius);
+    const stun = dtype === 'stun', fire = dtype === 'fire';
+    sfx(stun ? 'plasma' : 'explosion'); Input.rumble(stun ? 0.5 : 1, stun ? 0.4 : 0.8, stun ? 250 : 450);
+    this.shake = stun ? 0.35 : 0.9;
+    this.flash(pos, stun ? 0x60a0ff : fire ? 0xff6a20 : 0xff9040, stun ? 40 : 60, 0.5);
+    const hot = stun ? () => new THREE.Color(0.8, 1.6 + rand(), 3.2) : fire ? () => new THREE.Color(3, 0.9 + rand() * 0.8, 0.15) : () => new THREE.Color(3, 1.4 + rand(), 0.3);
+    for (let i = 0; i < 40; i++) this.emit(pos, hot(), 0, (stun ? 2.5 : 4) + rand() * radius * 1.5, 0.7 + rand() * 0.4);
+    if (!stun) for (let i = 0; i < 25; i++) this.emit(pos, new THREE.Color(0.25, 0.23, 0.22), 0, 2 + rand() * 2, 2 + rand(), false, true);
+    if (!stun) this.scorch(cx, cy, radius * 0.8);
+    const R = Math.ceil(radius), chained = [];
     for (let y = cy - R; y <= cy + R; y++) for (let x = cx - R; x <= cx + R; x++) {
       if (!this.inb(x, y)) continue;
       const d = Math.hypot(x - cx, y - cy); if (d > radius) continue;
       const k = 1 - d / (radius + 0.5);
-      const u = this.unitAt(x, y);
-      if (u) this.damage(u, dmg * k + u.armor * 0.4, src);
-      const w = this.wallAt(x, y);
-      if (w) this.damageWall(x, y, dmg * k * 1.4 * randRange(0.7, 1.3));
+      for (const u of this.unitsInCell(x, y)) {
+        if (dtype === 'expl') this.hurt(u, dmg * k + u.armor * 0.4, src, { dtype });
+        else if (fire) this.hurt(u, dmg * k, src, { dtype });
+        else this.hurt(u, dmg * k, src, { dtype: 'stun' });
+      }
+      if (!stun && this.wallAt(x, y)) this.damageWall(x, y, dmg * k * wallMul * randRange(0.7, 1.3));
+      const m = this.mineAt(x, y); if (m && !stun) chained.push(m); // Minen im Radius detonieren mit
     }
-    await sleep(500);
+    if (fire) this.igniteArea(cx, cy, radius, burn || 2);
+    await sleep(stun ? 350 : 500);
     if (this.losDirty) { this.losDirty = false; this.updateVisibility(); }
+    for (const m of chained) { if (this.ended || !this.mines.includes(m)) continue; this.removeMine(m); await this.explode(m.x, m.y, ITEMS[m.id].dmg, ITEMS[m.id].radius, m.owner); }
+    await this.flushBlasts();
   }
+
+  // ======================= Brand (W1 4.4) =======================
+  fullWall(x, y) { const w = this.wallAt(x, y); return !!(w && WALLS[w.type]?.full); }
+  flammable(x, y) { const c = this.map.at(x, y); if (!c) return false; if (c.wall) return FLAMMABLE_WALL.has(c.wall.type); return FLAMMABLE_FLOOR.has(c.floor); }
+  igniteArea(cx, cy, r, turns) {
+    const R = Math.ceil(r);
+    for (let y = cy - R; y <= cy + R; y++) for (let x = cx - R; x <= cx + R; x++) {
+      if (!this.inb(x, y) || Math.hypot(x - cx, y - cy) > r + 0.01) continue;
+      if (this.wallAt(x, y)?.type === 'water' || (this.fullWall(x, y) && !this.flammable(x, y))) continue;
+      if (this.fireCount >= MAX_FIRE) break;
+      this.setFire(x, y, turns, 0);
+    }
+    this.rebuildSmoke(); this.losDirty = true;
+  }
+  setFire(x, y, turns, gen) {
+    const i = y * this.W + x;
+    if (this.fireCells[i] < turns) { if (!this.fireCells[i]) this.fireCount++; this.fireCells[i] = turns; this.fireGen[i] = gen; }
+  }
+  // Rundenwechsel: Schaden, brennbare Wände, begrenzte Ausbreitung, Abbau → Nachrauch
+  burnTick() {
+    if (!this.fireCount && !this.fireSmoke.some((v) => v)) return;
+    const W = this.W;
+    for (const u of this.units) if (u.alive && this.fireCells[u.y * W + u.x]) this.damage(u, BURN_DMG, null, { dtype: 'fire' });
+    for (const u of this.units) if (u.ko && this.fireCells[u.y * W + u.x]) this.hurtKo(u, BURN_DMG, null, { dtype: 'fire' });
+    const spread = [];
+    for (let i = 0; i < this.N; i++) {
+      if (!this.fireCells[i]) continue;
+      const x = i % W, y = (i / W) | 0;
+      const wl = this.wallAt(x, y);
+      if (wl && FLAMMABLE_WALL.has(wl.type)) this.damageWall(x, y, 20);
+      if (this.fireGen[i] < 2 && this.fireCells[i] >= 2) for (const [dx, dy] of DIRS.slice(0, 4)) {
+        const nx = x + dx, ny = y + dy; if (!this.inb(nx, ny)) continue;
+        const j = ny * W + nx;
+        if (!this.fireCells[j] && this.flammable(nx, ny) && rand() < 0.15) spread.push([nx, ny, this.fireGen[i] + 1]);
+      }
+    }
+    for (let i = 0; i < this.N; i++) {
+      if (this.fireSmoke[i]) this.fireSmoke[i]--;
+      if (!this.fireCells[i]) continue;
+      this.fireCells[i]--;
+      if (!this.fireCells[i]) { this.fireCount--; this.fireSmoke[i] = 1; this.scorch(i % W, (i / W) | 0, 0.3); }
+    }
+    for (const [x, y, g] of spread) if (this.fireCount < MAX_FIRE) this.setFire(x, y, 2, g);
+    this.losDirty = true;
+  }
+  updateFire(dt) {
+    if (!this.fireCount) { this.fireLight.intensity = 0; return; }
+    let n = 0, sx = 0, sz = 0;
+    const v = this._fv || (this._fv = new THREE.Vector3());
+    for (let i = 0; i < this.N && n < 40; i++) {
+      if (!this.fireCells[i] || !this.explored[i]) continue;
+      n++;
+      const p = this.cellPos(i % this.W, (i / this.W) | 0); sx += p.x; sz += p.z;
+      if (rand() < dt * 22) { v.set(p.x + randRange(-0.7, 0.7), 0.15, p.z + randRange(-0.7, 0.7)); this.emit(v, new THREE.Color(3, 1 + rand() * 0.9, 0.15), 1.6, 0.35, 0.45 + rand() * 0.3); }
+      if (rand() < dt * 3) { v.set(p.x + randRange(-0.5, 0.5), 1.2, p.z + randRange(-0.5, 0.5)); this.emit(v, new THREE.Color(0.2, 0.19, 0.18), 0.8, 0.4, 1.6, false, true); }
+    }
+    if (n) { this.fireLight.position.set(sx / n, 1.6, sz / n); this.fireLight.intensity = (this.map.night ? 30 : 14) * (0.85 + 0.15 * Math.sin(this.engine.time * 17)); this.fireLight.distance = 10 + Math.min(14, n); } else this.fireLight.intensity = 0;
+  }
+
+  // ======================= Minen, Ladungen, Scanner =======================
+  makeMineObj(c) {
+    const p = this.cellPos(c.x, c.y), g = new THREE.Group();
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.1, 14), new THREE.MeshStandardMaterial({ color: 0x3a4232, roughness: 0.6, metalness: 0.4 }));
+    disc.position.y = 0.05;
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 0.3, 0.2) }));
+    led.position.y = 0.12;
+    g.add(disc, led); g.position.set(p.x + randRange(-0.2, 0.2), 0, p.z + randRange(-0.2, 0.2));
+    this.scene.add(g);
+    let t = rand() * 3;
+    this.fx.push((dt) => { if (!g.parent) return false; t += dt; led.visible = Math.sin(t * 6) > 0.2; return true; });
+    return g;
+  }
+  removeObj(o) { if (!o) return; this.scene.remove(o); o.traverse((q) => { q.geometry?.dispose(); q.material?.dispose(); }); }
+  removeMine(m) { this.mines = this.mines.filter((q) => q !== m); this.removeObj(m.obj); }
+  makeChargeObj(c) {
+    const p = this.cellPos(c.x, c.y), g = new THREE.Group();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.22, 0.3), new THREE.MeshStandardMaterial({ color: 0x8a6a3a, roughness: 0.7 }));
+    box.position.y = this.wallAt(c.x, c.y) ? 0.9 : 0.11;
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 0.4, 0.2) }));
+    led.position.set(0.12, box.position.y + 0.13, 0);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.particleTex, color: new THREE.Color(2.5, 0.4, 0.2), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    halo.position.copy(led.position); halo.scale.setScalar(0.8);
+    g.add(box, led, halo); g.position.set(p.x, 0, p.z);
+    this.scene.add(g);
+    let t = 0;
+    this.fx.push((dt) => { if (!g.parent) return false; t += dt; const on = Math.sin(t * 9) > 0; led.visible = on; halo.visible = on; return true; });
+    return g;
+  }
+  // Nachbarfeld ohne Vollwand in Richtung des Werfers (Mine landet auf einer Wand)
+  freeCellNear(x, y, u) {
+    if (!this.blocksMove(x, y)) return { x, y };
+    const cands = [];
+    for (const [dx, dy] of DIRS) { const nx = x + dx, ny = y + dy; if (this.inb(nx, ny) && !this.blocksMove(nx, ny)) cands.push({ x: nx, y: ny }); }
+    cands.sort((a, b) => Math.hypot(a.x - u.x, a.y - u.y) - Math.hypot(b.x - u.x, b.y - u.y));
+    return cands[0] || { x: u.x, y: u.y };
+  }
+  scan(u, it) {
+    this.blips = this.units.filter((o) => o.alive && o.team !== 'player' && o.movedTurn === this.turn - 1
+      && Math.hypot(o.x - u.x, o.y - u.y) <= it.radius && !(o.team === 'alien' ? this.isVisibleAlien(o) : this.vis[o.y * this.W + o.x])).map((o) => ({ x: o.x, y: o.y }));
+    this.showBlips(u, it.radius);
+    toast(`📡 Scanner: ${this.blips.length} Bewegung(en) im Umkreis von ${it.radius} Feldern`, this.blips.length ? 'warn' : 'info', 2600);
+  }
+  showBlips(u, r) {
+    this.blipRings.forEach((b, i) => { const bp = this.blips[i]; b.visible = !!bp; if (bp) { const p = this.cellPos(bp.x, bp.y); b.position.set(p.x, 0.08, p.z); } });
+    if (u) { // Scan-Welle um den Soldaten
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 2, 0.5), transparent: true, opacity: 0.7, depthWrite: false }));
+      ring.position.set(u.obj.position.x, 0.1, u.obj.position.z); this.scene.add(ring);
+      let k = 0;
+      this.fx.push((dt) => { k = Math.min(1, k + dt / 0.9); ring.scale.setScalar(0.5 + k * r * TILE); ring.material.opacity = 0.7 * (1 - k); if (k < 1) return true; this.removeObj(ring); return false; });
+    }
+  }
+  clearBlips() { this.blips = []; this.blipRings.forEach((b) => (b.visible = false)); }
+
+  // ======================= Munition =======================
+  // Gürtelplatz mit passender Munition: 1. gleiche Art wie geladen, 2. Reihenfolge von w.ammo
+  autoAmmoSlot(u) {
+    const slots = this.beltSlots(u).filter((k) => ITEMS[u.belt[k].id].kind === 'ammo' && ammoFits(u.weapon, u.belt[k].id));
+    if (!slots.length) return null;
+    const same = slots.find((k) => u.belt[k].id === u.load?.id);
+    if (same != null) return same;
+    for (const id of ammoList(u.weapon)) { const k = slots.find((s) => u.belt[s].id === id); if (k != null) return k; }
+    return slots[0];
+  }
+  reload(u, slot = null) {
+    const deny = (msg) => { if (u?.team === 'player') { toast(msg, 'warn'); sfx('deny'); } return false; };
+    const w = WEAPONS[u?.weapon];
+    if (!u || !u.alive || this.ended) return false;
+    if (!w?.mag) return deny(`${w?.name || 'Waffe'} braucht keine Munition.`);
+    if (slot == null) slot = this.autoAmmoSlot(u);
+    if (slot == null) return deny('Kein passendes Magazin im Gürtel.');
+    const b = this.beltEntry(u, slot);
+    if (!b || ITEMS[b.id].kind !== 'ammo' || !ammoFits(u.weapon, b.id)) return deny('Diese Munition passt nicht zur Waffe.');
+    const cost = this.reloadCost(u);
+    if (!this.hasTu(u, cost)) return deny(`Nachladen kostet ${cost} ZE.`);
+    this.spendTu(u, cost);
+    const old = u.load, rounds = b.rounds ?? w.mag;
+    u.load = { id: b.id, rounds };
+    if (!Game.cheats.allGear) {
+      if (old && old.rounds > 0) u.belt[slot] = { id: old.id, uses: 1, rounds: old.rounds }; // Tausch: angebrochenes Magazin in den Gürtel
+      else { u.belt[slot] = null; if (old && !ITEMS[old.id]?.free) this.result.itemsUsed[old.id] = (this.result.itemsUsed[old.id] || 0) + 1; }
+    }
+    sfx('click');
+    this.floatAt(u, `${ITEMS[b.id].icon} nachgeladen`, '#cfe6ff');
+    if (this.mode === 'belt' && !this.beltEntry(u)) this.mode = this.firstMode(u);
+    this.computeRange(); this.updateHover(); this.refreshUi();
+    return true;
+  }
+  firstMode(u) { const w = WEAPONS[u?.weapon]; return ['snap', 'aimed', 'auto'].find((m) => w?.[m]) || 'snap'; }
 
   // ======================= Effekte =======================
   emit(pos, color, vy = 0, spread = 1, life = 0.5, additive = true, smoke = false) {
@@ -1685,6 +2028,8 @@ export class Tactical {
     let t = 0;
     this.fx.push((dt) => { t += dt; l.intensity = intensity * Math.max(0, 1 - t / dur); if (t >= dur) { l.userData.busy = false; l.intensity = 0; return false; } return true; });
   }
+  floatCell(x, y, text, color, big) { const c = this.cellPos(x, y), s = this.toScreen(new THREE.Vector3(c.x, 1.6, c.z)); if (s) floatText(s.x, s.y, text, color, big); }
+  stunrodChance(u, t, it) { return u.team === 'player' && Game.cheats.aimbot ? 1 : clamp((u.acc / 100) * (it.acc || 1.1) * (t.kneel ? 0.92 : 1), 0.05, 0.95); }
   floatAt(u, text, color, big) {
     const p = (u.obj ? u.obj.position.clone() : new THREE.Vector3()).setY(2.4);
     const s = this.toScreen(p);
@@ -1700,7 +2045,21 @@ export class Tactical {
   // ======================= Rundenablauf =======================
   async endTurn() {
     if (this.busy || this.phase !== 'player' || this.ended) return;
+    // scharfe Sprengladungen zünden am Ende des eigenen Zuges (W1 4.7)
+    if (this.charges.length) {
+      this.busy = true; this.clearTarget(); this.clearPath(); this.grenadeArea.visible = false;
+      for (const c of this.charges.splice(0)) {
+        this.removeObj(c.obj);
+        const it = ITEMS[c.id];
+        const cp = this.cellPos(c.x, c.y); this.camT.x = cp.x; this.camT.z = cp.z;
+        await sleep(250);
+        await this.explode(c.x, c.y, it.dmg, it.radius, c.owner, { wallMul: it.wallMul || 1.4 });
+        if (this.ended) return;
+      }
+      this.busy = false;
+    }
     this.phase = 'alien';
+    this.clearBlips(); this.waypoints = []; this.groundTarget = null;
     this.clearTarget();
     this.rangeMesh.count = 0;
     this.updateHover();
@@ -1710,14 +2069,26 @@ export class Tactical {
     setMusicMood('tac');
     await sleep(900);
     if (this.ended) return;
-    for (const u of this.units) { u.revealed = false; if (u.alive && u.team === 'alien') u.tu = u.maxTu; }
+    for (const u of this.units) { u.revealed = false; if (u.alive && u.team === 'alien') { u.tu = u.wokeHalf ? Math.round(u.maxTu / 2) : u.maxTu; u.wokeHalf = false; } }
     await this.alienTurn();
     if (this.ended) return;
     await this.civilianTurn();
     if (this.ended) return;
     this.turn++;
     this.decayEffects();
+    if (this.losDirty) { this.losDirty = false; this.updateVisibility(); }
+    await this.flushBlasts();
+    if (this.ended) return;
     for (const u of this.units) if (u.alive && u.team !== 'alien') u.tu = u.maxTu;
+    // Betäubung baut ab (10 % maxHp je Runde); Bewusstlose wachen auf, sobald Betäubung < LP und ihr Feld frei ist
+    for (const u of this.units) {
+      if (!(u.stun > 0)) continue;
+      u.stun = Math.max(0, u.stun - Math.round(u.maxHp * 0.10));
+      if (u.ko && u.stun < u.hp && this.occ[u.y * this.W + u.x] < 0) {
+        this.wake(u, Math.round(u.maxTu / 2));
+        if (u.team === 'alien') u.wokeHalf = true; // handelt im nächsten Alienzug mit halben ZE
+      }
+    }
     this.phase = 'player';
     this.updateVisibility();
     banner('DEIN ZUG', `Runde ${this.turn}`);
@@ -1748,6 +2119,15 @@ export class Tactical {
   async alienAct(a) {
     const w = WEAPONS[a.weapon];
     let guard = 0, shots = 0;
+    // steht das Alien im Feuer: zuerst auf das nächste nicht brennende Feld (W1 4.11)
+    if (this.fireCells[a.y * this.W + a.x]) {
+      const budget = Math.max(0, a.tu - this.modeCost(a, 'snap'));
+      const { dist, prev } = this.dijkstra(a, budget);
+      let best = -1, bd = Infinity;
+      for (let i = 0; i < this.N; i++) if (dist[i] > 0 && dist[i] < bd && !this.fireCells[i] && this.occ[i] < 0) { bd = dist[i]; best = i; }
+      if (best >= 0) await this.moveUnit(a, this.buildPath(prev, best % this.W, (best / this.W) | 0), { noStop: true });
+      if (!a.alive || this.ended) return;
+    }
     const maxShots = a.boss ? 3 : this.turn === 1 ? 1 : 2;
     while (a.alive && !this.ended && guard++ < 8 && shots < maxShots) {
       let targets = this.alienTargets(a);

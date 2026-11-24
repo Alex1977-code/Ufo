@@ -47,11 +47,19 @@ const CENTER_ALIASES = {
   neck01: ['neck_01', 'CC_Base_NeckTwist01', 'mixamorig:Neck', 'Neck'],
   head: ['head', 'CC_Base_Head', 'mixamorig:Head', 'Head'],
 };
+// three.js (GLTFLoader) entfernt '.', ':', '/', '[', ']' aus Knotennamen → 'foot.L' heißt dort 'footL'
+const sanitize = (n) => n.replace(/\s/g, '_').replace(/[[\].:/]/g, '');
+const _aliasCache = new Map();
 function aliasesOf(canon) {
-  const m = canon.match(/^(.*)\.(L|R)$/);
-  if (!m) return [canon, ...(CENTER_ALIASES[canon] || [])];
-  const [, b, s] = m, l = s.toLowerCase(), S = s === 'L' ? 'Left' : 'Right';
-  return [canon, ...(SIDE_ALIASES[b] || []).map((a) => a.replace('%l', l).replace('%L', s).replace('%S', S))];
+  if (_aliasCache.has(canon)) return _aliasCache.get(canon);
+  const m = canon.match(/^(.*?)\.?([LR])$/);
+  let list;
+  if (!m) list = [canon, ...(CENTER_ALIASES[canon] || [])];
+  else { const [, b, s] = m, l = s.toLowerCase(), S = s === 'L' ? 'Left' : 'Right';
+    list = [b + '.' + s, ...(SIDE_ALIASES[b] || []).map((a) => a.replace('%l', l).replace('%L', s).replace('%S', S))]; }
+  const out = [...new Set(list.flatMap((a) => [a, sanitize(a)]))];
+  _aliasCache.set(canon, out);
+  return out;
 }
 
 // Regionen (über den dominanten Bone eines Haut-Vertex)
@@ -61,14 +69,14 @@ const REGION_ROOTS = [['wrist', R.hand], ['lowerarm01', R.forearm], ['upperarm01
   ['neck02', R.head], ['head', R.head], ['neck01', R.neck], ['breast', R.torso], ['root', R.hips]];
 function regionOfBone(bone) {
   for (let b = bone; b && b.isBone; b = b.parent) {
-    const n = b.name.replace(/\.(L|R)$/, '');
+    const n = b.name.replace(/\.?[LR]$/, '');
     if (/^spine0\d$/.test(n)) return R.torso;
     for (const [k, r] of REGION_ROOTS) if (n === k) return r;
   }
   return R.none;
 }
 function sideOfBone(bone) {
-  for (let b = bone; b && b.isBone; b = b.parent) { const m = b.name.match(/\.(L|R)$/); if (m) return m[1] === 'L' ? 1 : -1; }
+  for (let b = bone; b && b.isBone; b = b.parent) { const m = b.name.match(/\.?([LR])$/); if (m) return m[1] === 'L' ? 1 : -1; }
   return 0;
 }
 
@@ -367,20 +375,34 @@ function analyze(base) {
   const bp = (canon) => { const b = bone(canon); return b ? wpos(b) : null; };
   const Mj = bones.map((b, j) => new THREE.Matrix4().multiplyMatrices(b.matrixWorld, skel.boneInverses[j]));
   const boneReg = bones.map(regionOfBone), boneSide = bones.map(sideOfBone);
-  const g = skin.geometry, pos = g.attributes.position, nor = g.attributes.normal, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
-  const n = pos.count;
-  const P = new Float32Array(n * 3), N = new Float32Array(n * 3), reg = new Uint8Array(n), side = new Int8Array(n);
-  const SI = new Uint16Array(n * 4), SW = new Float32Array(n * 4);
+  // Körperoberfläche = Haut + Kleidung (MakeHuman löscht die Haut unter der Kleidung → beide zusammen bilden die Hülle)
+  const surfaces = [skin, ...(byMat.clothes_top || []), ...(byMat.clothes_bottom || [])];
+  const nSkin = skin.geometry.attributes.position.count;
+  const n = surfaces.reduce((a, m) => a + m.geometry.attributes.position.count, 0);
+  const P = new Float32Array(n * 3), N = new Float32Array(n * 3), reg = new Uint8Array(n), side = new Int8Array(n), srcOf = new Uint8Array(n);
+  const SI = new Uint16Array(n * 4), SW = new Float32Array(n * 4), UV = new Float32Array(n * 2), indexList = [];
   const A = new THREE.Matrix4(), nm = new THREE.Matrix3(), v = new THREE.Vector3(), i4 = [0, 0, 0, 0], w4 = [0, 0, 0, 0];
-  for (let i = 0; i < n; i++) {
-    let best = 0, bw = -1;
-    for (let k = 0; k < 4; k++) { i4[k] = si.getComponent(i, k); w4[k] = sw.getComponent(i, k); SI[i * 4 + k] = i4[k]; SW[i * 4 + k] = w4[k]; if (w4[k] > bw) { bw = w4[k]; best = i4[k]; } }
-    blendMatrix(A, Mj, i4, w4).multiply(skin.bindMatrix);
-    v.fromBufferAttribute(pos, i).applyMatrix4(A); P[i * 3] = v.x; P[i * 3 + 1] = v.y; P[i * 3 + 2] = v.z;
-    nm.getNormalMatrix(A); v.fromBufferAttribute(nor, i).applyMatrix3(nm).normalize(); N[i * 3] = v.x; N[i * 3 + 1] = v.y; N[i * 3 + 2] = v.z;
-    reg[i] = boneReg[best]; side[i] = boneSide[best];
-  }
-  const index = g.index ? g.index.array : Uint32Array.from({ length: n }, (_, i) => i);
+  let off = 0;
+  surfaces.forEach((mesh, si0) => {
+    const g = mesh.geometry, pos = g.attributes.position, nor = g.attributes.normal, si = g.attributes.skinIndex, sw = g.attributes.skinWeight, uva = g.attributes.uv;
+    const c = pos.count, remap = mesh.skeleton.bones.map((b) => bones.indexOf(b));
+    const rp = new Float32Array(c * 3), rn = new Float32Array(c * 3);
+    for (let l = 0; l < c; l++) {
+      const i = off + l; let best = 0, bw = -1;
+      for (let k = 0; k < 4; k++) { i4[k] = Math.max(0, remap[si.getComponent(l, k)]); w4[k] = sw.getComponent(l, k); SI[i * 4 + k] = i4[k]; SW[i * 4 + k] = w4[k]; if (w4[k] > bw) { bw = w4[k]; best = i4[k]; } }
+      blendMatrix(A, Mj, i4, w4).multiply(mesh.bindMatrix);
+      v.fromBufferAttribute(pos, l).applyMatrix4(A); P[i * 3] = v.x; P[i * 3 + 1] = v.y; P[i * 3 + 2] = v.z; rp.set([v.x, v.y, v.z], l * 3);
+      nm.getNormalMatrix(A); v.fromBufferAttribute(nor, l).applyMatrix3(nm).normalize(); N[i * 3] = v.x; N[i * 3 + 1] = v.y; N[i * 3 + 2] = v.z; rn.set([v.x, v.y, v.z], l * 3);
+      if (uva) { UV[i * 2] = uva.getX(l); UV[i * 2 + 1] = uva.getY(l); }
+      reg[i] = boneReg[best]; side[i] = boneSide[best]; srcOf[i] = si0 === 0 ? 0 : 1;
+    }
+    const ix = g.index ? g.index.array : Uint32Array.from({ length: c }, (_, k) => k);
+    for (let k = 0; k < ix.length; k++) indexList.push(ix[k] + off);
+    if (si0 > 0 && !g.attributes.aRest) { g.setAttribute('aRest', new THREE.BufferAttribute(rp, 3)); g.setAttribute('aRestN', new THREE.BufferAttribute(rn, 3)); }
+    off += c;
+  });
+  const index = Uint32Array.from(indexList);
+  const skinIndex = skin.geometry.index ? skin.geometry.index.array : Uint32Array.from({ length: nSkin }, (_, k) => k);
   // Restpositionen anderer Meshes (Haare, Augen)
   const restOf = (mesh) => { const c = mesh.geometry.attributes.position.count, out = new Float32Array(c * 3), t = new THREE.Vector3();
     for (let i = 0; i < c; i++) { mesh.getVertexPosition(i, t); t.applyMatrix4(mesh.matrixWorld); out[i * 3] = t.x; out[i * 3 + 1] = t.y; out[i * 3 + 2] = t.z; } return out; };
@@ -402,8 +424,8 @@ function analyze(base) {
   const torsoZ = []; for (let i = 0; i < n; i++) if (reg[i] === R.torso && Math.abs(P[i * 3 + 1] - key.spine01.y) < 0.08) torsoZ.push(P[i * 3 + 2]);
   const zc = torsoZ.length ? (Math.min(...torsoZ) + Math.max(...torsoZ)) / 2 : key.spine01.z;
   // dünne Stellen (Ohren, Nase, Finger) für den Durchschein-Anteil
-  const thin = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
+  const thin = new Float32Array(nSkin);
+  for (let i = 0; i < nSkin; i++) {
     const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
     if (reg[i] === R.hand) thin[i] = 0.55;
     else if (reg[i] === R.head) {
@@ -449,7 +471,7 @@ function analyze(base) {
   mixer.uncacheRoot(T);
   for (const [o, p, q, s] of restLocal) { o.position.copy(p); o.quaternion.copy(q); o.scale.copy(s); }
   T.updateMatrixWorld(true);
-  base.an = { skin, skel, bones, bi, bone, byMat, Mj, P, N, SI, SW, reg, side, n, index, key, eyeC, headBox, topY, chin, zc, hand,
+  base.an = { skin, skel, bones, bi, bone, byMat, Mj, P, N, SI, SW, UV, reg, side, srcOf, n, nSkin, index, skinIndex, key, eyeC, headBox, topY, chin, zc, hand,
     spineFwdLocal, headRestInv, hairMesh, hairRest, speeds, height };
   return base.an;
 }
@@ -526,8 +548,7 @@ function buildShell(an, triOk, outerFn, innerFn = null, { smooth = 0 } = {}) {
     }
   }
   const pos = [], src = [], ind = [], uvs = [];
-  const uvA = an.skin.geometry.attributes.uv;
-  const pushV = (arr, k, s) => { pos.push(arr[k * 3], arr[k * 3 + 1], arr[k * 3 + 2]); src.push(s); uvs.push(uvA ? uvA.getX(s) : 0, uvA ? uvA.getY(s) : 0); };
+  const pushV = (arr, k, s) => { pos.push(arr[k * 3], arr[k * 3 + 1], arr[k * 3 + 2]); src.push(s); uvs.push(an.UV[s * 2], an.UV[s * 2 + 1]); };
   for (let k = 0; k < m; k++) pushV(outer, k, used[k]);
   for (const x of lt) ind.push(x);
   if (inner) {
@@ -574,7 +595,7 @@ const along = (an, i, A, B) => { const dx = B.x - A.x, dy = B.y - A.y, dz = B.z 
 function skinVariant(base, coverKey, coverPred) {
   return cached(base, 'skin:' + coverKey, () => {
     const an = base.an, src = an.skin.geometry, keep = [];
-    const covered = maj3(coverPred), idx = an.index;
+    const covered = maj3(coverPred), idx = an.skinIndex;
     for (let t = 0; t < idx.length; t += 3) if (!covered(idx[t], idx[t + 1], idx[t + 2])) keep.push(idx[t], idx[t + 1], idx[t + 2]);
     const g = new THREE.BufferGeometry();
     for (const [k, a] of Object.entries(src.attributes)) g.setAttribute(k, a);
