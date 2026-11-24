@@ -1204,6 +1204,8 @@ export class Tactical {
   // Zustand der Figur aus dem Spielzustand ableiten und animieren
   updateFigure(u, dt) {
     const ch = u.obj.userData.char;
+    // Detailstufe nach Kameraabstand (Handy immer vereinfacht), mit Hysterese
+    if (u.obj.visible) { const d = this.camera.position.distanceTo(u.obj.position); ch.setLod(this.engine.mobile || d > (ch.lod ? 19 : 21) ? 1 : 0); }
     if (u.figSettled) return; // liegende Leiche/Bewusstlose: Pose eingefroren
     if (!u.obj.visible && u.alive) return;
     if (u.alive) {

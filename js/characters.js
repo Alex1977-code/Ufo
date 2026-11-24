@@ -1216,6 +1216,42 @@ function kneelClip(base) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// G6: vereinfachte Detailstufe per Vertex-Clustering (geteilte Attribute, neuer Index; gecacht je Quellgeometrie)
+// ---------------------------------------------------------------------------------------------
+const _lodGeo = new WeakMap();
+export function lodGeometry(geo, cell) {
+  if (_lodGeo.has(geo)) return _lodGeo.get(geo);
+  const pos = geo.attributes.position, nrm = geo.attributes.normal;
+  if (!pos || !(cell > 0)) { _lodGeo.set(geo, geo); return geo; }
+  if (!geo.boundingBox) geo.computeBoundingBox();
+  const idx = geo.index || { array: Uint32Array.from({ length: pos.count }, (_, i) => i) };
+  const rep = new Int32Array(pos.count), map = new Map(), v = new THREE.Vector3(), n = new THREE.Vector3(), o = geo.boundingBox.min;
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    let oct = 0; if (nrm) { n.fromBufferAttribute(nrm, i); oct = (n.x > 0 ? 1 : 0) | (n.y > 0 ? 2 : 0) | (n.z > 0 ? 4 : 0); }
+    const key = ((Math.floor((v.x - o.x) / cell) * 1024 + Math.floor((v.y - o.y) / cell)) * 1024 + Math.floor((v.z - o.z) / cell)) * 8 + oct;
+    let r = map.get(key); if (r === undefined) { r = i; map.set(key, i); }
+    rep[i] = r;
+  }
+  const src = idx.array, out = [];
+  const seen = new Set();
+  for (let t = 0; t < src.length; t += 3) {
+    const a = rep[src[t]], b = rep[src[t + 1]], c = rep[src[t + 2]];
+    if (a === b || b === c || a === c) continue;
+    const k = a < b ? (a < c ? `${a},${b < c ? b + ',' + c : c + ',' + b}` : `${c},${a},${b}`) : (b < c ? `${b},${a < c ? a + ',' + c : c + ',' + a}` : `${c},${b},${a}`);
+    if (seen.has(k)) continue; seen.add(k);
+    out.push(a, b, c);
+  }
+  const g = new THREE.BufferGeometry();
+  for (const [k, a] of Object.entries(geo.attributes)) g.setAttribute(k, a);
+  g.setIndex(pos.count > 65535 ? new THREE.Uint32BufferAttribute(out, 1) : new THREE.Uint16BufferAttribute(out, 1));
+  g.boundingBox = geo.boundingBox.clone(); if (geo.boundingSphere) g.boundingSphere = geo.boundingSphere.clone();
+  g.userData.lodOf = geo;
+  _lodGeo.set(geo, g);
+  return g;
+}
+
+// ---------------------------------------------------------------------------------------------
 // makeCharacter
 // ---------------------------------------------------------------------------------------------
 const STATIONARY = new Set(['idle', 'aimIdle', 'aim', 'shoot', 'reload', 'crouch', 'kneel', 'kneelAim', 'kneelShoot']);
@@ -1549,6 +1585,19 @@ export function makeCharacter(opts = {}) {
   ch.setFrustumCulled = (on) => {
     group.updateMatrixWorld(true);
     group.traverse((x) => { if (!x.isMesh) return; x.frustumCulled = !!on; if (on && x.isSkinnedMesh) { x.computeBoundingSphere(); x.boundingSphere.radius *= 1.6; } });
+    return ch;
+  };
+  // G6: Detailstufe. 0 = volle Geometrie, 1 = vereinfachter Index (Vertex-Clustering ~3 cm, gleiche Attribute/Skin-Gewichte,
+  // nur neuer Index → kein Zusatzspeicher für Vertexdaten). Für Abstand > ~20 m bzw. Handy.
+  const lodMeshes = []; group.traverse((x) => { if (x.isSkinnedMesh && x.geometry?.attributes.position) lodMeshes.push([x, x.geometry]); });
+  // Einheiten der gehäuteten Geometrie (quantisierte GLB-Daten) je Meter, aus der Körperhülle
+  let lodCell = 0.03;
+  { const g = skinMesh.geometry; if (!g.boundingBox) g.computeBoundingBox(); const sz = g.boundingBox.getSize(new THREE.Vector3()); lodCell = 0.03 * Math.max(sz.x, sz.y, sz.z) / Math.max(0.5, an.height || 1.75); }
+  ch.lod = 0;
+  ch.setLod = (lv) => {
+    lv = lv ? 1 : 0; if (lv === ch.lod) return ch;
+    ch.lod = lv;
+    for (const [m, full] of lodMeshes) m.geometry = lv ? lodGeometry(full, lodCell) : full;
     return ch;
   };
   ch.setShadows = (on) => { group.traverse((x) => { if (x.isMesh && !(x.material && x.material.transparent)) x.castShadow = !!on; }); return ch; };
