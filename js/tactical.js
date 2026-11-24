@@ -738,7 +738,7 @@ export class Tactical {
     this.fireLight = new THREE.PointLight(0xff7a30, 0, 18, 1.6); this.scene.add(this.fireLight);
     this.flames = []; // flackernde Flammen-Sprites für brennende Felder (Pool, max. 40 Felder)
     for (let i = 0; i < 40; i++) {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: pt, color: new THREE.Color(2.6, 1.1, 0.25), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: pt, color: new THREE.Color(1.9, 0.55, 0.08), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
       sp.visible = false; sp.userData.ph = rand() * 10; this.scene.add(sp); this.flames.push(sp);
     }
     // Scanner-Blips (gelbe, pulsierende Ringe) und Bodenziel-Markierung
@@ -1918,7 +1918,7 @@ export class Tactical {
       const p = this.cellPos(i % this.W, (i / this.W) | 0); sx += p.x; sz += p.z;
       const f = this.flames[n++], ph = f.userData.ph, fl = 0.75 + 0.25 * Math.sin(t * 13 + ph) * Math.sin(t * 7.3 + ph * 2);
       f.visible = true; f.position.set(p.x + Math.sin(t * 3 + ph) * 0.12, 0.7 + 0.15 * fl, p.z + Math.cos(t * 2.7 + ph) * 0.12);
-      f.scale.set(1.5 * fl, 1.9 + 0.5 * fl, 1); f.material.opacity = 0.65 + 0.35 * fl;
+      f.scale.set(1.3 * fl, 1.8 + 0.5 * fl, 1); f.material.opacity = 0.5 + 0.3 * fl;
       if (rand() < dt * 30) { v.set(p.x + randRange(-0.7, 0.7), 0.15, p.z + randRange(-0.7, 0.7)); this.emit(v, new THREE.Color(3, 1 + rand() * 0.9, 0.15), 1.8, 0.35, 0.5 + rand() * 0.3); }
       if (rand() < dt * 3) { v.set(p.x + randRange(-0.5, 0.5), 1.4, p.z + randRange(-0.5, 0.5)); this.emit(v, new THREE.Color(0.2, 0.19, 0.18), 0.8, 0.4, 1.6, false, true); }
     }

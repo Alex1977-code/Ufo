@@ -17,6 +17,8 @@ const ASSETS = [
   './vendor/three/addons/postprocessing/SSRPass.js', './vendor/three/addons/shaders/SSRShader.js', './assets/hdri/hdri.json',
   './assets/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr', './assets/hdri/kloofendal_overcast_puresky_1k.hdr', './assets/hdri/qwantani_dusk_2_puresky_1k.hdr',
   './assets/hdri/shanghai_bund_1k.hdr', './assets/hdri/small_hangar_01_1k.hdr',
+  // Asset-Viewer (G3): eigenständige Seite viewer.html
+  './viewer.html', './js/viewer.js', './css/viewer.css', './js/vehiclematerials.js',
 ];
 // Einzeln cachen: eine fehlende Datei lässt die Installation nicht scheitern
 self.addEventListener('install', (e) => {
