@@ -210,9 +210,16 @@ export class Tactical {
     const cols = {
       grass: ['#4c6b2e', '#56782f', '#45632a'], field: ['#5a4630', '#4d6a2c'], field2: ['#b69a48', '#a58a3c'], dirt: ['#6e5638', '#7a6040'], sand: ['#c9ad7a', '#bfa16c'], snow: ['#dfe6ee', '#cfd9e4'],
       asphalt: ['#2d2f33', '#34363a'], sidewalk: ['#8a8882', '#7f7d78'], tile: ['#7d6f62', '#6f6357'], wood: ['#6b4a2e', '#5e4027'], metal: ['#3d434d', '#454c57'], burnt: ['#221d18', '#2c241c'], hive: ['#2a1530', '#341a3b'],
+      // Bodentypen der Kartenmodule
+      gravel: ['#8a8478', '#827c70', '#8f897c'], mud: ['#4e3d2a', '#45362a', '#544230'], plank: ['#7a5a3a', '#6e5034'], cobble: ['#5e5a55', '#625e58'], concretefloor: ['#9c9a94', '#a29f99'], shore: ['#9c875e', '#947f58', '#a28c64'],
+      crops: ['#4e4128', '#4a3e26'], vineyard: ['#6a5636', '#625032'], graveyard: ['#4a6a2e', '#527030', '#4d6c2e'], parking: ['#323438', '#2e3034'], ice: ['#b8d2e0', '#c4dcea', '#b0cad8'],
     };
-    const natural = new Set(['grass', 'field', 'field2', 'dirt', 'sand', 'snow', 'burnt', 'hive']);
+    const natural = new Set(['grass', 'field', 'field2', 'dirt', 'sand', 'snow', 'burnt', 'hive', 'gravel', 'mud', 'shore', 'crops', 'vineyard', 'graveyard', 'ice']);
+    const isW = (x, y) => m.at(x, y)?.wall?.type === 'water';
+    const sp = (X, Y, w, h, n, pal, sz = 2) => { for (let i = 0; i < n; i++) { c2.fillStyle = pal[(rand() * pal.length) | 0]; c2.fillRect(X + rand() * w, Y + rand() * h, sz * (0.6 + rand() * 0.8), sz * (0.6 + rand() * 0.8)); } };
+    let c2 = null;
     const groundTex = canvasTexture(m.W * P, m.H * P, (c) => {
+      c2 = c;
       c.filter = 'blur(5px)';
       for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) {
         const f = m.at(x, y).floor; if (!natural.has(f)) continue;
@@ -220,11 +227,39 @@ export class Tactical {
         c.fillStyle = pal[(x * 7 + y * 13) % pal.length];
         c.fillRect(x * P - 6, y * P - 6, P + 12, P + 12);
       }
+      // Wassergrund: zur Mitte hin tiefer/dunkler (Wasserfläche selbst ist halbtransparent)
+      for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) {
+        if (!isW(x, y)) continue;
+        let d = 1; while (d < 4) { let all = true; for (let dy = -d; dy <= d && all; dy++) for (let dx = -d; dx <= d; dx++) if (m.at(x + dx, y + dy) && !isW(x + dx, y + dy)) { all = false; break; } if (!all) break; d++; }
+        c.fillStyle = ['#4f5a44', '#33443e', '#1f3236', '#15262b'][d - 1];
+        c.fillRect(x * P - 6, y * P - 6, P + 12, P + 12);
+      }
       c.filter = 'none';
       for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) {
-        const f = m.at(x, y).floor; const X = x * P, Y = y * P;
+        const cell = m.at(x, y), f = cell.floor; const X = x * P, Y = y * P;
         if (natural.has(f)) {
           if (f === 'field' || f === 'field2') { c.fillStyle = f === 'field' ? 'rgba(30,50,15,0.5)' : 'rgba(120,95,30,0.5)'; for (let k = 0; k < P; k += 6) c.fillRect(X, Y + k, P, 2); }
+          else if (f === 'gravel') { sp(X, Y, P, P, 70, ['#a39d90', '#6e695f', '#b5afa2', '#5d5850', '#958f82'], 2); sp(X, Y, P, P, 25, ['rgba(0,0,0,0.25)'], 1.5); }
+          else if (f === 'mud') {
+            for (let k = 0; k < 3; k++) { c.fillStyle = 'rgba(28,20,12,0.35)'; c.beginPath(); c.ellipse(X + rand() * P, Y + rand() * P, 3 + rand() * 7, 2 + rand() * 4, rand() * 3, 0, 7); c.fill(); }
+            if (rand() < 0.5) { c.fillStyle = 'rgba(90,100,105,0.45)'; c.beginPath(); c.ellipse(X + rand() * P, Y + rand() * P, 3 + rand() * 5, 2 + rand() * 3, rand() * 3, 0, 7); c.fill(); }
+            const hz = m.at(x - 1, y)?.floor === 'mud' || m.at(x + 1, y)?.floor === 'mud';
+            c.fillStyle = 'rgba(25,18,10,0.4)'; if (hz) { c.fillRect(X, Y + 9, P, 3); c.fillRect(X, Y + 21, P, 3); } else { c.fillRect(X + 9, Y, 3, P); c.fillRect(X + 21, Y, 3, P); }
+          } else if (f === 'shore') {
+            sp(X, Y, P, P, 30, ['#7a6a4a', '#b8a47c', '#8a8070', '#6a6258'], 2);
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (isW(x + dx, y + dy)) {
+              const g = c.createLinearGradient(X + P / 2, Y + P / 2, X + P / 2 + dx * P / 2, Y + P / 2 + dy * P / 2); g.addColorStop(0, 'rgba(50,42,28,0)'); g.addColorStop(1, 'rgba(50,42,28,0.55)'); c.fillStyle = g; c.fillRect(X, Y, P, P);
+            }
+          } else if (f === 'crops') { for (let k = 2; k < P; k += 6) { c.fillStyle = 'rgba(70,100,30,0.75)'; c.fillRect(X, Y + k, P, 3); sp(X, Y + k - 1, P, 4, 10, ['#6e8e34', '#8aa040', '#a89a48', '#4e6a24'], 2); } }
+          else if (f === 'vineyard') { c.fillStyle = 'rgba(80,110,40,0.35)'; c.fillRect(X, Y, P, P); c.fillStyle = '#4a3a26'; c.fillRect(X, Y + 11, P, 10); sp(X, Y + 12, P, 8, 18, ['#3a5a22', '#4a6a2a', '#2e4a1a'], 3); c.fillStyle = '#3a2a1a'; c.fillRect(X + 2, Y + 15, 2, 2); }
+          else if (f === 'graveyard') {
+            if (!cell.wall) { c.fillStyle = '#8a8478'; c.fillRect(X + 4, Y + 4, P - 8, P - 8); sp(X + 4, Y + 4, P - 8, P - 8, 30, ['#a39d90', '#6e695f', '#b5afa2'], 2); }
+            else sp(X, Y, P, P, 20, ['#3e5a24', '#5a7a34'], 2);
+          } else if (f === 'ice') {
+            sp(X, Y, P, P, 14, ['rgba(255,255,255,0.35)', 'rgba(150,180,200,0.3)'], 4);
+            c.strokeStyle = 'rgba(255,255,255,0.7)'; c.lineWidth = 1; c.beginPath(); let px = X + rand() * P, py = Y + rand() * P; c.moveTo(px, py); for (let k = 0; k < 4; k++) { px += (rand() - 0.5) * 22; py += (rand() - 0.5) * 22; c.lineTo(px, py); } c.stroke();
+            if (rand() < 0.4) { c.strokeStyle = 'rgba(40,70,90,0.45)'; c.beginPath(); c.moveTo(X + rand() * P, Y + rand() * P); c.lineTo(X + rand() * P, Y + rand() * P); c.stroke(); }
+          }
           continue;
         }
         const pal = cols[f] || cols.grass;
@@ -232,6 +267,30 @@ export class Tactical {
         if (f === 'tile' || f === 'sidewalk') { c.strokeStyle = 'rgba(0,0,0,0.25)'; c.strokeRect(X + 0.5, Y + 0.5, P - 1, P - 1); }
         if (f === 'wood') { c.fillStyle = 'rgba(0,0,0,0.3)'; for (let k = 0; k < P; k += 8) c.fillRect(X, Y + k, P, 1); }
         if (f === 'metal') { c.strokeStyle = 'rgba(20,25,35,0.9)'; c.lineWidth = 2; c.strokeRect(X + 1, Y + 1, P - 2, P - 2); c.fillStyle = 'rgba(60,255,200,0.25)'; if ((x + y) % 3 === 0) c.fillRect(X + P / 2 - 1, Y + 4, 2, P - 8); }
+        if (f === 'plank') { // Bohlen quer zur Laufrichtung, Fugen, Nägel, Schatten zum Wasser
+          const alongX = m.at(x - 1, y)?.floor === 'plank' || m.at(x + 1, y)?.floor === 'plank';
+          for (let k = 0; k < 5; k++) {
+            const v = 0.8 + rand() * 0.4; c.fillStyle = `rgb(${120 * v},${88 * v},${56 * v})`;
+            if (alongX) { c.fillRect(X + k * 6.4, Y, 5.6, P); c.fillStyle = 'rgba(40,30,20,0.7)'; c.fillRect(X + k * 6.4 + 2, Y + 3, 1.2, 1.2); c.fillRect(X + k * 6.4 + 2, Y + P - 4, 1.2, 1.2); }
+            else { c.fillRect(X, Y + k * 6.4, P, 5.6); c.fillStyle = 'rgba(40,30,20,0.7)'; c.fillRect(X + 3, Y + k * 6.4 + 2, 1.2, 1.2); c.fillRect(X + P - 4, Y + k * 6.4 + 2, 1.2, 1.2); }
+          }
+          c.fillStyle = 'rgba(10,8,6,0.55)'; if (isW(x - 1, y)) c.fillRect(X, Y, 2, P); if (isW(x + 1, y)) c.fillRect(X + P - 2, Y, 2, P); if (isW(x, y - 1)) c.fillRect(X, Y, P, 2); if (isW(x, y + 1)) c.fillRect(X, Y + P - 2, P, 2);
+        }
+        if (f === 'cobble') { // Kopfsteinpflaster: Reihen kleiner, gerundeter Steine
+          for (let yy = 0; yy < P; yy += 4) for (let xx = -((yy / 4) % 2) * 2; xx < P; xx += 3 + rand() * 2.5) { const v = 95 + rand() * 50; c.fillStyle = `rgb(${v},${v * 0.97},${v * 0.92})`; c.beginPath(); c.ellipse(X + xx + 1.6, Y + yy + 2, 1.5, 1.6, 0, 0, 7); c.fill(); }
+        }
+        if (f === 'concretefloor') { c.fillStyle = 'rgba(40,40,40,0.45)'; c.fillRect(X, Y, P, 1); c.fillRect(X, Y, 1, P); sp(X, Y, P, P, 30, ['rgba(0,0,0,0.08)', 'rgba(255,255,255,0.1)'], 2); if (rand() < 0.25) { c.fillStyle = 'rgba(50,45,40,0.25)'; c.beginPath(); c.ellipse(X + rand() * P, Y + rand() * P, 3 + rand() * 6, 2 + rand() * 4, rand() * 3, 0, 7); c.fill(); } }
+        if (f === 'parking') { // Parkbuchten: Trennlinien je Feld, Abschlusslinie am Rand der Fläche, Ölflecken
+          c.fillStyle = 'rgba(235,235,225,0.85)';
+          c.fillRect(X, Y + (m.at(x, y - 1)?.floor === 'parking' ? 0 : 3), 1.5, P - (m.at(x, y - 1)?.floor === 'parking' ? 0 : 3) - (m.at(x, y + 1)?.floor === 'parking' ? 0 : 3));
+          if (m.at(x, y - 1)?.floor !== 'parking') c.fillRect(X, Y + 2, P, 1.5);
+          if (rand() < 0.3) { c.fillStyle = 'rgba(0,0,0,0.3)'; c.beginPath(); c.ellipse(X + P / 2 + (rand() - 0.5) * 8, Y + P / 2 + (rand() - 0.5) * 8, 4 + rand() * 4, 3 + rand() * 3, rand() * 3, 0, 7); c.fill(); }
+        }
+      }
+      // Ruß unter ausgebrannten Militärfahrzeugen
+      for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) if (m.at(x, y).wall?.type === 'milwreck') {
+        const g = c.createRadialGradient((x + 0.5) * P, (y + 0.5) * P, 0, (x + 0.5) * P, (y + 0.5) * P, P * 1.8); g.addColorStop(0, 'rgba(12,10,8,0.8)'); g.addColorStop(1, 'rgba(12,10,8,0)');
+        c.fillStyle = g; c.fillRect((x - 2) * P, (y - 2) * P, P * 5, P * 5);
       }
       this.paintMarkings(c, P);
       // Rauschen/Detail
@@ -260,7 +319,7 @@ export class Tactical {
     this.scene.add(outer);
     // Grasbüschel als Detail
     const tufts = [];
-    for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) { const c = m.at(x, y); if ((c.floor === 'grass' || c.floor === 'field' || c.floor === 'field2') && !c.wall) tufts.push([x, y, c.floor === 'field2']); }
+    for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) { const c = m.at(x, y); if (['grass', 'field', 'field2', 'graveyard'].includes(c.floor) && !c.wall) tufts.push([x, y, c.floor === 'field2']); if (c.floor === 'crops' && !c.wall) for (let k = 0; k < 2; k++) tufts.push([x, y, 'crop']); }
     const per = 5, count = Math.min(7000, tufts.length * per);
     if (count) {
       const geo = new THREE.ConeGeometry(0.07, 0.45, 3).translate(0, 0.22, 0);
@@ -272,10 +331,24 @@ export class Tactical {
         const p = this.cellPos(x, y);
         pos.set(p.x + randRange(-0.95, 0.95), 0, p.z + randRange(-0.95, 0.95));
         q.setFromEuler(new THREE.Euler(randRange(-0.3, 0.3), rand() * 6, randRange(-0.3, 0.3)));
-        sc.set(1, wheat ? randRange(1.6, 2.2) : randRange(0.6, 1.6), 1);
+        const crop = wheat === 'crop';
+        sc.set(crop ? 1.6 : 1, crop ? randRange(2.4, 3.2) : wheat ? randRange(1.6, 2.2) : randRange(0.6, 1.6), crop ? 1.6 : 1);
         inst.setMatrixAt(k, mtx.compose(pos, q, sc));
-        inst.setColorAt(k, wheat ? col.setHSL(0.12 + rand() * 0.03, 0.6, 0.45 + rand() * 0.12) : col.setHSL(0.22 + rand() * 0.06, 0.5, 0.25 + rand() * 0.15));
+        inst.setColorAt(k, crop ? col.setHSL(0.2 + rand() * 0.06, 0.55, 0.3 + rand() * 0.15) : wheat ? col.setHSL(0.12 + rand() * 0.03, 0.6, 0.45 + rand() * 0.12) : col.setHSL(0.22 + rand() * 0.06, 0.5, 0.25 + rand() * 0.15));
       }
+      this.scene.add(inst);
+    }
+    // Weinreben: Laubwand entlang der Reihe (je Feld zwei Ballen + Pfahl), ein InstancedMesh
+    const vines = [];
+    for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) { const c = m.at(x, y); if (c.floor === 'vineyard' && !c.wall) vines.push([x, y]); }
+    if (vines.length) {
+      const g = new THREE.IcosahedronGeometry(0.5, 1).scale(1.0, 0.85, 0.42).translate(0, 0.95, 0);
+      const vm = patchFog(new THREE.MeshStandardMaterial({ map: textures().leaf, color: 0x9ab87a, roughness: 0.9 }));
+      const inst = new THREE.InstancedMesh(g, vm, vines.length * 2);
+      const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
+      let k = 0;
+      for (const [x, y] of vines) for (const o of [-0.5, 0.5]) { const p = this.cellPos(x, y); inst.setMatrixAt(k++, mtx.compose(pos.set(p.x + o + randRange(-0.1, 0.1), 0, p.z), q.setFromAxisAngle(Y, randRange(-0.15, 0.15)), sc.set(randRange(0.95, 1.15), randRange(0.85, 1.15), 1))); }
+      inst.castShadow = this.engine.settings.shadows !== 'off'; inst.receiveShadow = true;
       this.scene.add(inst);
     }
   }
