@@ -531,3 +531,24 @@ body[data-mode="geo"] #fps { top: auto; bottom: calc(90px + var(--safe-b)); }
 .help-pad { font-size: 0.85em; margin-top: 0.8em; }
 @media (max-width: 700px) { .help-tbl { font-size: 0.85em; } }
 @media (min-width: 1600px) { .help-modal.wide { width: min(1200px, 94vw); } .help-tbl { font-size: 1.05em; } }
+
+/* ---- W3: Ausrüstung mit Munition, Shop-Rubriken, Forschung ---- */
+.eq-notes { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; grid-column: 1 / -1; font-size: 0.82em; color: var(--muted); }
+.eq-notes li { padding: 3px 8px; border-left: 3px solid var(--line); background: rgba(255, 255, 255, 0.03); border-radius: 3px; }
+.eq-notes li.warn { border-left-color: var(--warn); color: var(--warn); }
+.eq-notes li.bad { border-left-color: var(--bad); color: var(--bad); }
+.eq-slot em .bad { color: var(--bad); }
+.eq-opt small, .eq-slot em { overflow-wrap: anywhere; }
+.eq-opts { max-height: 62vh; overflow-y: auto; }
+.shop-item small { display: block; }
+.shop-pair > span { min-width: 0; overflow-wrap: anywhere; }
+.res-unlock { display: block; color: var(--accent2) !important; }
+.research-lock { padding: 4px 8px; border-left: 3px solid var(--line); margin: 3px 0; opacity: 0.75; }
+.research-lock small { color: var(--muted); }
+@media (max-width: 720px) {
+  .shop { grid-template-columns: 1fr; }
+  .research-item, .shop-item { padding-right: 5.2em; }
+  .eq-opts { max-height: 58vh; }
+}
+.eq-opts .eq-opt { flex: 0 0 auto; }
+.eq-opt .eq-txt { min-width: 0; }

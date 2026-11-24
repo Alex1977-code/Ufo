@@ -1,5 +1,5 @@
 // Kampagnenzustand: Finanzen, Soldaten, Forschung, Lager, Speichern/Laden
-import { WEAPONS, ARMORS, GRENADES, ITEMS, BELT_SLOTS, RESEARCH, FACILITIES, RANKS, RANK_XP, REGIONS, CRAFTS, defaultLoad } from './data.js';
+import { WEAPONS, ARMORS, GRENADES, ITEMS, BELT_SLOTS, RESEARCH, FACILITIES, RANKS, RANK_XP, REGIONS, CRAFTS, defaultLoad, ammoFits } from './data.js';
 import { ARTIFACT_PRICES } from './data.js';
 import { randInt, randomName, rand, Emitter } from './util.js';
 
@@ -12,14 +12,14 @@ export function newSoldier() {
     rank: 0, xp: 0, kills: 0, missions: 0,
     tu: randInt(50, 62), hp: randInt(38, 48), acc: randInt(45, 72), react: randInt(35, 65), brave: randInt(30, 70),
     wound: 0, // Heilungstage verbleibend
-    weapon: 'rifle', load: 'mag', armor: 'none', grenades: 1, items: ['frag', 'smoke', null],
+    weapon: 'rifle', load: 'mag', armor: 'none', grenades: 1, items: ['frag', 'mag', 'mag'], // Gürtel: Granate + 2 Ersatzmagazine (gratis, unbegrenzt)
     look: { skin: [0xf1c27d, 0xc68642, 0x8d5524, 0xe0ac69, 0xffdbac][randInt(0, 4)], hair: [0x2c1b10, 0x6b4423, 0xd4b06a, 0x111111, 0x8a3b12][randInt(0, 4)] },
   };
 }
 
 export function createCampaign() {
   return {
-    v: 2,
+    v: 3,
     time: 0, // Minuten seit Spielstart
     credits: 4200000,
     base: null, // {lat, lon, name}
@@ -79,6 +79,27 @@ export function migrateCampaign(c) {
     c.stock.pistol ??= 2; c.stock.charge ??= 2; c.stock.stunrod ??= 1;
     c.v = 2;
   }
+  // Version 3 (W3): gültige Ladung je Soldat, Ersatzmagazine (gratis) im Gürtel, Lager aufräumen
+  if ((c.v || 1) < 3) {
+    for (const s of c.soldiers || []) {
+      if (!WEAPONS[s.weapon]) s.weapon = 'rifle';
+      const w = WEAPONS[s.weapon];
+      if (w.mag) { if (!ammoFits(s.weapon, s.load)) s.load = defaultLoad(s.weapon); }
+      else s.load = null;
+      s.items = (s.items || []).slice(0, BELT_SLOTS);
+      while (s.items.length < BELT_SLOTS) s.items.push(null);
+      // Nicht passende Munition entfernen, bis zu 2 Ersatzmagazine in freie Plätze legen (nur Waffen mit Standardmagazin)
+      s.items = s.items.map((id) => (id && ITEMS[id]?.kind === 'ammo' && !ammoFits(s.weapon, id) ? null : id));
+      if (ammoFits(s.weapon, 'mag')) {
+        let have = s.items.filter((id) => id === 'mag').length;
+        for (let i = 0; i < s.items.length && have < 2; i++) if (!s.items[i]) { s.items[i] = 'mag'; have++; }
+      }
+    }
+    c.stock ||= {};
+    for (const k of Object.keys(c.stock)) if (!(WEAPONS[k] || ITEMS[k] || ARMORS[k]) || !(c.stock[k] >= 0)) delete c.stock[k]; // veraltete Schlüssel
+    c.stock.pistol ??= 2; c.stock.charge ??= 2; c.stock.stunrod ??= 1;
+    c.v = 3;
+  }
 }
 
 class GameState extends Emitter {
@@ -122,6 +143,25 @@ class GameState extends Emitter {
   weaponAvailable(id) { const w = WEAPONS[id]; return !!w && (w.avail || (w.req && this.has(w.req)) || (this.cheats.allGear && w.cost > 0)); }
   armorAvailable(id) { const a = ARMORS[id]; return a && (a.avail || (a.req && this.has(a.req)) || this.cheats.allGear); }
   itemAvailable(id) { const it = ITEMS[id]; return !!it && (!it.req || this.has(it.req) || this.cheats.allGear); }
+  ammoAvailable(id) { const it = ITEMS[id]; return !!it && it.kind === 'ammo' && this.itemAvailable(id); }
+  // Preis einer kaufbaren Ware (Waffe, Rüstung, Gegenstand, Munition); null = nicht kaufbar (Gewehr, Kampfanzug, Standardmagazin)
+  priceOf(id) {
+    const o = WEAPONS[id] || ARMORS[id] || ITEMS[id];
+    return o && o.cost > 0 && !o.free ? o.cost : null;
+  }
+  availableToBuy(id) { return WEAPONS[id] ? this.weaponAvailable(id) : ARMORS[id] ? this.armorAvailable(id) : this.itemAvailable(id); }
+  // Kauf aus dem Shop: { ok, reason, cost }. Waren landen in c.stock.
+  purchase(id, n = 1) {
+    const price = this.priceOf(id);
+    if (price == null) return { ok: false, reason: 'nicht kaufbar' };
+    if (!this.availableToBuy(id)) return { ok: false, reason: 'nicht erforscht' };
+    const cost = price * n;
+    if (this.c.credits < cost) return { ok: false, reason: 'Budget', cost };
+    this.c.credits -= cost;
+    this.c.stock[id] = (this.c.stock[id] || 0) + n;
+    this.emit('change');
+    return { ok: true, cost };
+  }
   grenadeAvailable(id) { const g = GRENADES[id]; return g && (!g.req || this.has(g.req) || this.cheats.allGear); }
 
   // needs normalisieren: ['X', {name:'Y', n:2}] -> [{name, n}]

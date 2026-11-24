@@ -2,9 +2,9 @@
 import * as THREE from 'three';
 import { NOISE_GLSL } from './shaders.js';
 import { Game, newSoldier } from './game.js';
-import { ARTIFACT_PRICES, UFOS, CRAFTS, RESEARCH, FACILITIES, WEAPONS, ARMORS, GRENADES, ITEMS, RANKS, REGIONS, regionOf, CITY_NAMES } from './data.js';
+import { ARTIFACT_PRICES, ALIENS, UFOS, CRAFTS, RESEARCH, FACILITIES, WEAPONS, ARMORS, ITEMS, RANKS, REGIONS, regionOf, CITY_NAMES } from './data.js';
 import { Input, padLabel } from './input.js';
-import { openEquipment, beltTotals, itemEffect } from './equip.js';
+import { openEquipment, beltTotals, itemEffect, weaponDesc } from './equip.js';
 import { modal, toast, confirmBox, alertBox, anyModalOpen, el, bar, banner } from './ui.js';
 import { sfx, setMusicMood } from './audio.js';
 import { openBaseView, isBaseViewOpen } from './basescape.js';
@@ -1032,11 +1032,12 @@ export class Geoscape {
     if (!sold.length) { alertBox('Kein Personal', 'Keine einsatzfähigen Soldaten verfügbar. Rekrutiere neue Soldaten in der Basis.'); return; }
     const chosen = new Set(sold.slice(0, 8).map((s) => s.id));
     const beltIcons = (s) => (s.items || []).map((i) => (ITEMS[i] ? ITEMS[i].icon : '·')).join(' ');
+    const loadIcon = (s) => (WEAPONS[s.weapon].mag ? `${ITEMS[s.load]?.icon || '▮'} ` : '');
     const render = () => sold.map((s) => `
       <div class="sq-row ${chosen.has(s.id) ? 'on' : ''}">
         <button class="btn sq-tog" data-tog="${s.id}">${chosen.has(s.id) ? '☑' : '☐'}</button>
         <div class="sq-name"><b>${s.name}</b><small>${RANKS[s.rank]} · Treff ${s.acc} · ZE ${s.tu} · LP ${s.hp + ARMORS[s.armor].hp}</small>
-          <small class="sq-sum">${WEAPONS[s.weapon].short} · ${ARMORS[s.armor].name} · ${beltIcons(s)}</small></div>
+          <small class="sq-sum">${loadIcon(s)}${WEAPONS[s.weapon].short} · ${ARMORS[s.armor].name} · ${beltIcons(s)}</small></div>
       </div>`).join('');
     const reopen = () => this.squadSelect(site);
     const h = modal({
@@ -1057,8 +1058,9 @@ export class Geoscape {
     const list = h.el.querySelector('#sq-list');
     const info = () => {
       const tot = beltTotals(sold.filter((s) => chosen.has(s.id)));
-      const parts = Object.keys(ITEMS).filter((k) => tot[k] || Game.c.stock[k]).map((k) => `${ITEMS[k].icon} ${tot[k] || 0}/${Game.c.stock[k] || 0}`);
-      h.el.querySelector('#sq-info').textContent = `Verbrauchsgüter Trupp/Lager: ${parts.join('  ') || '–'}${Game.cheats.allGear ? ' (Cheat: unbegrenzt)' : ''}`;
+      const parts = Object.keys(ITEMS).filter((k) => !ITEMS[k].free && (tot[k] || Game.c.stock[k])).map((k) => `${ITEMS[k].icon} ${tot[k] || 0}/${Game.c.stock[k] || 0}`);
+      const mags = sold.filter((x) => chosen.has(x.id)).reduce((n, x) => n + (x.items || []).filter((i) => i === 'mag').length, 0);
+      h.el.querySelector('#sq-info').textContent = `Verbrauchsgüter und Munition Trupp/Lager: ${parts.join('  ') || '–'} · Ersatzmagazine ▮ ${mags} (gratis)${Game.cheats.allGear ? ' (Cheat: unbegrenzt)' : ''}`;
     };
     list.addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b || !b.dataset.tog) return;
@@ -1102,6 +1104,10 @@ export class Geoscape {
     const t = Game.c.transport;
     t.status = 'return';
     this.log(result.won ? `Mission ${site.name}: Erfolg!` : `Mission ${site.name}: Fehlschlag.`, result.won ? 'good' : 'bad');
+    const cap = Object.entries(result.captured || {}).filter(([, n]) => n > 0).map(([k, n]) => `${ALIENS[k]?.name || k} ×${n}`);
+    if (cap.length) this.log(`Gefangene: ${cap.join(', ')} – im Lager (Verhör-Forschung möglich).`, 'good');
+    const loot = Object.entries(result.ammoLoot || {}).filter(([k, n]) => n > 0 && ITEMS[k]).map(([k, n]) => `${ITEMS[k].name} ×${n}`);
+    if (loot.length) this.log(`Erbeutete Munition: ${loot.join(', ')}.`, 'good');
     this.updateHud(true);
   }
 
@@ -1195,6 +1201,13 @@ export class Geoscape {
     const c = Game.c;
     const avail = Game.researchAvailable();
     const cur = c.research ? RESEARCH.find((r) => r.id === c.research.id) : null;
+    const locked = RESEARCH.filter((r) => !Game.has(r.id) && !avail.includes(r));
+    const unlocks = (r) => {
+      const out = [...Object.values(WEAPONS).filter((w) => w.req === r.id && w.cost).map((w) => w.name), ...Object.values(ITEMS).filter((it) => it.req === r.id).map((it) => it.name), ...Object.values(ARMORS).filter((a) => a.req === r.id).map((a) => a.name)];
+      const next = RESEARCH.filter((x) => (x.after || []).includes(r.id)).map((x) => x.name);
+      return (out.length ? `Schaltet frei: ${out.join(', ')}` : '') + (next.length ? `${out.length ? ' · ' : ''}Führt zu: ${next.join(', ')}` : '');
+    };
+    const afterText = (r) => { const n = (r.after || []).filter((t) => !Game.has(t)).map((t) => RESEARCH.find((x) => x.id === t)?.name); return n.length ? `Benötigt zuerst: ${n.join(', ')}` : ''; };
     const needsText = (r) => {
       const ns = Game.researchNeeds(r);
       if (!ns.length) return 'Keine Artefakte nötig';
@@ -1204,7 +1217,8 @@ export class Geoscape {
     const h = modal({
       title: '⚗ Forschung', wide: true,
       html: `${cur ? `<div class="cur-research"><b>${cur.name}</b>${bar(c.research.progress, cur.cost, 'good')}<small>ca. ${Math.ceil((cur.cost - c.research.progress) / c.scientists)} Tage · ${c.scientists} Wissenschaftler</small></div>` : '<p class="warn">Kein laufendes Projekt!</p>'}
-        <h4>Verfügbare Projekte</h4>${avail.filter((r) => r.id !== cur?.id).map((r) => `<button class="btn wide research-item" data-r="${r.id}"><b>${r.name}</b><small>${r.desc}</small><small class="res-needs">${needsText(r)}</small><i>${r.cost} WT</i></button>`).join('') || '<p class="muted">Keine – birg Alien-Artefakte, um neue Projekte freizuschalten.</p>'}
+        <h4>Verfügbare Projekte</h4>${avail.filter((r) => r.id !== cur?.id).map((r) => `<button class="btn wide research-item" data-r="${r.id}"><b>${r.name}</b><small>${r.desc}</small><small class="res-needs">${needsText(r)}</small>${unlocks(r) ? `<small class="res-unlock">${unlocks(r)}</small>` : ''}<i>${r.cost} WT</i></button>`).join('') || '<p class="muted">Keine – birg Alien-Artefakte, um neue Projekte freizuschalten.</p>'}
+        ${locked.length ? `<h4>Noch nicht verfügbar</h4><div class="res-locked">${locked.map((r) => `<div class="research-lock"><b>${r.name}</b> <small>${[afterText(r), Game.researchPaid(r.id) ? '' : Game.researchNeeds(r).filter((a) => (c.artifacts[a.name] || 0) < a.n).map((a) => `${a.n}× ${a.name} fehlt`).join(', ')].filter(Boolean).join(' · ')}</small></div>`).join('')}</div>` : ''}
         <h4>Artefakte im Lager</h4><p class="muted">${Object.entries(c.artifacts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ×${n}`).join(' · ') || 'Keine'}</p>
         <h4>Abgeschlossen</h4><p class="muted">${c.researched.map((id) => RESEARCH.find((r) => r.id === id).name).join(' · ') || '—'}</p>`,
       buttons: [{ label: 'Schließen', primary: true }],
@@ -1230,32 +1244,43 @@ export class Geoscape {
   shopMenu() {
     const c = Game.c;
     const items = [
-      ...Object.entries(WEAPONS).filter(([k, w]) => w.cost && Game.weaponAvailable(k)).map(([k, w]) => ({ k, name: w.name, cost: w.cost, info: `Schaden ${w.dmg}` })),
-      ...Object.entries(ARMORS).filter(([k, a]) => a.cost && Game.armorAvailable(k)).map(([k, a]) => ({ k, name: a.name, cost: a.cost, info: `Panzerung ${a.armor}` })),
+      ...Object.entries(WEAPONS).filter(([k, w]) => w.cost && Game.priceOf(k) != null && Game.weaponAvailable(k)).map(([k, w]) => ({ k, name: `${w.icon || ''} ${w.name}`, cost: w.cost, info: weaponDesc(k) })),
+      ...Object.entries(ARMORS).filter(([k, a]) => a.cost && Game.armorAvailable(k)).map(([k, a]) => ({ k, name: a.name, cost: a.cost, info: `Panzerung ${a.armor}${a.hp ? ` · +${a.hp} LP` : ''}` })),
     ];
-    const cons = Object.entries(ITEMS).filter(([k]) => Game.itemAvailable(k));
+    const buyable = Object.entries(ITEMS).filter(([k]) => Game.priceOf(k) != null && Game.itemAvailable(k));
+    const ammo = buyable.filter(([, it]) => it.kind === 'ammo'), cons = buyable.filter(([, it]) => it.kind !== 'ammo');
     const crafts = Object.entries(CRAFTS).filter(([, cr]) => !cr.req || Game.has(cr.req));
     const arts = Object.entries(c.artifacts).filter(([k, n]) => n > 0 && ARTIFACT_PRICES[k]);
+    const pair = ([k, it]) => `<div class="shop-pair"><span><b>${it.icon} ${it.name}</b><br><small class="muted">${itemEffect(it)} · Lager: ${c.stock[k] || 0}</small></span><button class="btn" data-buy="${k}" data-n="1">+1 · ${fmtMoney(it.cost)}</button><button class="btn" data-buy="${k}" data-n="5">+5 · ${fmtMoney(it.cost * 5)}</button></div>`;
     const h = modal({
       title: '⚙ Beschaffung', wide: true,
-      html: `<p>Budget: <b>${fmtMoney(c.credits)}</b></p><div class="shop">${items.map((i) => `<button class="btn shop-item" data-buy="${i.k}"><b>${i.name}</b><small>${i.info} · Lager: ${c.stock[i.k] || 0}</small><i>${fmtMoney(i.cost)}</i></button>`).join('')}</div>
-        <h4>Verbrauchsgüter</h4><div class="shop">${cons.map(([k, it]) => `<div class="shop-pair"><span><b>${it.icon} ${it.name}</b><br><small class="muted">${itemEffect(it)} · Lager: ${c.stock[k] || 0}</small></span><button class="btn" data-buy="${k}" data-n="1">+1 · ${fmtMoney(it.cost)}</button><button class="btn" data-buy="${k}" data-n="5">+5 · ${fmtMoney(it.cost * 5)}</button></div>`).join('')}</div>
+      html: `<p>Budget: <b>${fmtMoney(c.credits)}</b></p><h4>Waffen &amp; Rüstungen</h4><div class="shop">${items.map((i) => `<button class="btn shop-item" data-buy="${i.k}"><b>${i.name}</b><small>${i.info}</small><small>Lager: ${c.stock[i.k] || 0}</small><i>${fmtMoney(i.cost)}</i></button>`).join('')}</div>
+        <p class="muted">Standardmagazine (▮) sind gratis und unbegrenzt. Weitere Waffen und Munition schaltet die Forschung frei.</p>
+        <h4>Munition</h4><div class="shop">${ammo.map(pair).join('')}</div>
+        <h4>Verbrauchsgüter</h4><div class="shop">${cons.map(pair).join('')}</div>
         <h4>Abfangjäger</h4><div class="shop">${crafts.map(([k, cr]) => `<button class="btn shop-item" data-craft="${k}" ${c.crafts.length >= c.facilities.hangar + 1 ? 'disabled' : ''}><b>${cr.name}</b><small>Hülle ${cr.hp} · Schaden ${cr.dmg}</small><i>${fmtMoney(cr.cost)}</i></button>`).join('')}</div>
         <p class="muted">Hangarplätze: ${c.crafts.length}/${c.facilities.hangar + 1}</p>
         <h4>Verkauf von Alien-Artefakten</h4><div class="shop" id="artifact-sale">${arts.map(([k, n]) => { const need = Game.artifactNeededFor(k); return `<div class="shop-pair"><span><b>${k}</b> ×${n}<br><small class="muted">${fmtMoney(ARTIFACT_PRICES[k])} pro Stück</small>${need.length ? `<br><small class="warn">⚠ Wird noch für Forschung gebraucht: ${need.map((r) => r.name).join(', ')}</small>` : ''}</span><button class="btn" data-sell="${k}" data-n="1">1 verkaufen</button><button class="btn" data-sell="${k}" data-n="all">alle verkaufen</button></div>`; }).join('') || '<p class="muted">Keine Artefakte im Lager.</p>'}</div>`,
       buttons: [{ label: 'Schließen', primary: true }],
     });
+    const body = h.el.querySelector('.modal-body');
     h.el.addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
-      if (b.dataset.sell) { const got = Game.sellArtifact(b.dataset.sell, b.dataset.n === 'all' ? Infinity : 1); if (got) { sfx('select'); toast(`Verkauft: +${fmtMoney(got)}`); } else sfx('deny'); h.close(); this.shopMenu(); this.updateHud(); return; }
+      const keep = body ? body.scrollTop : 0;
+      const again = () => { h.close(); this.shopMenu(); this.updateHud(); const nb = [...document.querySelectorAll('.modal-body')].pop(); if (nb) nb.scrollTop = keep; };
+      if (b.dataset.sell) { const got = Game.sellArtifact(b.dataset.sell, b.dataset.n === 'all' ? Infinity : 1); if (got) { sfx('select'); toast(`Verkauft: +${fmtMoney(got)}`); } else sfx('deny'); again(); return; }
       const k = b.dataset.buy || b.dataset.craft; if (!k) return;
       const n = +(b.dataset.n || 1);
-      const cost = b.dataset.buy ? (ITEMS[k] ? ITEMS[k].cost * n : items.find((i) => i.k === k).cost) : CRAFTS[k].cost;
+      if (b.dataset.buy) {
+        const r = Game.purchase(k, n);
+        if (!r.ok) { sfx('deny'); toast(r.reason === 'Budget' ? 'Nicht genug Budget.' : 'Nicht kaufbar.', 'warn'); return; }
+        sfx('select'); again(); return;
+      }
+      const cost = CRAFTS[k].cost;
       if (c.credits < cost) { sfx('deny'); toast('Nicht genug Budget.', 'warn'); return; }
       c.credits -= cost; sfx('select');
-      if (b.dataset.buy) c.stock[k] = (c.stock[k] || 0) + n;
-      else { const n = c.crafts.filter((x) => x.type === k).length + 1; c.crafts.push({ id: 'c' + Math.floor(rand() * 1e9).toString(36), type: k, name: `${CRAFTS[k].name}-${n}`, hp: CRAFTS[k].hp, status: 'ready' }); }
-      h.close(); this.shopMenu(); this.updateHud();
+      const nn = c.crafts.filter((x) => x.type === k).length + 1; c.crafts.push({ id: 'c' + Math.floor(rand() * 1e9).toString(36), type: k, name: `${CRAFTS[k].name}-${nn}`, hp: CRAFTS[k].hp, status: 'ready' });
+      again();
     });
   }
 

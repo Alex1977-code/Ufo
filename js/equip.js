@@ -1,17 +1,24 @@
 // Ausrüstungsdialog: Waffe, Rüstung und Gürtelplätze je Soldat. Regel-Logik oben ist DOM-frei und exportiert.
-import { WEAPONS, ARMORS, ITEMS, BELT_SLOTS, RANKS } from './data.js';
+import { WEAPONS, ARMORS, ITEMS, BELT_SLOTS, RANKS, DTYPE_NAMES, ammoFits, ammoList, defaultLoad, effWeapon, guidedMode } from './data.js';
 
 // ---------- Reine Logik ----------
 const UNLIMITED = { weapon: 'rifle', armor: 'none' };
+const isAmmo = (id) => ITEMS[id]?.kind === 'ammo';
 
 // Wie viele Stück von `id` sind noch frei, wenn `current` (bzw. dessen Gürtelplatz `slot`) selbst nicht mitzählt?
-// field: 'weapon' | 'armor' | 'items'. soldiers: Pool, über den gezählt wird (Waffen/Rüstungen: alle Soldaten, Gürtel: Trupp).
-// Gibt Infinity zurück bei unbegrenzten Optionen (Gewehr, Kampfanzug) oder Cheat allGear.
+// field: 'weapon' | 'armor' | 'items' | 'load'. soldiers: Pool, über den gezählt wird (Waffen/Rüstungen: alle Soldaten, Gürtel/Ladung: Trupp).
+// Munition zählt Ladung (soldier.load) und Gürtel (soldier.items) gemeinsam (W1 3.4).
+// Gibt Infinity zurück bei unbegrenzten Optionen (Gewehr, Kampfanzug, Standardmagazin `free`) oder Cheat allGear.
 export function availableCount(id, soldiers, current, stock, field = 'weapon', slot = -1, allGear = false) {
   if (allGear || id == null || UNLIMITED[field] === id) return Infinity;
+  const ammo = (field === 'items' || field === 'load') && isAmmo(id);
+  if (ammo && ITEMS[id].free) return Infinity;
   let used = 0;
   for (const s of soldiers) {
-    if (field === 'items') {
+    if (ammo) {
+      if (s.load === id && !(field === 'load' && s === current)) used++;
+      (s.items || []).forEach((it, i) => { if (it === id && !(field === 'items' && s === current && i === slot)) used++; });
+    } else if (field === 'items') {
       (s.items || []).forEach((it, i) => { if (it === id && !(s === current && i === slot)) used++; });
     } else if (s !== current && s[field] === id) used++;
   }
@@ -23,11 +30,35 @@ export function canEquip(id, soldiers, current, stock, field, slot = -1, allGear
   return availableCount(id, soldiers, current, stock, field, slot, allGear) > 0;
 }
 
-// Setzt Waffe/Rüstung/Gürtel eines Soldaten, sofern Bestand reicht. Gibt true bei Erfolg zurück.
-export function setEquip(soldier, field, id, soldiers, stock, slot = -1, allGear = false) {
+// Wählt nach einem Waffenwechsel eine gültige Ladung: Standardmunition, sonst erste Munition mit Bestand.
+// Rückgabe: { id, short } – short=true, wenn kein Bestand frei ist (Waffe würde leer starten).
+export function pickLoad(soldier, squad, stock, allGear = false) {
+  const list = ammoList(soldier.weapon);
+  if (!list.length) { soldier.load = null; return { id: null, short: false }; }
+  const ok = list.find((id) => availableCount(id, squad, soldier, stock, 'load', -1, allGear) > 0);
+  soldier.load = ok ?? list[0];
+  return { id: soldier.load, short: ok == null };
+}
+
+// Munition im Gürtel, die nicht zur Waffe passt, bleibt im Lager (Platz wird leer)
+export function dropMisfits(soldier) {
+  soldier.items = (soldier.items || []).map((it) => (isAmmo(it) && !ammoFits(soldier.weapon, it) ? null : it));
+}
+
+// Setzt Waffe/Rüstung/Gürtel/Ladung eines Soldaten, sofern Bestand reicht. Gibt true bei Erfolg zurück.
+// Ein Waffenwechsel passt Ladung und Gürtel-Munition an. squad: Pool für Ladung/Gürtel (Standard: soldiers).
+export function setEquip(soldier, field, id, soldiers, stock, slot = -1, allGear = false, squad = soldiers) {
   if (id != null && !canEquip(id, soldiers, soldier, stock, field, slot, allGear)) return false;
-  if (field === 'items') { soldier.items ||= Array(BELT_SLOTS).fill(null); soldier.items[slot] = id; }
-  else soldier[field] = id;
+  if (field === 'items') {
+    if (isAmmo(id) && !ammoFits(soldier.weapon, id)) return false; // passt nicht zur Waffe
+    soldier.items ||= Array(BELT_SLOTS).fill(null); soldier.items[slot] = id;
+  } else if (field === 'load') {
+    if (id != null && !ammoFits(soldier.weapon, id)) return false;
+    soldier.load = id;
+  } else {
+    soldier[field] = id;
+    if (field === 'weapon') { dropMisfits(soldier); pickLoad(soldier, squad, stock, allGear); }
+  }
   return true;
 }
 
@@ -37,37 +68,93 @@ export function applyTemplate(src, targets, poolAll, stock, allGear = false) {
   const belt = targets;
   for (const t of targets) {
     if (t === src) continue;
-    if (!setEquip(t, 'weapon', src.weapon, poolAll, stock, -1, allGear)) setEquip(t, 'weapon', 'rifle', poolAll, stock, -1, allGear);
+    if (!setEquip(t, 'weapon', src.weapon, poolAll, stock, -1, allGear, belt)) setEquip(t, 'weapon', 'rifle', poolAll, stock, -1, allGear, belt);
     if (!setEquip(t, 'armor', src.armor, poolAll, stock, -1, allGear)) setEquip(t, 'armor', 'none', poolAll, stock, -1, allGear);
     t.items = Array(BELT_SLOTS).fill(null);
+    if (t.weapon === src.weapon && src.load != null) setEquip(t, 'load', src.load, belt, stock, -1, allGear); // sonst bleibt pickLoad
     for (let i = 0; i < BELT_SLOTS; i++) setEquip(t, 'items', (src.items || [])[i] ?? null, belt, stock, i, allGear);
   }
 }
 
-// Gesamtverbrauch an Gürtelgegenständen: { id: Anzahl }
+// Gesamtverbrauch an Gürtelgegenständen: { id: Anzahl }; Munition in der Waffe (load) zählt mit, Standardmagazine nicht (gratis)
 export function beltTotals(soldiers) {
   const r = {};
-  for (const s of soldiers) for (const it of s.items || []) if (it) r[it] = (r[it] || 0) + 1;
+  for (const s of soldiers) {
+    for (const it of s.items || []) if (it && !ITEMS[it]?.free) r[it] = (r[it] || 0) + 1;
+    if (s.load && !ITEMS[s.load]?.free) r[s.load] = (r[s.load] || 0) + 1;
+  }
   return r;
 }
 
-// Kürzt Gürtel, falls Bestand überschritten (Sicherheitsnetz, z. B. nach Cheat-Wechsel)
+// Kürzt Gürtel und Ladung, falls Bestand überschritten (Sicherheitsnetz, z. B. nach Cheat-Wechsel).
+// Gratis-Magazine (`mag`, free) werden nie entfernt.
 export function clampBelts(soldiers, stock, allGear = false) {
   if (allGear) return;
   const used = {};
+  const free = (id) => ITEMS[id]?.free || (used[id] || 0) < (stock[id] || 0);
+  for (const s of soldiers) { // Ladung zuerst (eine leere Waffe wäre schlimmer als ein Gürtelplatz weniger)
+    if (!s.load || ITEMS[s.load]?.free) continue;
+    if (!free(s.load)) s.load = ammoList(s.weapon).find(free) ?? defaultLoad(s.weapon);
+    if (s.load && !ITEMS[s.load]?.free) used[s.load] = (used[s.load] || 0) + 1;
+  }
   for (const s of soldiers) {
     s.items = (s.items || []).slice(0, BELT_SLOTS);
     while (s.items.length < BELT_SLOTS) s.items.push(null);
-    s.items = s.items.map((it) => { if (!it) return null; used[it] = (used[it] || 0) + 1; return used[it] > (stock[it] || 0) ? null : it; });
+    s.items = s.items.map((it) => {
+      if (!it) return null;
+      if (ITEMS[it]?.free) return it;
+      used[it] = (used[it] || 0) + 1;
+      return used[it] > (stock[it] || 0) ? null : it;
+    });
   }
 }
 
+const f1 = (n) => String(n).replace('.', ',');
+// Kurzbeschreibung eines Gürtel-/Munitions-Items
 export function itemEffect(it) {
-  if (it.kind === 'grenade') return `Schaden ${it.dmg}, Radius ${it.radius}`;
-  if (it.kind === 'smoke') return `Sichtschutz, Radius ${it.radius}, ${it.turns} Runden`;
-  if (it.kind === 'flare') return `Beleuchtung, Radius ${it.radius}, ${it.turns} Runden`;
-  if (it.kind === 'medkit') return `Heilt ${it.heal} LP, ${it.uses} Anwendungen`;
+  const dt = it.dtype ? DTYPE_NAMES[it.dtype] : '';
+  if (it.kind === 'grenade') return `${dt} ${it.dmg}, Radius ${f1(it.radius)} · ${Math.round(it.tu * 100)} % ZE`;
+  if (it.kind === 'smoke') return `Sichtschutz, Radius ${f1(it.radius)}, ${it.turns} Runden`;
+  if (it.kind === 'flare') return `Beleuchtung, Radius ${f1(it.radius)}, ${it.turns} Runden`;
+  if (it.kind === 'medkit') return `Heilt ${it.heal} LP, ${it.uses} Anwendungen · weckt Betäubte`;
+  if (it.kind === 'mine') return `Wurfmine, ${dt} ${it.dmg}, Radius ${f1(it.radius)}, löst bei Aliens aus`;
+  if (it.kind === 'charge') return `Zeitzünder (Ende deines Zuges), ${dt} ${it.dmg}, Radius ${f1(it.radius)}, sprengt Wände`;
+  if (it.kind === 'stunrod') return `Nahkampf, ${dt} ${it.dmg}, nicht verbraucht`;
+  if (it.kind === 'scanner') return `Zeigt Bewegung, Radius ${it.radius}, nicht verbraucht`;
+  if (it.kind === 'ammo') {
+    const id = ITEMS_ID(it), ws = Object.values(WEAPONS).filter((w) => w.ammo?.[id]).map((w) => w.short);
+    return it.free ? `Gratis, unbegrenzt · passt zu: ${ws.join(', ')}` : `passt zu: ${ws.join(', ')}`;
+  }
   return '';
+}
+const ITEMS_ID = (it) => Object.keys(ITEMS).find((k) => ITEMS[k] === it);
+
+// Beschreibung einer Waffe (optional mit geladener Munition)
+export function weaponDesc(wid, ammoId) {
+  const w = effWeapon(wid, ammoId); if (!w) return '';
+  const parts = [`${DTYPE_NAMES[w.dtype] || ''} ${w.dmg}`, `Reichw. ${w.range}`];
+  if (w.radius) parts.push(`Radius ${f1(w.radius)}`);
+  if (w.burn) parts.push(`Brand ${w.burn} R.`);
+  const gm = guidedMode(w);
+  if (w.snap && !gm) parts.push(`Schnell ${Math.round(w.snap.acc * 100)} %`);
+  if (w.aimed) parts.push(`Gezielt ${Math.round(w.aimed.acc * 100)} %`);
+  if (w.auto) parts.push('Salve');
+  if (gm) parts.push(`Lenkschuss (${w.waypoints} Wegpunkte)`);
+  parts.push(w.mag ? `Magazin ${w.mag}` : (WEAPONS[wid].ammo ? '' : 'keine Munition nötig'));
+  parts.push(w.hands === 1 ? 'einhändig' : w.heavy ? 'schwer' : 'zweihändig');
+  return parts.filter(Boolean).join(' · ');
+}
+
+// Hinweise zur Waffe (schwer/einhändig/Munition) für den Detailbereich
+export function weaponNotes(wid) {
+  const w = WEAPONS[wid], n = [];
+  if (!w) return n;
+  if (w.heavy) n.push('Schwere Waffe: Schnellschuss im Stehen −15 %, Reaktionsfeuer −30 %.');
+  if (w.hands === 1) n.push('Einhändig: Reaktionsfeuer +25 %, billiger Schnellschuss.');
+  if (w.noReact || w.radius) n.push('Kein Reaktionsfeuer mit dieser Waffe/Munition.');
+  if (w.tile) n.push('Darf auch auf ein leeres Feld feuern (Flächenwirkung).');
+  if (w.mag === 1) n.push('Nach jedem Schuss nachladen – Munition im Gürtel mitführen.');
+  return n;
 }
 
 // ---------- Dialog ----------
@@ -80,19 +167,30 @@ export async function openEquipment({ soldiers, onDone }) {
   clampBelts(soldiers, stock, gear);
   const cur = () => soldiers[sel];
   const slotBtn = (key, label, icon, name, sub) => `<button class="btn eq-slot" data-slot="${key}"><small>${label}</small><b>${icon ? icon + ' ' : ''}${name}</b>${sub ? `<em>${sub}</em>` : ''}</button>`;
-  const wDesc = (w) => `Schaden ${w.dmg} · Reichweite ${w.range}${w.snap ? ` · Schnell ${Math.round(w.snap.acc * 100)}%` : ''}${w.aimed ? ` · Gezielt ${Math.round(w.aimed.acc * 100)}%` : ''}${w.auto ? ' · Salve' : ''}`;
   const aDesc = (a) => `Panzerung ${a.armor}${a.hp ? ` · +${a.hp} LP` : ''}`;
+  const stockTxt = (id, free) => (free === Infinity ? 'unbegrenzt' : `Lager: ${free} frei`);
+  // Magazine passend zur Waffe im Gürtel (für den Hinweis „kein Ersatzmagazin“)
+  const spareCount = (s) => (s.items || []).filter((id) => id && isAmmo(id) && ammoFits(s.weapon, id)).length;
 
   const html = () => {
     const s = cur(), w = WEAPONS[s.weapon], a = ARMORS[s.armor];
     const list = soldiers.map((x, i) => `<button class="btn eq-sold ${i === sel ? 'on' : ''} ${x.wound > 0 ? 'hurt' : ''}" data-sold="${i}"><b>${x.name}</b><small>${RANKS[x.rank]} · ZE ${x.tu} · LP ${x.hp + ARMORS[x.armor].hp} · Treff ${x.acc}${x.wound > 0 ? ' · verwundet' : ''}</small></button>`).join('');
     const belt = Array.from({ length: BELT_SLOTS }, (_, i) => { const it = ITEMS[s.items?.[i]]; return slotBtn('i' + i, `Gürtel ${i + 1}`, it ? it.icon : '', it ? it.name : '– leer –', it ? itemEffect(it) : ''); }).join('');
+    let loadSlot = '';
+    const notes = weaponNotes(s.weapon).map((t) => `<li>${t}</li>`);
+    if (w.mag) {
+      const ld = ITEMS[s.load], left = availableCount(s.load, soldiers, s, stock, 'load', -1, gear);
+      const lack = ld && left <= 0;
+      loadSlot = slotBtn('load', 'Munition (geladen)', ld ? ld.icon : '', ld ? ld.name : '– keine –', `${w.mag} Schuss${ld ? ` · ${weaponDesc(s.weapon, s.load).split(' · ')[0]}` : ''}${lack ? ' · <span class="bad">keine Munition im Lager</span>' : ''}`);
+      if (lack) notes.unshift(`<li class="bad">Keine ${ld.name} im Lager – die Waffe startet leer. Kaufe Munition in der Beschaffung.</li>`);
+      else if (spareCount(s) === 0) notes.unshift(`<li class="warn">Kein Ersatzmagazin im Gürtel – nur ${w.mag} Schuss je Einsatz. Gratis-Magazin „▮“ in einen Gürtelplatz legen.</li>`);
+    }
     return `<div class="eq">
       <div class="eq-list">${list}</div>
       <div class="eq-detail">
         <div class="eq-head"><button class="btn" data-nav="-1" aria-label="Vorheriger Soldat">◀</button><div><b>${s.name}</b><small>${RANKS[s.rank]} · ${sel + 1}/${soldiers.length}</small></div><button class="btn" data-nav="1" aria-label="Nächster Soldat">▶</button></div>
         <div class="eq-stats">ZE ${s.tu} · LP ${s.hp + a.hp} · Treff ${s.acc} · Reakt ${s.react} · Panzerung ${a.armor}</div>
-        <div class="eq-main"><div class="eq-view-slot"></div><div class="eq-slots">${slotBtn('weapon', 'Waffe', '', w.name, wDesc(w))}${slotBtn('armor', 'Rüstung', '', a.name, aDesc(a))}${belt}</div></div>
+        <div class="eq-main"><div class="eq-view-slot"></div><div class="eq-slots">${slotBtn('weapon', 'Waffe', w.icon || '', w.name, weaponDesc(s.weapon, s.load))}${loadSlot}${slotBtn('armor', 'Rüstung', '', a.name, aDesc(a))}${belt}${notes.length ? `<ul class="eq-notes">${notes.join('')}</ul>` : ''}</div></div>
       </div></div>`;
   };
 
@@ -120,27 +218,27 @@ export async function openEquipment({ soldiers, onDone }) {
 
   function pick(key) {
     const s = cur();
-    const field = key === 'weapon' ? 'weapon' : key === 'armor' ? 'armor' : 'items';
+    const field = key === 'weapon' ? 'weapon' : key === 'armor' ? 'armor' : key === 'load' ? 'load' : 'items';
     const slot = field === 'items' ? +key.slice(1) : -1;
-    const pool = field === 'items' ? soldiers : all;
+    const pool = field === 'items' || field === 'load' ? soldiers : all;
     const curId = field === 'items' ? s.items?.[slot] : s[field];
     let opts;
-    if (field === 'weapon') opts = Object.entries(WEAPONS).filter(([k, w]) => w.cost > 0 || k === 'rifle').map(([k, w]) => ({ id: k, icon: '', name: w.name, desc: wDesc(w), ok: Game.weaponAvailable(k), cost: w.cost }));
+    if (field === 'weapon') opts = Object.entries(WEAPONS).filter(([k, w]) => w.cost > 0 || k === 'rifle').map(([k, w]) => ({ id: k, icon: w.icon, name: w.name, desc: weaponDesc(k), ok: Game.weaponAvailable(k), cost: w.cost }));
     else if (field === 'armor') opts = Object.entries(ARMORS).map(([k, a]) => ({ id: k, icon: '', name: a.name, desc: aDesc(a), ok: Game.armorAvailable(k), cost: a.cost }));
-    else opts = Object.entries(ITEMS).map(([k, it]) => ({ id: k, icon: it.icon, name: it.name, desc: itemEffect(it), ok: Game.itemAvailable(k), cost: it.cost }));
+    else if (field === 'load') opts = ammoList(s.weapon).map((k) => ({ id: k, icon: ITEMS[k].icon, name: ITEMS[k].name, desc: weaponDesc(s.weapon, k), ok: Game.itemAvailable(k), cost: ITEMS[k].cost }));
+    else opts = Object.entries(ITEMS).filter(([k, it]) => it.kind !== 'ammo' || ammoFits(s.weapon, k)).map(([k, it]) => ({ id: k, icon: it.icon, name: it.name, desc: itemEffect(it), ok: Game.itemAvailable(k), cost: it.cost }));
     const rows = opts.map((o) => {
       const free = availableCount(o.id, pool, s, stock, field, slot, gear);
       let reason = '';
       if (!o.ok) reason = 'Nicht erforscht';
       else if (free <= 0) reason = 'Kein Bestand frei';
-      const unl = free === Infinity;
-      const stk = unl ? 'unbegrenzt' : `Lager: ${free} frei`;
+      const stk = stockTxt(o.id, free);
       // Fehlender Bestand: anwählbar (→ Figur schüttelt den Kopf), aber als gesperrt markiert; nicht erforscht: deaktiviert
       const dis = !o.ok ? 'disabled' : free <= 0 ? 'aria-disabled="true"' : '';
       return `<button class="btn eq-opt ${o.id === curId ? 'on' : ''} ${o.ok && free <= 0 ? 'dis' : ''}" data-opt="${o.id}" ${dis}><span class="eq-ico">${o.icon || ''}</span><span class="eq-txt"><b>${o.name}</b><small>${o.desc}</small></span><span class="eq-stk ${reason ? 'bad' : ''}">${reason || stk}</span></button>`;
     }).join('');
     const clear = field === 'items' ? `<button class="btn eq-opt" data-opt="">✕ Platz leeren</button>` : '';
-    const label = field === 'weapon' ? 'Waffe wählen' : field === 'armor' ? 'Rüstung wählen' : `Gürtel ${slot + 1}`;
+    const label = field === 'weapon' ? 'Waffe wählen' : field === 'armor' ? 'Rüstung wählen' : field === 'load' ? 'Munition laden' : `Gürtel ${slot + 1}`;
     // Abgelehnte Auswahl: Kopfschütteln, sobald die (die Figur verdeckende) Auswahlliste wieder zu ist
     let denied = false, done = false;
     const ph = modal({ title: `${label} – ${s.name}`, html: `<div class="eq-opts">${rows}${clear}</div>`, buttons: [{ label: 'Zurück' }], onClose: () => { if (denied && !done) view?.play('deny'); } });
@@ -148,8 +246,9 @@ export async function openEquipment({ soldiers, onDone }) {
       const b = e.target.closest('[data-opt]'); if (!b || b.disabled) return;
       const id = b.dataset.opt || null;
       const before = field === 'items' ? s.items?.[slot] ?? null : s[field];
-      if (!b.classList.contains('dis') && setEquip(s, field, id, pool, stock, slot, gear)) {
+      if (!b.classList.contains('dis') && setEquip(s, field, id, pool, stock, slot, gear, soldiers)) {
         sfx('select'); focusKey = `[data-slot="${key}"]`; done = true; ph.close(); redraw();
+        if (field === 'weapon' && WEAPONS[id].mag && availableCount(s.load, soldiers, s, stock, 'load', -1, gear) <= 0) toast(`Keine ${ITEMS[s.load]?.name || 'Munition'} im Lager – Waffe startet leer.`, 'warn');
         if (id !== before) view?.play(field === 'weapon' ? 'aim' : 'approve');
       } else { sfx('deny'); toast(b.classList.contains('dis') ? 'Kein Bestand frei.' : 'Nicht verfügbar.', 'warn'); denied = true; view?.play('deny'); }
     });
@@ -277,6 +376,28 @@ function beltMesh(THREE, kind, id, mat) {
     const c1 = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.022, 0.008), red), c2 = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.075, 0.008), red);
     c1.position.z = c2.position.z = 0.032; g.add(b, c1, c2);
   }
+  else if (kind === 'ammo') {
+    const free = id === 'mag';
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.13, 0.045), mat(free ? 'magBody' : 'ammoBody', { color: free ? 0x30343a : 0x6a5a2a, roughness: 0.5, metalness: 0.5 }));
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.072, 0.025, 0.047), mat('ammoTip', { color: id === 'pz_cell' ? 0x40ff80 : id === 'mag' ? 0x8a8f96 : 0xff8030, emissive: id === 'pz_cell' ? 0x20c050 : 0, roughness: 0.4 }));
+    tip.position.y = 0.07; g.add(b, tip);
+  } else if (kind === 'mine') {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.085, 0.04, 14), mat('mineBody', { color: 0x4a4f3a, roughness: 0.6, metalness: 0.4 }));
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.015, 8, 6), mat('mineLed', { color: 0x200000, emissive: 0xff2020, emissiveIntensity: 1.6 }));
+    led.position.y = 0.025; g.add(b, led);
+  } else if (kind === 'charge') {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.08, 0.06), mat('chargeBody', { color: 0x7a2a1a, roughness: 0.6 }));
+    const t = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.03, 0.062), mat('chargeTimer', { color: 0x101010, emissive: 0xffb020, emissiveIntensity: 1.2 }));
+    t.position.set(0.02, 0.01, 0); g.add(b, t);
+  } else if (kind === 'stunrod') {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.26, 10), mat('rodBody', { color: 0x2a3340, roughness: 0.5, metalness: 0.5 }));
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.05, 10), mat('rodTip', { color: 0x102040, emissive: 0x50a0ff, emissiveIntensity: 1.6 }));
+    tip.position.y = 0.14; g.add(b, tip);
+  } else if (kind === 'scanner') {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.15, 0.04), mat('scanBody', { color: 0x2c3036, roughness: 0.5, metalness: 0.4 }));
+    const scr = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.005), mat('scanScr', { color: 0x102010, emissive: 0xffe040, emissiveIntensity: 1.2 }));
+    scr.position.set(0, 0.025, 0.022); g.add(b, scr);
+  }
   g.traverse((m) => { if (m.isMesh) m.castShadow = true; });
   return g;
 }
@@ -393,7 +514,7 @@ function createSoldierViewer(THREE, makeSoldier) {
   function build(s) {
     disposeFig();
     const w = WEAPONS[s.weapon] || WEAPONS.rifle, a = ARMORS[s.armor] || ARMORS.none;
-    fig = makeSoldier(s, a.color, w.fx);
+    fig = makeSoldier(s, a.color, `${w.fx}:${w.hands === 1 ? 'pistol' : w.tile ? 'tube' : w.heavy ? 'heavy' : 'rifle'}`);
     ud = fig.userData;
     const body = ud.body;
     // Kopf-Gelenk: Kopf, Helm und Visier gemeinsam drehbar machen
@@ -403,7 +524,6 @@ function createSoldierViewer(THREE, makeSoldier) {
     const gun = ud.gun; gun.rotation.order = 'ZYX';
     if (s.weapon === 'sniper') { const sc = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.32, 10).rotateX(Math.PI / 2), mat('scope', { color: 0x111418, metalness: 0.8, roughness: 0.3 })); sc.position.set(0, 0.13, -0.02); gun.add(sc); }
     if (s.weapon === 'shotgun') { gun.scale.z = 0.8; const pm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.22, 10).rotateX(Math.PI / 2), mat('pump', { color: 0x5a3a22, roughness: 0.7 })); pm.position.set(0, -0.08, 0.2); gun.add(pm); }
-    if (s.weapon === 'hplasma') gun.scale.set(1.35, 1.35, 1.2);
     // Gürtel + Gegenstände
     const beltY = 0.93;
     const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.335, 0.335, 0.07, 24, 1, true), mat('belt', { color: 0x3a2e22, roughness: 0.8, side: THREE.DoubleSide }));
