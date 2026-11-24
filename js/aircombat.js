@@ -5,6 +5,7 @@ import { Game } from './game.js';
 import { Input, padLabel } from './input.js';
 import { sfx, setMusicMood } from './audio.js';
 import { clamp, lerp, rand, randRange, smooth } from './util.js';
+import { makeInterceptor, makeUfo as makeUfoModel, animateCraft, disposeCraft } from './craftmodels.js';
 
 // ---------- Kampfregeln ----------
 const ESCAPE_KM = 22; // ab dieser Entfernung entkommt das UFO
@@ -175,107 +176,32 @@ class Particles {
   }
 }
 
-// ---------- Modelle ----------
-function makeJet(type, textures) {
-  const phantom = type === 'phantom';
+// ---------- Modelle (js/craftmodels.js) ----------
+const JET_SCALE = 0.5; // neue Modelle sind ~2x so gross wie die frueheren Kampf-Modelle
+
+// Schadens-Shader der Modelle live steuerbar machen (vor dem ersten Rendern aufrufen).
+function hookDamage(model) {
+  const hooks = [];
+  model.traverse((o) => {
+    const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    for (const m of ms) {
+      const prev = m.onBeforeCompile;
+      if (!prev || m.userData.dmgHooked) continue;
+      m.userData.dmgHooked = true;
+      m.onBeforeCompile = (sh, r) => { prev.call(m, sh, r); if (sh.uniforms?.uDmg) hooks.push(sh.uniforms.uDmg); };
+    }
+  });
+  return (d) => { for (const u of hooks) u.value = d; };
+}
+
+function makeJet(type, damage) {
   const root = new THREE.Group();
   const body = new THREE.Group();
-  root.add(body);
-  const hullTex = panelTex(phantom ? '#3a424c' : '#9aa8b6', phantom ? 'rgba(0,0,0,0.5)' : 'rgba(30,40,50,0.45)');
-  textures.push(hullTex);
-  const hull = new THREE.MeshStandardMaterial({ color: 0xffffff, map: hullTex, metalness: phantom ? 0.7 : 0.55, roughness: phantom ? 0.32 : 0.42 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x14181d, metalness: 0.6, roughness: 0.5 });
-  const accentCol = phantom ? new THREE.Color(0.2, 1.6, 2.2) : new THREE.Color(2.4, 0.9, 0.2);
-  const accent = new THREE.MeshStandardMaterial({ color: phantom ? 0x1c5a6a : 0xc65a16, emissive: accentCol, emissiveIntensity: 0.35, metalness: 0.4, roughness: 0.4 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x0b1d2c, metalness: 1, roughness: 0.06, emissive: new THREE.Color(0.02, 0.08, 0.12) });
-  const L = phantom ? 8.4 : 7;
-  // Rumpf (Drehkörper, Nase zeigt nach −Z)
-  const prof = phantom
-    ? [[0.5, 0], [0.62, 0.5], [0.7, 2.6], [0.66, 4.8], [0.52, 6.2], [0.3, 7.5], [0.0, 8.4]]
-    : [[0.36, 0], [0.48, 0.5], [0.54, 2.4], [0.5, 4.2], [0.38, 5.4], [0.2, 6.4], [0.0, 7.0]];
-  const fus = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 24);
-  fus.rotateX(-Math.PI / 2); fus.translate(0, 0, L / 2); fus.scale(phantom ? 1.35 : 1, 0.82, 1);
-  body.add(new THREE.Mesh(fus, hull));
-  // Cockpithaube
-  const can = new THREE.Mesh(new THREE.SphereGeometry(0.36, 18, 12), glass);
-  can.scale.set(phantom ? 1.05 : 0.95, 0.75, 2.6); can.position.set(0, 0.36, -L * 0.24);
-  body.add(can);
-  // Flügel
-  const wing = (pts, y, mat = hull, depth = 0.09) => {
-    for (const m of [1, -1]) {
-      const s = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x * m, z)));
-      const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.03, bevelSegments: 1 });
-      g.rotateX(Math.PI / 2); g.translate(0, y + depth / 2, 0);
-      body.add(new THREE.Mesh(g, mat));
-    }
-  };
-  if (phantom) {
-    wing([[0.6, -2.6], [1.0, -1.0], [4.2, 1.6], [4.3, 2.5], [0.6, 3.0]], -0.05);
-    wing([[2.6, 2.6], [1.4, 3.3], [0.9, 4.2], [2.9, 4.3]], 0.02); // Höhenleitwerk
-    // Streifen an der Flügelvorderkante
-    wing([[1.0, -1.0], [4.2, 1.6], [4.2, 1.82], [0.98, -0.75]], 0.0, accent, 0.03);
-  } else {
-    wing([[0.45, -1.2], [3.3, 1.5], [3.5, 2.2], [0.45, 2.5]], -0.12);
-    wing([[0.4, 2.5], [1.7, 3.3], [1.75, 3.65], [0.4, 3.6]], 0.0);
-    wing([[3.3, 1.5], [3.5, 2.2], [3.38, 2.2], [3.18, 1.55]], -0.11, accent, 0.11);
-  }
-  // Seitenleitwerk(e)
-  const fin = (x, rotZ, pts) => {
-    const s = new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(z, y)));
-    const g = new THREE.ExtrudeGeometry(s, { depth: 0.07, bevelEnabled: false });
-    g.rotateY(-Math.PI / 2); g.translate(0.035, 0, 0);
-    const m = new THREE.Mesh(g, hull);
-    m.position.set(x, 0.25, 0); m.rotation.z = rotZ;
-    body.add(m);
-    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.5), accent);
-    tip.position.set(0, pts[2][1] - 0.05, pts[2][0] + 0.2); m.add(tip);
-  };
-  if (phantom) { fin(0.75, -0.35, [[1.6, 0], [2.6, 1.7], [3.1, 1.75], [3.9, 0]]); fin(-0.75, 0.35, [[1.6, 0], [2.6, 1.7], [3.1, 1.75], [3.9, 0]]); }
-  else fin(0, 0, [[1.4, 0], [2.6, 1.9], [3.1, 1.95], [3.6, 0]]);
-  // Lufteinlässe
-  for (const m of [1, -1]) {
-    const it = new THREE.Mesh(new THREE.BoxGeometry(phantom ? 0.55 : 0.36, 0.42, 2.6), dark);
-    it.position.set(m * (phantom ? 0.95 : 0.62), -0.12, phantom ? -0.2 : 0.3);
-    body.add(it);
-  }
-  // Triebwerke + Flammen
-  const flames = [];
-  const fTex = textures.flame;
-  const nozX = phantom ? [-0.5, 0.5] : [0];
-  const flameCol = phantom ? new THREE.Color(0.35, 0.8, 1.9) : new THREE.Color(1.9, 0.85, 0.28);
-  for (const x of nozX) {
-    const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, 0.7, 18, 1, true), dark);
-    noz.rotation.x = Math.PI / 2; noz.position.set(x, 0, L / 2 + 0.2);
-    body.add(noz);
-    const core = new THREE.Mesh(new THREE.CircleGeometry(0.33, 18), new THREE.MeshBasicMaterial({ color: flameCol.clone().multiplyScalar(0.9) }));
-    core.position.set(x, 0, L / 2 + 0.1); body.add(core);
-    for (const [r, len, mul] of [[0.3, 2.6, 0.45], [0.16, 1.5, 0.9]]) {
-      const g = new THREE.ConeGeometry(r, len, 14, 1, true);
-      g.translate(0, len / 2, 0); g.rotateX(Math.PI / 2);
-      const f = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: fTex, color: flameCol.clone().multiplyScalar(mul), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-      f.position.set(x, 0, L / 2 + 0.45);
-      body.add(f); flames.push(f);
-    }
-  }
-  // Raketen an Aufhängungen
-  const missiles = [];
-  const mBody = new THREE.MeshStandardMaterial({ color: 0xe8ecef, metalness: 0.3, roughness: 0.5 });
-  const pylons = phantom ? [1.3, 2.0, 2.7] : [1.35, 2.25];
-  for (const px of pylons) for (const m of [-1, 1]) {
-    const mg = makeMissileMesh(mBody, accent);
-    mg.position.set(m * px, -0.28, phantom ? 1.0 + px * 0.15 : 0.9 + px * 0.2);
-    body.add(mg); missiles.push(mg);
-  }
-  // Positionslichter
-  const navs = [];
-  const tipX = phantom ? 4.25 : 3.4;
-  for (const [x, c] of [[-tipX, [3, 0.15, 0.1]], [tipX, [0.15, 3, 0.4]]]) {
-    const n = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(...c) }));
-    n.position.set(x, -0.04, phantom ? 2.0 : 1.85); body.add(n); navs.push(n);
-  }
-  const strobe = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 4, 4) }));
-  strobe.position.set(0, phantom ? 0.3 : 2.1, L / 2 - 0.3); body.add(strobe);
-  root.userData = { body, flames, missiles, strobe, L, nozzles: nozX.map((x) => new THREE.Vector3(x, 0, L / 2 + 0.5)) };
+  const model = makeInterceptor(type === 'phantom' ? 'phantom' : 'falcon', { damage: Math.max(0.001, damage), transmission: false });
+  model.scale.setScalar(JET_SCALE);
+  body.add(model); root.add(body);
+  const setDamage = hookDamage(model);
+  root.userData = { body, model, setDamage, missiles: model.userData.missiles, weapons: model.userData.weapons.filter((w) => w.kind === 'missile'), L: model.userData.length * JET_SCALE };
   return root;
 }
 
@@ -293,81 +219,20 @@ function makeMissileMesh(mBody, accent) {
   return g;
 }
 
-function makeUfo(type, R, accentArr, textures) {
+function makeUfo(type, R, accentArr, textures, damage) {
   const root = new THREE.Group();
   const body = new THREE.Group();
-  root.add(body);
   const acc = new THREE.Color(...accentArr);
-  const accHex = '#' + new THREE.Color(accentArr[0] / 3.5, accentArr[1] / 3.5, accentArr[2] / 3.5).getHexString();
-  const tex = panelTex('#4a4f5c', 'rgba(0,0,0,0.55)');
-  const emi = windowEmissive(accHex);
-  textures.push(tex, emi);
-  tex.wrapS = emi.wrapS = THREE.RepeatWrapping; tex.repeat.x = emi.repeat.x = Math.max(1, Math.round(R / 2));
-  const hull = new THREE.MeshStandardMaterial({ color: 0xffffff, map: tex, emissiveMap: emi, emissive: acc.clone().multiplyScalar(0.8), metalness: 0.88, roughness: 0.27 });
-  const darkHull = new THREE.MeshStandardMaterial({ color: 0x1e2128, metalness: 0.8, roughness: 0.35 });
-  const glow = new THREE.MeshBasicMaterial({ color: acc });
-  const dome = new THREE.MeshStandardMaterial({ color: 0x101820, metalness: 1, roughness: 0.05, emissive: acc.clone().multiplyScalar(0.15) });
-  const lathe = (pts, mat, seg = 48) => {
-    const g = new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r * R, y * R)), seg);
-    const m = new THREE.Mesh(g, mat); body.add(m); return m;
-  };
-  const ring = (rad, y, tube) => { const m = new THREE.Mesh(new THREE.TorusGeometry(rad * R, tube * R, 8, 64), glow); m.rotation.x = Math.PI / 2; m.position.y = y * R; body.add(m); return m; };
-  // Grundscheibe
-  const thick = type === 'freighter' ? 1.5 : type === 'battleship' ? 1.15 : type === 'fighter' ? 0.8 : 1;
-  lathe([[0.001, -0.18 * thick], [0.4, -0.17 * thick], [0.8, -0.09 * thick], [1.0, 0], [0.84, 0.08 * thick], [0.47, 0.15 * thick], [0.3, 0.17 * thick], [0.001, 0.175 * thick]], hull);
-  ring(0.985, 0, 0.018);
-  const lights = new THREE.Group(); body.add(lights);
-  const nL = type === 'battleship' ? 28 : type === 'freighter' ? 20 : 14;
-  const lg = new THREE.SphereGeometry(0.035 * R, 8, 6);
-  for (let i = 0; i < nL; i++) {
-    const a = (i / nL) * Math.PI * 2;
-    const m = new THREE.Mesh(lg, new THREE.MeshBasicMaterial({ color: acc.clone() }));
-    m.position.set(Math.cos(a) * 0.9 * R, -0.07 * R * thick, Math.sin(a) * 0.9 * R);
-    lights.add(m);
-  }
-  // Kuppel
-  const dm = new THREE.Mesh(new THREE.SphereGeometry(0.3 * R, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), dome);
-  dm.position.y = 0.15 * R * thick; dm.scale.y = type === 'fighter' ? 0.55 : 0.8; body.add(dm);
-  // Unterseite: Antriebsfeld
-  const emitter = new THREE.Mesh(new THREE.CircleGeometry(0.32 * R, 32), new THREE.MeshBasicMaterial({ map: textures.glow, color: acc.clone().multiplyScalar(1.4), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-  emitter.rotation.x = Math.PI / 2; emitter.position.y = -0.185 * R * thick; body.add(emitter);
-  ring(0.32, -0.18 * thick, 0.012);
-  if (type === 'fighter') {
-    for (let i = 0; i < 3; i++) {
-      const a = (i / 3) * Math.PI * 2 + Math.PI / 2;
-      const s = new THREE.Shape([new THREE.Vector2(0, -0.12 * R), new THREE.Vector2(0.55 * R, 0), new THREE.Vector2(0, 0.12 * R)]);
-      const g = new THREE.ExtrudeGeometry(s, { depth: 0.03 * R, bevelEnabled: false });
-      g.translate(0, 0, -0.015 * R); g.rotateX(Math.PI / 2);
-      const m = new THREE.Mesh(g, darkHull); m.position.set(Math.cos(a) * 0.82 * R, 0, Math.sin(a) * 0.82 * R); m.rotation.y = -a;
-      body.add(m);
-      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.03 * R, 8, 6), glow); tip.position.set(Math.cos(a) * 1.36 * R, 0, Math.sin(a) * 1.36 * R); body.add(tip);
-    }
-  }
-  if (type === 'freighter') {
-    ring(0.62, -0.2, 0.014);
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      const pod = new THREE.Mesh(new THREE.CapsuleGeometry(0.09 * R, 0.32 * R, 6, 12), darkHull);
-      pod.rotation.z = Math.PI / 2; pod.rotation.y = -a; pod.position.set(Math.cos(a) * 0.6 * R, -0.25 * R, Math.sin(a) * 0.6 * R);
-      body.add(pod);
-    }
-  }
-  if (type === 'battleship') {
-    lathe([[0.001, 0.15], [0.52, 0.17], [0.5, 0.26], [0.36, 0.33], [0.2, 0.36], [0.001, 0.37]], hull);
-    ring(0.5, 0.2, 0.012); ring(0.7, -0.15, 0.012);
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.05 * R, 0.4 * R, 8), darkHull);
-      sp.position.set(Math.cos(a) * 1.12 * R, 0, Math.sin(a) * 1.12 * R); sp.rotation.z = -Math.PI / 2; sp.rotation.y = -a;
-      body.add(sp);
-      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.025 * R, 8, 6), glow); tip.position.set(Math.cos(a) * 1.32 * R, 0, Math.sin(a) * 1.32 * R); body.add(tip);
-    }
-    dm.position.y = 0.36 * R; dm.scale.setScalar(0.6);
-  }
-  // Waffen-Ladeleuchten (Vorderseite, zum Jäger hin)
+  const accHex = new THREE.Color(accentArr[0] / 3.5, accentArr[1] / 3.5, accentArr[2] / 3.5).getHex();
+  const model = makeUfoModel(type, { accent: accHex, damage: Math.max(0.001, damage) });
+  const sc = R / model.userData.radius;
+  model.scale.setScalar(sc);
+  body.add(model); root.add(body);
+  const setDamage = hookDamage(model);
+  // Waffen-Ladeleuchten (Vorderseite, zum Jaeger hin)
   const charge = new THREE.Sprite(new THREE.SpriteMaterial({ map: textures.glow, color: acc.clone().multiplyScalar(1.5), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
   charge.position.set(0, -0.05 * R, 1.02 * R); charge.scale.setScalar(0.01); root.add(charge);
-  root.userData = { body, lights, charge, emitter, acc, R };
+  root.userData = { body, model, setDamage, charge, acc, R };
   return root;
 }
 
@@ -405,6 +270,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     unsubs.forEach((f) => { try { f(); } catch { /* */ } });
     overlay?.remove();
     try {
+      disposeCraft(jet?.userData.model); disposeCraft(ufoObj?.userData.model);
       scene.traverse((o) => {
         o.geometry?.dispose?.();
         const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
@@ -547,9 +413,9 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     scene.add(smoke.points, fire.points);
 
     // Jäger und UFO
-    jet = makeJet(craft.type, textures);
+    jet = makeJet(craft.type, 1 - craft.hp / craftSpec.hp);
     scene.add(jet);
-    ufoObj = makeUfo(ufo.type, R, U.accent, textures);
+    ufoObj = makeUfo(ufo.type, R, U.accent, textures, 1 - ufo.hp / ufoSpec.hp);
     scene.add(ufoObj);
     jet.position.set(0, 0, 0);
     ufoObj.position.set(0, 3, -visDist(S.visD));
@@ -799,7 +665,10 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
   function launchMissile(i) {
     if (!jet) return;
     const side = i % 2 ? 1 : -1;
-    const start = jet.localToWorld(new THREE.Vector3(side * 1.8, -0.4, 0.8));
+    jet.updateMatrixWorld(true);
+    const ws = jet.userData.weapons.filter((w) => Math.sign(w.object.position.x || side) === side);
+    const wp = ws.length ? ws[Math.floor(S.ammo / 2) % ws.length] : null;
+    const start = wp ? wp.muzzle.getWorldPosition(new THREE.Vector3()) : jet.localToWorld(new THREE.Vector3(side * 1.8, -0.4, 0.8));
     const hit = cheats.oneHit || rand() < hitChanceOwn(S.d);
     const dmg = cheats.oneHit ? 99999 : Math.round((craftSpec.dmg || 50) * randRange(0.75, 1.25));
     const mesh = makeMissileMesh(new THREE.MeshStandardMaterial({ color: 0xe8ecef, metalness: 0.3, roughness: 0.5 }), new THREE.MeshStandardMaterial({ color: 0xaa2200, emissive: new THREE.Color(1, 0.2, 0) }));
@@ -1144,12 +1013,11 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
         jet.rotation.y = smooth(jet.rotation.y, Math.atan2(-tmpLook.x, -tmpLook.z) * 0.5, 2, dt);
       }
       const boost = S.maneuver === 'approach' && !ended ? 1.35 : 1;
-      ud.flames.forEach((f, i) => { f.scale.set(1, 1, (boost + Math.sin(t * 40 + i) * 0.12) * (i % 2 ? 1.1 : 1)); });
-      ud.strobe.visible = (t % 1.2) < 0.08;
+      animateCraft(ud.model, t, { throttle: boost > 1 ? 1 : 0.55 });
       // Rauch bei Schäden
       const cf = craft.hp / craftSpec.hp;
       if (cf < 0.5 && rand() < (0.6 - cf) * 2 * dt * 30) {
-        const p = jet.localToWorld(_v.set(randRange(-0.8, 0.8), 0.2, 2));
+        const p = jet.localToWorld(_v.set(randRange(-0.8, 0.8), 0.2, ud.L * 0.5));
         smoke.spawn(p.x, p.y, p.z, 0, 0.5, 6, 1.6, 0.8, 3.5, 0.6, [0.15, 0.15, 0.16], [0.35, 0.35, 0.37], 0.5);
         if (cf < 0.3) fire.spawn(p.x, p.y, p.z, 0, 0, 5, 0.3, 0.9, 0.3, 1, [3.5, 1.5, 0.4]);
       }
@@ -1157,9 +1025,9 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
 
     // UFO
     const uu = ufoObj.userData;
-    uu.lights.rotation.y += dt * 1.6;
-    uu.lights.children.forEach((l, i) => { const k = 0.5 + 0.5 * Math.sin(t * 6 - i * 0.7); l.material.color.copy(uu.acc).multiplyScalar(0.3 + k * 1.2); });
-    uu.emitter.material.opacity = 0.7 + Math.sin(t * 9) * 0.2;
+    animateCraft(uu.model, t, { throttle: S.chargeT > 0 ? 1 : 0.5 });
+    ud.setDamage(clamp(1 - craft.hp / craftSpec.hp, 0.001, 1));
+    uu.setDamage(clamp(1 - ufo.hp / ufoSpec.hp, 0.001, 1));
     if (S.result === 'win') {
       const f = S.fall;
       f.vy -= dt * 22;
