@@ -314,7 +314,7 @@ function createSoldierViewer(THREE, makeSoldier) {
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x070b10, 5.5, 10);
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 30);
-  camera.position.set(0, 1.25, 5.1); camera.lookAt(0, 0.98, 0);
+  camera.position.set(0, 1.2, 4.4); camera.lookAt(0, 0.97, 0);
 
   // Umgebungslicht (PBR) aus einer kleinen Hangar-Lichtszene
   const pmrem = new THREE.PMREMGenerator(renderer);

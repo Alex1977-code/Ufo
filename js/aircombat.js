@@ -103,8 +103,8 @@ const WORLD_VS = /* glsl */ `varying vec3 vW; void main(){ vec4 w = modelMatrix 
 
 // Himmels-Presets
 const SKIES = [
-  { zenith: [0.06, 0.2, 0.55], horizon: [0.55, 0.7, 0.86], sun: [1.0, 0.92, 0.8], sunDir: [-0.5, 0.32, -0.8], cloud: [1.0, 0.98, 0.96] },
-  { zenith: [0.07, 0.1, 0.3], horizon: [1.0, 0.56, 0.34], sun: [1.0, 0.62, 0.34], sunDir: [-0.45, 0.12, -0.88], cloud: [1.0, 0.8, 0.68] },
+  { zenith: [0.035, 0.12, 0.38], horizon: [0.36, 0.48, 0.64], sun: [1.0, 0.9, 0.75], sunDir: [-0.5, 0.3, -0.8], cloud: [0.92, 0.93, 0.95] },
+  { zenith: [0.04, 0.06, 0.18], horizon: [0.68, 0.36, 0.2], sun: [1.0, 0.55, 0.3], sunDir: [-0.45, 0.12, -0.88], cloud: [0.95, 0.72, 0.6] },
 ];
 
 // ---------- Partikelsystem (Rauch, Feuer, Funken) ----------
@@ -242,14 +242,14 @@ function makeJet(type, textures) {
   const flames = [];
   const fTex = textures.flame;
   const nozX = phantom ? [-0.5, 0.5] : [0];
-  const flameCol = phantom ? new THREE.Color(0.6, 1.4, 3.2) : new THREE.Color(3.2, 1.5, 0.5);
+  const flameCol = phantom ? new THREE.Color(0.35, 0.8, 1.9) : new THREE.Color(1.9, 0.85, 0.28);
   for (const x of nozX) {
     const noz = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, 0.7, 18, 1, true), dark);
     noz.rotation.x = Math.PI / 2; noz.position.set(x, 0, L / 2 + 0.2);
     body.add(noz);
-    const core = new THREE.Mesh(new THREE.CircleGeometry(0.33, 18), new THREE.MeshBasicMaterial({ color: flameCol.clone().multiplyScalar(1.2) }));
+    const core = new THREE.Mesh(new THREE.CircleGeometry(0.33, 18), new THREE.MeshBasicMaterial({ color: flameCol.clone().multiplyScalar(0.9) }));
     core.position.set(x, 0, L / 2 + 0.1); body.add(core);
-    for (const [r, len, mul] of [[0.3, 2.6, 0.7], [0.17, 1.6, 1.4]]) {
+    for (const [r, len, mul] of [[0.3, 2.6, 0.45], [0.16, 1.5, 0.9]]) {
       const g = new THREE.ConeGeometry(r, len, 14, 1, true);
       g.translate(0, len / 2, 0); g.rotateX(Math.PI / 2);
       const f = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: fTex, color: flameCol.clone().multiplyScalar(mul), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
@@ -422,7 +422,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
   // ================= Szene =================
   let sky, ground, cloudLow, cloudHigh, jet, ufoObj, smoke, fire, puffs, flashLight, sunLight, preset;
   function buildScene() {
-    preset = SKIES[rand() < 0.7 ? 0 : 1];
+    preset = SKIES[globalThis.__acSky ?? (rand() < 0.7 ? 0 : 1)];
     const sunDir = new THREE.Vector3(...preset.sunDir).normalize();
     const zen = new THREE.Color(...preset.zenith), hor = new THREE.Color(...preset.horizon), sunC = new THREE.Color(...preset.sun);
     textures.glow = glowTex(); textures.flame = flameTex(); textures.smoke = smokeTex(); textures.cloud = cloudTex();
@@ -439,7 +439,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
           vec3 col = mix(hor, zen, pow(clamp(h, 0.0, 1.0), 0.5));
           col = mix(col, hor * 0.85, smoothstep(0.0, -0.2, h));
           float s = max(dot(d, sunDir), 0.0);
-          col += sunC * (pow(s, 900.0) * 30.0 + pow(s, 60.0) * 0.6 + pow(s, 6.0) * 0.22);
+          col += sunC * (pow(s, 900.0) * 24.0 + pow(s, 60.0) * 0.35 + pow(s, 6.0) * 0.1);
           gl_FragColor = vec4(col, 1.0); }`,
       side: THREE.BackSide, depthWrite: false,
     });
@@ -534,7 +534,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     scene.add(cloudHigh);
     // vorbeiziehende Wolkenballen (Geschwindigkeitsgefühl)
     puffs = [];
-    const puffMat = new THREE.SpriteMaterial({ map: textures.cloud, color: new THREE.Color(...preset.cloud), transparent: true, depthWrite: false, fog: true, opacity: 0.85 });
+    const puffMat = new THREE.SpriteMaterial({ map: textures.cloud, color: new THREE.Color(...preset.cloud), transparent: true, depthWrite: false, fog: true, opacity: 0.5 });
     for (let i = 0; i < 34; i++) {
       const s = new THREE.Sprite(puffMat);
       placePuff(s, randRange(-1500, 60));
@@ -558,8 +558,8 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     camera.lookAt(0, 1, -40);
   }
   function placePuff(s, z) {
-    let x = randRange(-700, 700), y = randRange(-60, 90);
-    if (Math.abs(x) < 45 && y > -30 && y < 30) x += Math.sign(x || 1) * 60;
+    let x = randRange(-800, 800), y = randRange(-60, 90);
+    if (Math.abs(x) < 120) x = Math.sign(x || 1) * randRange(120, 260);
     s.position.set(x, y, z);
     const sc = randRange(60, 150);
     s.scale.set(sc * 1.8, sc, 1);
@@ -803,7 +803,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     const hit = cheats.oneHit || rand() < hitChanceOwn(S.d);
     const dmg = cheats.oneHit ? 99999 : Math.round((craftSpec.dmg || 50) * randRange(0.75, 1.25));
     const mesh = makeMissileMesh(new THREE.MeshStandardMaterial({ color: 0xe8ecef, metalness: 0.3, roughness: 0.5 }), new THREE.MeshStandardMaterial({ color: 0xaa2200, emissive: new THREE.Color(1, 0.2, 0) }));
-    const fl = new THREE.Sprite(new THREE.SpriteMaterial({ map: textures.glow, color: new THREE.Color(4, 2.2, 0.8), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    const fl = new THREE.Sprite(new THREE.SpriteMaterial({ map: textures.glow, color: new THREE.Color(2.2, 1.2, 0.45), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
     fl.scale.setScalar(1.4); fl.position.z = 0.7; mesh.add(fl);
     mesh.position.copy(start);
     scene.add(mesh);
@@ -841,7 +841,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
       m.mesh.lookAt(m.mesh.position.x * 2 - p.x, m.mesh.position.y * 2 - p.y, m.mesh.position.z * 2 - p.z); // +Z nach hinten, Nase (−Z) voraus
       m.mesh.position.copy(p);
       trail(m.last, p, 0.7, (q) => smoke.spawn(q.x, q.y, q.z, randRange(-0.6, 0.6), randRange(-0.3, 0.6), randRange(-0.6, 0.6), randRange(1.2, 1.8), 0.7, 3.4, 0.55, [0.86, 0.86, 0.88], [0.6, 0.6, 0.64], 0.8));
-      fire.spawn(p.x, p.y, p.z, 0, 0, 0, 0.12, 1.0, 0.4, 0.9, [3, 1.6, 0.6]);
+      fire.spawn(p.x, p.y, p.z, 0, 0, 0, 0.12, 0.8, 0.3, 0.9, [2, 1.1, 0.4]);
       m.last.copy(p);
       if (m.over <= 0 && m.t >= 1) {
         if (m.hit && S.result !== 'lost') {
@@ -953,27 +953,27 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
   function impact(p, s) {
     for (let k = 0; k < 18 * s; k++) {
       const v = new THREE.Vector3(randRange(-1, 1), randRange(-1, 1), randRange(-1, 1)).normalize().multiplyScalar(randRange(10, 30));
-      fire.spawn(p.x, p.y, p.z, v.x, v.y, v.z, randRange(0.25, 0.6), 0.5, 0.1, 1, [4, 3, 1.6], [2, 0.5, 0.1], 3, 8);
+      fire.spawn(p.x, p.y, p.z, v.x, v.y, v.z, randRange(0.25, 0.6), 0.45, 0.1, 1, [2.6, 2, 1.1], [1.4, 0.4, 0.08], 3, 8);
     }
     for (let k = 0; k < 5 * s; k++) smoke.spawn(p.x, p.y, p.z, randRange(-2, 2), randRange(-1, 3), randRange(-2, 2), randRange(1, 1.8), 1.5 * s, 6 * s, 0.6, [0.3, 0.3, 0.32], [0.5, 0.5, 0.52], 1);
-    flash(p, 5 * s, new THREE.Color(3, 2, 1), 0.18);
+    flash(p, 4 * s, new THREE.Color(1.8, 1.3, 0.7), 0.18);
     flashLight.position.copy(p); flashLight.intensity = Math.max(flashLight.intensity, 400 * s);
   }
   function explosion(p, s, big) {
-    for (let k = 0; k < 45 * s; k++) {
+    for (let k = 0; k < Math.min(60, 32 * s); k++) {
       const v = new THREE.Vector3(randRange(-1, 1), randRange(-1, 1), randRange(-1, 1)).normalize().multiplyScalar(randRange(3, 16) * s);
-      fire.spawn(p.x, p.y, p.z, v.x, v.y, v.z, randRange(0.5, 1.2), randRange(2, 4) * s, randRange(5, 9) * s, 1, [4, 2.2, 0.7], [0.5, 0.12, 0.03], 2.2, -1);
+      fire.spawn(p.x, p.y, p.z, v.x, v.y, v.z, randRange(0.5, 1.2), randRange(1.5, 3) * s, randRange(4, 7) * s, 0.8, [1.8, 0.85, 0.25], [0.25, 0.06, 0.01], 2.2, -1);
     }
     for (let k = 0; k < 30 * s; k++) {
       const v = new THREE.Vector3(randRange(-1, 1), randRange(-1, 1), randRange(-1, 1)).normalize().multiplyScalar(randRange(25, 60) * Math.sqrt(s));
-      fire.spawn(p.x, p.y, p.z, v.x, v.y, v.z, randRange(0.4, 1.0), 0.6, 0.15, 1, [4, 3, 1.5], [2, 0.4, 0.05], 1.5, 15);
+      fire.spawn(p.x, p.y, p.z, v.x, v.y, v.z, randRange(0.4, 1.0), 0.5, 0.12, 1, [2.6, 1.8, 0.8], [1.2, 0.3, 0.04], 1.5, 15);
     }
-    for (let k = 0; k < 22 * s; k++) {
+    for (let k = 0; k < Math.min(40, 22 * s); k++) {
       const v = new THREE.Vector3(randRange(-1, 1), randRange(-0.5, 1), randRange(-1, 1)).normalize().multiplyScalar(randRange(2, 9) * s);
       smoke.spawn(p.x, p.y, p.z, v.x, v.y, v.z, randRange(2, 3.5), 3 * s, 14 * s, 0.75, [0.18, 0.16, 0.15], [0.42, 0.42, 0.44], 0.8, -0.6);
     }
-    flash(p, 18 * s, new THREE.Color(4, 2.6, 1.2), 0.35);
-    flashLight.position.copy(p); flashLight.intensity = Math.max(flashLight.intensity, (big ? 4000 : 1200) * s);
+    flash(p, 9 * s, new THREE.Color(1.8, 1.2, 0.6), 0.3);
+    flashLight.position.copy(p); flashLight.intensity = Math.max(flashLight.intensity, (big ? 1500 : 500) * s);
     if (big) { S.shake = Math.max(S.shake, 1.4); Input.rumble(1, 1, 400); }
     sfx('explosion');
   }
@@ -1210,13 +1210,13 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     updateCamera(dt, rawDt);
   }
 
-  const camPos = new THREE.Vector3(0, 3, 12), camLook = new THREE.Vector3(0, 1, -40);
+  const camPos = new THREE.Vector3(0, 3.4, 13), camLook = new THREE.Vector3(0, 1, -40);
   function updateCamera(dt, rawDt) {
     const tp = new THREE.Vector3(), tl = new THREE.Vector3();
     let rate = 4;
     if (S.camCut === 'ufo') {
       // Zwischenschnitt: seitliche Ansicht des abstürzenden UFOs
-      if (!S.camFixed) S.camFixed = ufoObj.position.clone().add(new THREE.Vector3(R * 3.2 + 10, R * 0.9 + 3, R * 2.2 + 8));
+      if (!S.camFixed) S.camFixed = ufoObj.position.clone().add(new THREE.Vector3(R * 4 + 16, R * 1.2 + 5, R * 3 + 14));
       tp.copy(S.camFixed); tl.copy(ufoObj.position);
       camPos.copy(tp); rate = 12;
       camera.fov = smooth(camera.fov, 42, 2, rawDt); camera.updateProjectionMatrix();
@@ -1225,8 +1225,8 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     } else if (S.camCut === 'flee') {
       tp.copy(S.camFixed); tl.copy(jet.position); rate = 3;
     } else {
-      const back = 9.5 + (craft.type === 'phantom' ? 1.2 : 0);
-      tp.set(jet.position.x * 0.6, jet.position.y + 2.6, jet.position.z + back);
+      const back = 13 + (craft.type === 'phantom' ? 1.5 : 0);
+      tp.set(jet.position.x * 0.6, jet.position.y + 3.4, jet.position.z + back);
       tl.copy(jet.position).lerp(ufoObj.position, 0.45); tl.y += 1;
       if (S.camCut === 'escape') rate = 2;
     }
