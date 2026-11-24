@@ -90,6 +90,328 @@ export function textures() {
 // Alle zwischengespeicherten Texturen von der GPU nehmen (werden bei erneuter Nutzung automatisch neu hochgeladen)
 export function releaseTextures() { for (const t of Object.values(tex)) t?.dispose?.(); }
 
+// ---------- Bei Bedarf erzeugte Texturen der Karten-Hindernisse (nur was auf der Karte vorkommt, kostet Zeit/Speicher) ----------
+const rnd = Math.random;
+const rrect = (c, x, y, w, h, r) => { c.beginPath(); if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h); };
+// Verästelter Riss (Putz, Eis, Beton)
+function crack(c, x, y, len, ang, width = 1, col = 'rgba(40,34,28,0.55)', depth = 0) {
+  c.strokeStyle = col; c.lineWidth = width; c.beginPath(); c.moveTo(x, y);
+  for (let i = 0; i < len; i++) {
+    ang += (rnd() - 0.5) * 0.9; x += Math.cos(ang) * 5; y += Math.sin(ang) * 5; c.lineTo(x, y);
+    if (depth < 2 && rnd() < 0.08) { c.stroke(); crack(c, x, y, len * 0.4, ang + (rnd() < 0.5 ? 0.8 : -0.8), width * 0.7, col, depth + 1); c.strokeStyle = col; c.lineWidth = width; c.beginPath(); c.moveTo(x, y); }
+  }
+  c.stroke();
+}
+// Rostfahnen/Laufspuren
+function streaks(c, w, h, n, col, y0 = 0, len = 0.5) {
+  for (let i = 0; i < n; i++) {
+    const x = rnd() * w, y = y0 + rnd() * h * 0.2, l = h * len * (0.3 + rnd()), sw = 2 + rnd() * 6;
+    const g = c.createLinearGradient(0, y, 0, y + l); g.addColorStop(0, col); g.addColorStop(1, col.replace(/[\d.]+\)$/, '0)'));
+    c.fillStyle = g; c.fillRect(x, y, sw, l);
+  }
+}
+function blotch(c, x, y, r, col) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, col.replace(/[\d.]+\)$/, '0)')); c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }
+// Text auf Breite einpassen
+function fitText(c, s, x, y, maxW, font, col) { c.font = font; c.fillStyle = col; const m = c.measureText(s).width; c.save(); c.translate(x, y); if (m > maxW) c.scale(maxW / m, 1); c.fillText(s, 0, 0); c.restore(); }
+// Laufband vertikaler Wellen (Trapez-/Wellblech) in einem Bereich
+function corrugate(c, x0, y0, w, h, period, lo = 'rgba(0,0,0,0.28)', hi = 'rgba(255,255,255,0.22)', vertical = true) {
+  for (let p = 0; p < (vertical ? w : h); p += period) {
+    const g = vertical ? c.createLinearGradient(x0 + p, 0, x0 + p + period, 0) : c.createLinearGradient(0, y0 + p, 0, y0 + p + period);
+    g.addColorStop(0, lo); g.addColorStop(0.35, hi); g.addColorStop(0.55, 'rgba(255,255,255,0.05)'); g.addColorStop(1, lo);
+    c.fillStyle = g; if (vertical) c.fillRect(x0 + p, y0, Math.min(period, w - p), h); else c.fillRect(x0, y0 + p, w, Math.min(period, h - p));
+  }
+}
+// Pixelrechteck einer Atlas-Textur (S×S) als UV-Bereich [u0, v0, u1, v1]
+export const pxRect = (x0, y0, x1, y1, S = 256, SV = S) => [x0 / S, 1 - y1 / SV, x1 / S, 1 - y0 / SV];
+const TEXGEN = {
+  // Naturstein-Bruchsteinmauerwerk; Kachel = Wandseite 2 m × 2,8 m
+  stoneWall: () => canvasTexture(256, 256, (c, w, h) => {
+    c.fillStyle = '#6b655c'; c.fillRect(0, 0, w, h); speckle(c, w, h, 3000, ['#5a554d', '#7d776d', '#4d4943'], 2);
+    let y = -6;
+    while (y < h) {
+      const rh = 16 + rnd() * 18; let x = -rnd() * 50;
+      while (x < w) {
+        const rw = 28 + rnd() * 52, v = 92 + rnd() * 70, k = [[1, 0.96, 0.9], [1, 0.9, 0.78], [0.92, 0.94, 0.97], [1, 0.93, 0.82]][(rnd() * 4) | 0];
+        for (const ox of [0, -w, w]) {
+          const sx = x + ox + 1.5 + rnd() * 2, sy = y + 1.5 + rnd() * 2, sw = rw - 3 - rnd() * 3, sh = rh - 3 - rnd() * 3;
+          if (sx > w || sx + sw < 0) continue;
+          c.fillStyle = `rgb(${v * k[0]},${v * k[1]},${v * k[2]})`; rrect(c, sx, sy, sw, sh, 3 + rnd() * 5); c.fill();
+          const g = c.createLinearGradient(sx, sy, sx + sw * 0.3, sy + sh); g.addColorStop(0, 'rgba(255,255,255,0.18)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,0.3)');
+          c.fillStyle = g; rrect(c, sx, sy, sw, sh, 4); c.fill();
+        }
+        x += rw;
+      }
+      y += rh;
+    }
+    speckle(c, w, h, 5000, ['rgba(0,0,0,0.16)', 'rgba(255,255,255,0.08)', 'rgba(60,50,40,0.12)'], 2);
+    for (let i = 0; i < 9; i++) blotch(c, rnd() * w, rnd() * h, 6 + rnd() * 14, rnd() < 0.5 ? 'rgba(150,160,70,0.28)' : 'rgba(60,70,40,0.25)');
+    const g = c.createLinearGradient(0, h * 0.78, 0, h); g.addColorStop(0, 'rgba(40,36,28,0)'); g.addColorStop(1, 'rgba(40,36,28,0.4)'); c.fillStyle = g; c.fillRect(0, 0, w, h);
+  }),
+  // Sichtbeton mit Schalungsfugen, Ankerlöchern und Wasserfahnen
+  formConcrete: () => canvasTexture(256, 256, (c, w, h) => {
+    c.fillStyle = '#b9b7b1'; c.fillRect(0, 0, w, h);
+    for (let py = 0; py < 4; py++) for (let px = 0; px < 2; px++) { const v = 172 + rnd() * 26; c.fillStyle = `rgba(${v},${v - 2},${v - 6},0.55)`; c.fillRect(px * 128, py * 64, 128, 64); }
+    for (let y = 0; y < h; y += 8) { c.fillStyle = `rgba(0,0,0,${0.02 + rnd() * 0.04})`; c.fillRect(0, y, w, 1); }
+    speckle(c, w, h, 4000, ['rgba(0,0,0,0.1)', 'rgba(255,255,255,0.1)'], 1.5);
+    speckle(c, w, h, 260, ['rgba(30,30,30,0.45)'], 2);
+    c.fillStyle = 'rgba(50,50,48,0.55)'; for (let y = 64; y < h; y += 64) c.fillRect(0, y - 1, w, 2); c.fillRect(127, 0, 2, h);
+    for (let py = 0; py < 4; py++) for (const px of [32, 96, 160, 224]) { const x = px, y = py * 64 + 32; c.fillStyle = 'rgba(210,208,200,0.9)'; c.beginPath(); c.arc(x, y, 5, 0, 7); c.fill(); c.fillStyle = 'rgba(40,40,40,0.8)'; c.beginPath(); c.arc(x, y, 3, 0, 7); c.fill(); }
+    streaks(c, w, h, 16, 'rgba(60,60,58,0.16)', 0, 0.6);
+    const g = c.createLinearGradient(0, h * 0.8, 0, h); g.addColorStop(0, 'rgba(50,46,40,0)'); g.addColorStop(1, 'rgba(50,46,40,0.35)'); c.fillStyle = g; c.fillRect(0, 0, w, h);
+  }),
+  // Wellblech (hell, per Instanzfarbe tönbar) mit Schraubenreihen, Rost und Schmutz
+  corrugated: () => canvasTexture(256, 256, (c, w, h) => {
+    c.fillStyle = '#cfd3d6'; c.fillRect(0, 0, w, h);
+    corrugate(c, 0, 0, w, h, 16, 'rgba(40,45,50,0.4)', 'rgba(255,255,255,0.35)');
+    speckle(c, w, h, 2500, ['rgba(0,0,0,0.06)', 'rgba(255,255,255,0.08)'], 1.5);
+    for (const y of [14, 120, 240]) for (let x = 8; x < w; x += 16) { c.fillStyle = 'rgba(30,30,30,0.7)'; c.beginPath(); c.arc(x, y, 1.6, 0, 7); c.fill(); }
+    for (let i = 0; i < 10; i++) blotch(c, rnd() * w, rnd() * h, 6 + rnd() * 22, 'rgba(140,70,30,0.45)');
+    streaks(c, w, h, 24, 'rgba(130,64,26,0.35)', 10, 0.5); streaks(c, w, h, 10, 'rgba(130,64,26,0.3)', 120, 0.4);
+    const g = c.createLinearGradient(0, h * 0.75, 0, h); g.addColorStop(0, 'rgba(70,55,35,0)'); g.addColorStop(1, 'rgba(70,55,35,0.5)'); c.fillStyle = g; c.fillRect(0, 0, w, h);
+  }),
+  // Putz mit Rissen, Abplatzungen (Mauerwerk sichtbar) und feuchtem Sockel
+  plasterCrack: () => canvasTexture(256, 256, (c, w, h) => {
+    c.fillStyle = '#ece7dc'; c.fillRect(0, 0, w, h);
+    for (let k = 0; k < 50; k++) blotch(c, rnd() * w, rnd() * h, 10 + rnd() * 30, rnd() < 0.5 ? 'rgba(120,110,95,0.07)' : 'rgba(255,255,255,0.1)');
+    speckle(c, w, h, 4000, ['rgba(0,0,0,0.07)', 'rgba(255,255,255,0.12)'], 2);
+    for (let k = 0; k < 2; k++) {
+      const x = 20 + rnd() * 200, y = 30 + rnd() * 170, pw = 26 + rnd() * 30, ph = 18 + rnd() * 26;
+      c.save(); c.beginPath(); c.moveTo(x, y); for (let a = 0; a < 6.28; a += 0.6) c.lineTo(x + Math.cos(a) * pw * (0.6 + rnd() * 0.5), y + Math.sin(a) * ph * (0.6 + rnd() * 0.5)); c.closePath();
+      c.fillStyle = 'rgba(70,60,50,0.6)'; c.fill(); c.clip();
+      for (let by = y - 40; by < y + 40; by += 9) for (let bx = x - 60 + ((by / 9) % 2) * 9; bx < x + 60; bx += 18) { const v = 130 + rnd() * 40; c.fillStyle = `rgb(${v},${v * 0.55},${v * 0.42})`; c.fillRect(bx, by, 16, 7); }
+      c.restore();
+    }
+    for (let k = 0; k < 5; k++) crack(c, rnd() * w, rnd() * h * 0.7, 12 + rnd() * 16, 1.2 + (rnd() - 0.5) * 1.5, 1.2);
+    crack(c, 0, rnd() * 60, 18, 0.7, 1.4);
+    streaks(c, w, h, 8, 'rgba(90,85,75,0.14)', 0, 0.5);
+    const g = c.createLinearGradient(0, h * 0.72, 0, h); g.addColorStop(0, 'rgba(70,75,60,0)'); g.addColorStop(1, 'rgba(70,75,60,0.45)'); c.fillStyle = g; c.fillRect(0, 0, w, h);
+  }),
+  // Jute-Sackgewebe
+  burlap: () => canvasTexture(128, 128, (c, w, h) => {
+    c.fillStyle = '#c4b28a'; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < w; i += 3) { c.fillStyle = `rgba(80,60,30,${0.12 + rnd() * 0.1})`; c.fillRect(i, 0, 1, h); c.fillStyle = `rgba(80,60,30,${0.1 + rnd() * 0.1})`; c.fillRect(0, i, w, 1); }
+    speckle(c, w, h, 900, ['rgba(255,255,255,0.12)', 'rgba(0,0,0,0.12)'], 1);
+    for (let i = 0; i < 4; i++) blotch(c, rnd() * w, rnd() * h, 8 + rnd() * 16, 'rgba(60,45,25,0.2)');
+  }),
+  // Birkenrinde: weiß mit Lentizellen, unten dunkle Borke
+  birchBark: () => canvasTexture(64, 256, (c, w, h) => {
+    c.fillStyle = '#e9e6de'; c.fillRect(0, 0, w, h);
+    speckle(c, w, h, 600, ['rgba(160,150,130,0.25)', 'rgba(255,255,255,0.3)'], 2);
+    for (let i = 0; i < 70; i++) { c.fillStyle = `rgba(25,22,20,${0.5 + rnd() * 0.4})`; const y = rnd() * h; c.fillRect(rnd() * w - 4, y, 5 + rnd() * 18, 1 + rnd() * 2.5); }
+    for (let i = 0; i < 10; i++) { c.fillStyle = 'rgba(30,28,26,0.7)'; c.beginPath(); c.ellipse(rnd() * w, rnd() * h * 0.85, 3 + rnd() * 5, 2 + rnd() * 4, 0, 0, 7); c.fill(); }
+    const g = c.createLinearGradient(0, h * 0.78, 0, h); g.addColorStop(0, 'rgba(40,36,32,0)'); g.addColorStop(0.4, 'rgba(40,36,32,0.6)'); g.addColorStop(1, 'rgba(30,26,22,0.95)'); c.fillStyle = g; c.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 5) { c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(x + rnd() * 2, h * 0.86, 1.5, h * 0.14); }
+  }),
+  // Palmenstamm: Blattnarben-Ringe mit Rautenmuster
+  palmBark: () => canvasTexture(64, 128, (c, w, h) => {
+    c.fillStyle = '#7a6a52'; c.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 16) for (let x = -8; x < w + 8; x += 16) {
+      const o = (y / 16) % 2 ? 8 : 0, g = c.createLinearGradient(0, y, 0, y + 16); g.addColorStop(0, '#9a8a6c'); g.addColorStop(0.7, '#6d5d46'); g.addColorStop(1, '#3e3428');
+      c.fillStyle = g; c.beginPath(); c.moveTo(x + o, y); c.lineTo(x + o + 8, y + 8); c.lineTo(x + o, y + 16); c.lineTo(x + o - 8, y + 8); c.fill();
+    }
+    speckle(c, w, h, 500, ['rgba(0,0,0,0.2)', 'rgba(255,240,200,0.1)'], 1.5);
+  }),
+  // Palmwedel: Mittelrippe + Fiederblättchen, Alpha-Ausschnitt
+  frond: () => canvasTexture(128, 256, (c, w, h) => {
+    c.clearRect(0, 0, w, h);
+    for (let y = h - 14; y > 4; y -= 3.2) {
+      const s = 1 - y / h, L = 60 * Math.sin(Math.PI * Math.min(1, s * 1.05)) + 6;
+      for (const d of [-1, 1]) {
+        const v = 0.75 + rnd() * 0.35; c.strokeStyle = `rgb(${120 * v},${160 * v},${70 * v})`; c.lineWidth = 2.6;
+        c.beginPath(); c.moveTo(64, y); c.quadraticCurveTo(64 + d * L * 0.5, y - 6, 64 + d * L, y - 16 - rnd() * 6); c.stroke();
+      }
+    }
+    c.fillStyle = '#d8d0a0'; c.fillRect(61, 0, 6, h);
+  }, { wrap: false }),
+  // Hirnholz mit Jahresringen (Stirnseiten, Baumstumpf)
+  endGrain: () => canvasTexture(128, 128, (c, w, h) => {
+    c.fillStyle = '#c8a26c'; c.fillRect(0, 0, w, h);
+    for (let r = 4; r < 62; r += 2.5 + rnd() * 2.5) { c.strokeStyle = `rgba(110,70,35,${0.25 + rnd() * 0.3})`; c.lineWidth = 1 + rnd(); c.beginPath(); c.ellipse(64 + rnd() * 2, 64 + rnd() * 2, r, r * (0.95 + rnd() * 0.08), 0, 0, 7); c.stroke(); }
+    for (let i = 0; i < 5; i++) { const a = rnd() * 6.28; c.strokeStyle = 'rgba(60,35,15,0.6)'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(64 + Math.cos(a) * 8, 64 + Math.sin(a) * 8); c.lineTo(64 + Math.cos(a) * (30 + rnd() * 30), 64 + Math.sin(a) * (30 + rnd() * 30)); c.stroke(); }
+    c.strokeStyle = '#4a3423'; c.lineWidth = 6; c.beginPath(); c.arc(64, 64, 61, 0, 7); c.stroke();
+    speckle(c, w, h, 600, ['rgba(0,0,0,0.1)', 'rgba(255,255,255,0.08)'], 1);
+  }),
+  // 200-l-Stahlfass: heller Lack (tönbar), Sicken, Kratzer, Rost
+  drum: () => canvasTexture(256, 128, (c, w, h) => {
+    c.fillStyle = '#d6d6d4'; c.fillRect(0, 0, w, h); drumWear(c, w, h);
+  }),
+  // Treibstofffass: rot mit Gefahrzettel Klasse 3
+  fuelDrum: () => canvasTexture(256, 128, (c, w, h) => {
+    c.fillStyle = '#b3261e'; c.fillRect(0, 0, w, h); drumWear(c, w, h);
+    for (const lx of [40, 168]) {
+      c.fillStyle = '#efe9dc'; c.fillRect(lx, 34, 58, 58);
+      c.save(); c.translate(lx + 29, 63); c.rotate(Math.PI / 4); c.fillStyle = '#d42a1e'; c.fillRect(-17, -17, 34, 34); c.strokeStyle = '#111'; c.lineWidth = 1.5; c.strokeRect(-15, -15, 30, 30); c.restore();
+      c.fillStyle = '#111'; c.beginPath(); c.moveTo(lx + 29, 46); c.bezierCurveTo(lx + 38, 56, lx + 37, 66, lx + 29, 71); c.bezierCurveTo(lx + 21, 66, lx + 21, 58, lx + 26, 54); c.bezierCurveTo(lx + 26, 60, lx + 30, 60, lx + 29, 46); c.fill();
+      fitText(c, '3', lx + 26, 86, 8, 'bold 9px sans-serif', '#111');
+      fitText(c, 'DIESEL', lx + 6, 30, 46, 'bold 10px sans-serif', '#f4f0e6');
+      fitText(c, 'UN 1202', lx + 8, 104, 42, 'bold 9px sans-serif', '#f4f0e6');
+    }
+  }),
+  // Zapfsäulen-Front (links) + Lackfläche (rechts)
+  pump: () => canvasTexture(256, 256, (c) => pumpFace(c, false)),
+  pumpEmit: () => canvasTexture(256, 256, (c) => pumpFace(c, true)),
+  // Fahrzeug-Detailatlas (Glas, Reifen, Kunststoff, Chrom, Leuchten, Gitter, Felge, Zielanzeige, Kennzeichen, Busfenster)
+  veh: () => canvasTexture(256, 256, (c) => vehAtlas(c, false)),
+  vehR: () => { const t = canvasTexture(256, 256, (c) => vehAtlas(c, true), { srgb: false }); return t; },
+  // Schiffscontainer-Atlas: 4 Farben (Spalten) × [Seiten | Tür/Stirn/Lack]
+  container: () => canvasTexture(1024, 512, (c) => containerAtlas(c)),
+  // Militärkisten: Schablonenschrift (oben), Stirnseite, Lackfläche (unten)
+  milcrate: () => canvasTexture(256, 256, (c, w, h) => {
+    c.fillStyle = '#4e5528'; c.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 32) { c.fillStyle = 'rgba(0,0,0,0.22)'; c.fillRect(0, y, w, 1.5); c.fillStyle = 'rgba(255,255,255,0.05)'; c.fillRect(0, y + 2, w, 2); }
+    speckle(c, w, h, 3000, ['rgba(0,0,0,0.12)', 'rgba(255,255,230,0.07)'], 2);
+    c.strokeStyle = 'rgba(30,30,15,0.6)'; c.lineWidth = 3; c.strokeRect(3, 3, 122, 122); c.strokeRect(131, 3, 122, 122);
+    fitText(c, 'AEGIS', 14, 44, 100, 'bold 30px monospace', 'rgba(235,220,140,0.85)');
+    fitText(c, '7,62 MM  NATO', 14, 70, 100, 'bold 14px monospace', 'rgba(235,220,140,0.85)');
+    fitText(c, 'LOS 4471-B   32 KG', 14, 92, 100, 'bold 11px monospace', 'rgba(235,220,140,0.8)');
+    c.fillStyle = 'rgba(235,220,140,0.8)'; for (let i = 0; i < 6; i++) c.fillRect(14 + i * 17, 104, 10, 6);
+    c.fillStyle = '#2b2a20'; rrect(c, 156, 50, 72, 26, 8); c.fill(); c.fillStyle = '#6a6a5a'; c.fillRect(152, 58, 8, 10); c.fillRect(224, 58, 8, 10);
+    fitText(c, '↑ OBEN', 160, 108, 64, 'bold 13px monospace', 'rgba(235,220,140,0.85)');
+    for (let i = 0; i < 40; i++) { c.fillStyle = 'rgba(150,140,110,0.35)'; c.fillRect(rnd() * w, rnd() * h, 2 + rnd() * 10, 1); }
+    c.fillStyle = 'rgba(0,0,0,0.15)'; c.fillRect(0, 128, w, 128); speckle(c, w, 128, 1500, ['rgba(255,255,230,0.08)'], 2);
+  }),
+  // Grabstein: polierter Granit (hell, tönbar) mit gravierter Inschrift (links) + Fläche (rechts)
+  grave: () => canvasTexture(256, 256, (c, w, h) => {
+    c.fillStyle = '#cfcfcc'; c.fillRect(0, 0, w, h); speckle(c, w, h, 9000, ['#b0b0ad', '#e6e6e3', '#8f8f8c', '#f4f4f2'], 1.5);
+    c.fillStyle = 'rgba(50,50,50,0.75)'; c.fillRect(58, 30, 12, 46); c.fillRect(46, 42, 36, 10);
+    for (const [y, lw] of [[100, 90], [124, 70], [150, 50], [168, 60], [192, 80]]) for (let x = 64 - lw / 2; x < 64 + lw / 2; x += 6 + rnd() * 4) c.fillRect(x, y, 3 + rnd() * 3, y < 140 ? 9 : 6);
+  }),
+  // Lackierter Stahltank (Wasserturm): Nahtreihen mit Nieten, Rostfahnen
+  tankPaint: () => canvasTexture(256, 128, (c, w, h) => {
+    c.fillStyle = '#dedede'; c.fillRect(0, 0, w, h); speckle(c, w, h, 2000, ['rgba(0,0,0,0.06)', 'rgba(255,255,255,0.1)'], 1.5);
+    for (const y of [4, 44, 84, 124]) { c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(0, y, w, 2); for (let x = 2; x < w; x += 6) { c.fillStyle = 'rgba(40,40,40,0.6)'; c.fillRect(x, y - 2, 2, 2); } }
+    for (let x = 0; x < w; x += 64) { c.fillStyle = 'rgba(0,0,0,0.2)'; c.fillRect(x, 0, 2, h); }
+    streaks(c, w, h, 18, 'rgba(130,64,26,0.4)', 4, 0.6); streaks(c, w, h, 10, 'rgba(130,64,26,0.3)', 44, 0.5);
+  }),
+  // Silo: verzinktes, horizontal gewelltes Blech mit Schraubennähten
+  silo: () => canvasTexture(128, 128, (c, w, h) => {
+    c.fillStyle = '#c3c8cc'; c.fillRect(0, 0, w, h);
+    corrugate(c, 0, 0, w, h, 8, 'rgba(40,45,50,0.35)', 'rgba(255,255,255,0.4)', false);
+    for (let x = 0; x < w; x += 64) for (let y = 2; y < h; y += 4) { c.fillStyle = 'rgba(30,30,30,0.5)'; c.fillRect(x, y, 1.5, 1.5); }
+    for (let i = 0; i < 8; i++) blotch(c, rnd() * w, rnd() * h, 4 + rnd() * 10, 'rgba(255,255,255,0.15)');
+    streaks(c, w, h, 6, 'rgba(110,80,50,0.18)', 0, 0.8);
+  }),
+  // Maschendraht (RGBA, kachelbar)
+  chain: () => canvasTexture(64, 64, (c, w, h) => {
+    c.clearRect(0, 0, w, h); c.lineCap = 'round';
+    for (const [col, lw] of [['rgba(40,44,48,0.9)', 3.2], ['rgba(185,192,198,1)', 1.8]]) {
+      c.strokeStyle = col; c.lineWidth = lw;
+      for (const o of [-64, 0, 64]) { c.beginPath(); c.moveTo(o, 0); c.lineTo(o + 32, 32); c.lineTo(o, 64); c.stroke(); c.beginPath(); c.moveTo(o + 64, 0); c.lineTo(o + 32, 32); c.lineTo(o + 64, 64); c.stroke(); }
+    }
+  }),
+  // Wellen-Normalmap (kachelbar, Summe ganzzahliger Sinuswellen)
+  waterN: () => {
+    const N = 128, cv = document.createElement('canvas'); cv.width = cv.height = N;
+    const ctx = cv.getContext('2d'), img = ctx.createImageData(N, N), d = img.data;
+    const waves = Array.from({ length: 9 }, (_, i) => ({ kx: ((rnd() * 7) | 0) - 3 || 1, ky: ((rnd() * 7) | 0) - 3 + (i % 2), a: 0.6 / (1 + i * 0.35), p: rnd() * 6.28 }));
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      let dx = 0, dy = 0;
+      for (const w of waves) { const ph = (2 * Math.PI * (w.kx * x + w.ky * y)) / N + w.p, cc = Math.cos(ph) * w.a; dx += cc * w.kx; dy += cc * w.ky; }
+      const nx = -dx * 0.18, ny = -dy * 0.18, l = Math.hypot(nx, ny, 1), i = (y * N + x) * 4;
+      d[i] = (nx / l * 0.5 + 0.5) * 255; d[i + 1] = (ny / l * 0.5 + 0.5) * 255; d[i + 2] = (1 / l * 0.5 + 0.5) * 255; d[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; return t;
+  },
+};
+function drumWear(c, w, h) {
+  for (const y of [h / 3, (2 * h) / 3]) { const g = c.createLinearGradient(0, y - 5, 0, y + 5); g.addColorStop(0, 'rgba(0,0,0,0.3)'); g.addColorStop(0.5, 'rgba(255,255,255,0.3)'); g.addColorStop(1, 'rgba(0,0,0,0.3)'); c.fillStyle = g; c.fillRect(0, y - 5, w, 10); }
+  c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(0, 0, w, 4); c.fillRect(0, h - 4, w, 4);
+  speckle(c, w, h, 1500, ['rgba(0,0,0,0.08)', 'rgba(255,255,255,0.1)'], 1.5);
+  for (let i = 0; i < 30; i++) { c.strokeStyle = 'rgba(220,220,220,0.35)'; c.lineWidth = 0.8; c.beginPath(); const x = rnd() * w, y = rnd() * h; c.moveTo(x, y); c.lineTo(x + (rnd() - 0.5) * 30, y + (rnd() - 0.5) * 8); c.stroke(); }
+  for (let i = 0; i < 7; i++) blotch(c, rnd() * w, rnd() * h, 4 + rnd() * 12, 'rgba(120,60,25,0.5)');
+  streaks(c, w, h, 10, 'rgba(110,55,22,0.35)', 0, 0.4);
+  const g = c.createLinearGradient(0, h * 0.75, 0, h); g.addColorStop(0, 'rgba(60,45,30,0)'); g.addColorStop(1, 'rgba(60,45,30,0.45)'); c.fillStyle = g; c.fillRect(0, 0, w, h);
+}
+function pumpFace(c, emit) {
+  c.fillStyle = emit ? '#000' : '#eef0f0'; c.fillRect(0, 0, 256, 256);
+  if (!emit) {
+    c.fillStyle = '#1f5fa8'; c.fillRect(0, 0, 128, 34); c.fillStyle = '#e8b818'; c.fillRect(0, 34, 128, 6);
+    fitText(c, 'TANKSTELLE', 10, 24, 108, 'bold 17px sans-serif', '#ffffff');
+    c.fillStyle = '#2a2e33'; rrect(c, 12, 50, 104, 74, 5); c.fill();
+    c.fillStyle = '#c8ccd0'; c.fillRect(12, 136, 104, 1);
+    for (const [y, s, col] of [[144, 'SUPER 95', '#2e8a3a'], [170, 'SUPER E10', '#2e6aa8'], [196, 'DIESEL', '#222222']]) { c.fillStyle = col; rrect(c, 14, y, 100, 20, 3); c.fill(); fitText(c, s, 20, y + 15, 60, 'bold 12px sans-serif', '#fff'); c.fillStyle = '#d8d8d8'; c.fillRect(88, y + 4, 22, 12); }
+    c.fillStyle = '#9aa0a6'; for (let y = 226; y < 252; y += 5) c.fillRect(16, y, 96, 2);
+    speckle(c, 128, 256, 800, ['rgba(0,0,0,0.06)'], 1.5);
+    // Lackfläche rechts (für Seiten, Insel, Dach)
+    c.fillStyle = '#f2f2f0'; c.fillRect(128, 0, 128, 256); speckle(c, 128, 256, 1500, ['rgba(0,0,0,0.06)', 'rgba(255,255,255,0.1)'], 2);
+    const g = c.createLinearGradient(0, 200, 0, 256); g.addColorStop(0, 'rgba(60,55,45,0)'); g.addColorStop(1, 'rgba(60,55,45,0.25)'); c.fillStyle = g; c.fillRect(128, 0, 128, 256);
+  }
+  c.font = 'bold 20px monospace'; c.fillStyle = emit ? '#9effc8' : '#6adca0';
+  fitText(c, '48,27 €', 22, 76, 84, 'bold 22px monospace', emit ? '#9effc8' : '#6adca0');
+  fitText(c, '26,24 L', 22, 100, 84, 'bold 18px monospace', emit ? '#9effc8' : '#6adca0');
+  fitText(c, '1,839 €/L', 26, 118, 76, 'bold 12px monospace', emit ? '#ffd27a' : '#e0b860');
+  for (const y of [148, 174, 200]) fitText(c, '1,8' + ((y / 2) % 10), 89, y + 12, 20, 'bold 10px monospace', emit ? '#ffd27a' : '#c89a40');
+}
+// Bereiche des Fahrzeug-Atlas (Pixel in 256×256)
+export const VEH = { glass: [0, 0, 64, 64], tire: [64, 0, 128, 64], black: [128, 0, 192, 64], chrome: [192, 0, 256, 64], head: [0, 64, 64, 128], tail: [64, 64, 128, 128], grille: [128, 64, 192, 128], rim: [192, 64, 256, 128], sign: [0, 128, 192, 160], plate: [0, 160, 96, 192], win: [192, 128, 256, 256], plain: [0, 192, 64, 256], amber: [64, 192, 128, 256], door: [128, 192, 192, 256], vent: [96, 160, 192, 192] };
+function vehAtlas(c, rough) {
+  const R = (k, col) => { const [x0, y0, x1, y1] = VEH[k]; c.fillStyle = col; c.fillRect(x0, y0, x1 - x0, y1 - y0); return [x0, y0, x1 - x0, y1 - y0]; };
+  if (rough) { // G = Rauheit, R = Relief
+    for (const [k, r] of Object.entries({ glass: 0.06, tire: 0.95, black: 0.7, chrome: 0.15, head: 0.15, tail: 0.2, grille: 0.6, rim: 0.3, sign: 0.3, plate: 0.5, win: 0.08, plain: 0.6, amber: 0.2, door: 0.1, vent: 0.7 })) R(k, `rgb(128,${Math.round(r * 255)},0)`);
+    let [x, y, w, h] = VEH.tire; for (let i = 0; i < w; i += 6) { c.fillStyle = 'rgb(40,250,0)'; c.fillRect(x + i, y, 3, h); }
+    [x, y, w, h] = VEH.grille; for (let i = 0; i < h; i += 8) { c.fillStyle = 'rgb(30,160,0)'; c.fillRect(x, y + i, w, 4); }
+    [x, y, w, h] = VEH.win; c.fillStyle = 'rgb(128,150,0)'; c.fillRect(x, y, 6, h); c.fillRect(x + w - 6, y, 6, h);
+    return;
+  }
+  let [x, y, w, h] = R('glass', '#1a2733'); let g = c.createLinearGradient(x, y, x + w, y + h); g.addColorStop(0, 'rgba(150,180,200,0.5)'); g.addColorStop(0.4, 'rgba(40,60,75,0)'); g.addColorStop(0.55, 'rgba(120,150,170,0.25)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(x, y, w, h);
+  [x, y, w, h] = R('tire', '#1b1b1b'); for (let i = 0; i < w; i += 6) { c.fillStyle = '#2c2c2c'; c.fillRect(x + i, y, 3, h); }
+  [x, y, w, h] = R('black', '#222324'); speckle(c, 0, 0, 0, []);
+  for (let i = 0; i < 300; i++) { c.fillStyle = rnd() < 0.5 ? '#2c2d2e' : '#1a1a1b'; c.fillRect(x + rnd() * w, y + rnd() * h, 2, 2); }
+  [x, y, w, h] = R('chrome', '#b8bec4'); g = c.createLinearGradient(x, y, x, y + h); g.addColorStop(0, '#f4f6f8'); g.addColorStop(0.45, '#8a9096'); g.addColorStop(0.55, '#5a6066'); g.addColorStop(1, '#dce0e4'); c.fillStyle = g; c.fillRect(x, y, w, h);
+  [x, y, w, h] = R('head', '#e8ecf0'); g = c.createRadialGradient(x + 32, y + 32, 2, x + 32, y + 32, 34); g.addColorStop(0, '#ffffff'); g.addColorStop(0.5, '#d8e0e8'); g.addColorStop(1, '#8a949e'); c.fillStyle = g; c.fillRect(x, y, w, h);
+  [x, y, w, h] = R('tail', '#a8140e'); for (let i = 0; i < h; i += 10) { c.fillStyle = 'rgba(255,90,70,0.35)'; c.fillRect(x, y + i, w, 4); } c.fillStyle = '#e8a020'; c.fillRect(x, y + h - 16, w, 16);
+  [x, y, w, h] = R('grille', '#141414'); for (let i = 0; i < h; i += 8) { c.fillStyle = '#4a4d50'; c.fillRect(x, y + i, w, 4); }
+  [x, y, w, h] = R('rim', '#7a7e84'); g = c.createRadialGradient(x + 32, y + 32, 3, x + 32, y + 32, 32); g.addColorStop(0, '#d8dce0'); g.addColorStop(0.3, '#9aa0a6'); g.addColorStop(0.75, '#c8ccd0'); g.addColorStop(1, '#3a3c40'); c.fillStyle = g; c.fillRect(x, y, w, h);
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * 6.28; c.fillStyle = '#2a2c30'; c.beginPath(); c.arc(x + 32 + Math.cos(a) * 16, y + 32 + Math.sin(a) * 16, 3, 0, 7); c.fill(); }
+  [x, y, w, h] = R('sign', '#0c0c0c'); fitText(c, '42  SONDERFAHRT', x + 6, y + 24, w - 12, 'bold 22px monospace', '#ffa21e');
+  [x, y, w, h] = R('plate', '#f2f2f0'); c.fillStyle = '#1f4aa8'; c.fillRect(x, y, 10, h); c.strokeStyle = '#111'; c.lineWidth = 2; c.strokeRect(x + 1, y + 1, w - 2, h - 2); fitText(c, 'AE·G 1994', x + 14, y + 23, w - 20, 'bold 18px sans-serif', '#111');
+  [x, y, w, h] = R('vent', '#2a2c2e'); for (let i = 0; i < w; i += 6) { c.fillStyle = '#101112'; c.fillRect(x + i, y + 3, 3, h - 6); }
+  [x, y, w, h] = R('win', '#1c2a36'); g = c.createLinearGradient(x, y, x + w, y + h); g.addColorStop(0, 'rgba(160,190,210,0.45)'); g.addColorStop(0.35, 'rgba(30,50,65,0)'); g.addColorStop(0.6, 'rgba(110,140,160,0.25)'); g.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(x, y, w, h);
+  c.fillStyle = '#18191a'; c.fillRect(x, y, 6, h); c.fillRect(x + w - 6, y, 6, h); c.fillRect(x, y, w, 4); c.fillRect(x, y + h - 4, w, 4);
+  [x, y, w, h] = R('plain', '#e4e4e2'); for (let i = 0; i < 200; i++) { c.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)'; c.fillRect(x + rnd() * w, y + rnd() * h, 2, 2); }
+  [x, y, w, h] = R('amber', '#f0a020'); g = c.createRadialGradient(x + 32, y + 32, 2, x + 32, y + 32, 34); g.addColorStop(0, '#ffe0a0'); g.addColorStop(1, '#c87010'); c.fillStyle = g; c.fillRect(x, y, w, h);
+  [x, y, w, h] = R('door', '#1c2a36'); c.fillStyle = '#18191a'; c.fillRect(x, y, 5, h); c.fillRect(x + w - 5, y, 5, h); c.fillRect(x + w / 2 - 2, y, 4, h); c.fillRect(x, y + h * 0.55, w, 4);
+  g = c.createLinearGradient(x, y, x + w, y + h); g.addColorStop(0, 'rgba(150,180,200,0.35)'); g.addColorStop(0.5, 'rgba(0,0,0,0)'); c.fillStyle = g; c.fillRect(x, y, w, h);
+}
+// Container-Atlas: Spalte = Farbe (Name), oben Seiten (A mit Reedereiname, B mit Kennung), unten Tür (links), Stirnwand + Lack (rechts)
+export const CONTAINER_COLS = ['#a8432f', '#2c5a88', '#3e6e3c', '#cfcbc0'];
+const CONTAINER_NAMES = [['HELIX', 'HLXU 482913 7'], ['NORVAL', 'NRVU 220756 1'], ['TRITON', 'TRTU 913042 5'], ['KESTREL', 'KSTU 640318 2']];
+function containerAtlas(c) {
+  for (let i = 0; i < 4; i++) {
+    const X = i * 256, col = CONTAINER_COLS[i], [name, code] = CONTAINER_NAMES[i], txt = i === 3 ? '#2a2a2a' : '#f2f2ee';
+    c.fillStyle = col; c.fillRect(X, 0, 256, 512);
+    corrugate(c, X, 0, 256, 448, 18, 'rgba(0,0,0,0.32)', 'rgba(255,255,255,0.2)');
+    speckle(c, 0, 0, 0, []);
+    for (let k = 0; k < 1800; k++) { c.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)'; c.fillRect(X + rnd() * 256, rnd() * 512, 2, 2); }
+    // Seite A: Name groß, Seite B: Kennung
+    fitText(c, name, X + 10, 96, 108, 'bold 52px sans-serif', txt);
+    fitText(c, name, X + 140, 70, 104, 'bold 26px sans-serif', txt);
+    fitText(c, code, X + 140, 26, 104, 'bold 15px sans-serif', txt);
+    fitText(c, '22G1', X + 140, 44, 40, 'bold 12px sans-serif', txt);
+    fitText(c, 'MAX. GROSS 30.480 KG', X + 140, 224, 100, 'bold 9px sans-serif', txt);
+    fitText(c, 'TARE 2.200 KG', X + 140, 236, 70, 'bold 9px sans-serif', txt);
+    // Tür (links unten): zwei Flügel, Verschlussstangen, Scharniere, Schilder
+    c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(X + 63, 256, 3, 256); c.fillRect(X, 256, 128, 4); c.fillRect(X, 508, 128, 4); c.fillRect(X, 256, 4, 256); c.fillRect(X + 124, 256, 4, 256);
+    for (const rx of [18, 46, 82, 110]) { c.fillStyle = 'rgba(0,0,0,0.4)'; c.fillRect(X + rx + 2, 262, 4, 244); c.fillStyle = 'rgba(255,255,255,0.35)'; c.fillRect(X + rx, 262, 3, 244); c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(X + rx - 3, 420, 10, 6); }
+    for (const hy of [276, 340, 420, 490]) { c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(X + 2, hy, 8, 10); c.fillRect(X + 118, hy, 8, 10); }
+    c.fillStyle = '#e8e4d8'; c.fillRect(X + 70, 300, 22, 14); c.fillStyle = '#d8b030'; c.fillRect(X + 96, 300, 16, 14);
+    fitText(c, code, X + 68, 290, 56, 'bold 8px sans-serif', txt);
+    // Lackfläche (rechts unten) ohne Wellen
+    c.fillStyle = col; c.fillRect(X + 128, 448, 128, 64); for (let k = 0; k < 300; k++) { c.fillStyle = rnd() < 0.5 ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)'; c.fillRect(X + 128 + rnd() * 128, 448 + rnd() * 64, 2, 2); }
+    // Abnutzung: Rost an Kanten und Laufspuren
+    for (let k = 0; k < 14; k++) blotch(c, X + rnd() * 256, rnd() * 448, 3 + rnd() * 9, 'rgba(110,50,20,0.55)');
+    for (let k = 0; k < 16; k++) { const x = X + rnd() * 256, y = rnd() * 60, l = 60 + rnd() * 150, g = c.createLinearGradient(0, y, 0, y + l); g.addColorStop(0, 'rgba(90,45,20,0.3)'); g.addColorStop(1, 'rgba(90,45,20,0)'); c.fillStyle = g; c.fillRect(x, y, 2 + rnd() * 3, l); }
+  }
+}
+// Textur bei Bedarf erzeugen; Schlüssel mit Endung D = Relief/Rauheit (R/G) aus der Helligkeit
+export function tx(k) {
+  if (tex[k]) return tex[k];
+  if (k.endsWith('D') && TEXGEN[k.slice(0, -1)]) { const src = tx(k.slice(0, -1)); return (tex[k] = dataTex(src, ...(DPARAM[k] || [0.7, 1]))); }
+  return (tex[k] = TEXGEN[k]());
+}
+const DPARAM = { corrugatedD: [0.35, 0.75], drumD: [0.4, 0.75], fuelDrumD: [0.4, 0.75], containerD: [0.45, 0.8], graveD: [0.25, 0.45], tankPaintD: [0.4, 0.7], siloD: [0.3, 0.6], pumpD: [0.35, 0.6] };
+
 // Relief-/Rauheitskarte aus der Helligkeit einer Farbtextur; Glasflächen glatt und eben
 function dataTex(src, r0, r1, flat = []) {
   const s = src.image, w = s.width, h = s.height;
@@ -255,6 +577,56 @@ export function mergeGeos(list) {
   out.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return out;
 }
+// ---- Helfer für die Karten-Hindernisse ----
+// UV einer Geometrie (0..1) in einen Atlas-Bereich [u0, v0, u1, v1] abbilden
+const uvRect = (g, r) => { const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, r[0] + uv.getX(i) * (r[2] - r[0]), r[1] + uv.getY(i) * (r[3] - r[1])); return g; };
+const uvConst = (g, r) => { const uv = g.attributes.uv, u = (r[0] + r[2]) / 2, v = (r[1] + r[3]) / 2; for (let i = 0; i < uv.count; i++) uv.setXY(i, u, v); return g; };
+// Quader (Unterkante y) mit Atlas-Bereich je Seite: Reihenfolge +x, -x, +y, -y, +z, -z; fehlende Seiten → def
+function boxUV(w, h, d, x, y, z, rects, def) {
+  const g = new THREE.BoxGeometry(w, h, d).translate(x, y + h / 2, z), uv = g.attributes.uv;
+  for (let f = 0; f < 6; f++) { const r = rects[f] || def; if (!r) continue; for (let i = f * 4; i < f * 4 + 4; i++) uv.setXY(i, r[0] + uv.getX(i) * (r[2] - r[0]), r[1] + uv.getY(i) * (r[3] - r[1])); }
+  return g;
+}
+const _v0 = new THREE.Vector3(), _q0 = new THREE.Quaternion();
+// Vierkantbalken zwischen zwei Punkten
+function beam(a, b, tw, th = tw) {
+  _v0.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]); const len = _v0.length();
+  return new THREE.BoxGeometry(tw, th, len).applyQuaternion(_q0.setFromUnitVectors(new THREE.Vector3(0, 0, 1), _v0.normalize())).translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+}
+// Rundstab (konisch) zwischen zwei Punkten, r0 bei a, r1 bei b
+function rod(a, b, r0, r1 = r0, seg = 6, open = false) {
+  _v0.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]); const len = _v0.length();
+  return new THREE.CylinderGeometry(r1, r0, len, seg, 1, open).applyQuaternion(_q0.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _v0.normalize())).translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+}
+// Glatter Raumrausch-Ersatz (gleiche Position → gleicher Wert, daher rissfrei)
+const nz3 = (x, y, z, s) => Math.sin(x * 3.1 + s) * Math.sin(y * 2.7 + s * 1.7) * Math.sin(z * 3.3 + s * 0.6) + 0.5 * Math.sin(x * 7.3 + y * 5.1 + s * 2.3) * Math.sin(z * 6.7 - y * 4.1 + s);
+// Unregelmäßiger Laub-/Strauchballen mit weichen radialen Normalen
+function blob(r, x, y, z, sx = 1, sy = 1, sz = 1, amp = 0.2, detail = 1, seed = rnd() * 50) {
+  const g = new THREE.IcosahedronGeometry(1, detail), p = g.attributes.position, n = g.attributes.normal, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    const k = r * (1 + amp * nz3(v.x, v.y, v.z, seed));
+    p.setXYZ(i, x + v.x * k * sx, y + v.y * k * sy, z + v.z * k * sz);
+    const nx = v.x / sx, ny = v.y / sy, nzv = v.z / sz, l = Math.hypot(nx, ny, nzv); n.setXYZ(i, nx / l, ny / l, nzv / l);
+  }
+  return g;
+}
+// Kantiger Stein (flach schattiert)
+function stoneGeo(r, x, y, z, sx = 1, sy = 1, sz = 1, seed = rnd() * 50) {
+  const g = new THREE.DodecahedronGeometry(1, 0), p = g.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i); const k = r * (1 + 0.22 * nz3(v.x * 1.7, v.y * 1.7, v.z * 1.7, seed)); p.setXYZ(i, x + v.x * k * sx, y + v.y * k * sy, z + v.z * k * sz); }
+  g.computeVertexNormals();
+  return g;
+}
+// Positionsabhängige Verformung (rissfrei) für unterteilte Quader
+function warp(g, amp, f = 1, seed = 3) {
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); p.setXYZ(i, x + amp * nz3(x * f, y * f, z * f, seed), y + amp * 0.6 * nz3(z * f, x * f, y * f, seed + 1), z + amp * nz3(y * f, z * f, x * f, seed + 2)); }
+  g.computeVertexNormals();
+  return g;
+}
+// Vertexfarben nach Höhe abdunkeln (Innenschatten von Hecken/Kronen)
+function shadeY(g, y0, y1, k0 = 0.55) { const p = g.attributes.position, c = g.attributes.color; for (let i = 0; i < p.count; i++) { const t = Math.min(1, Math.max(0, (p.getY(i) - y0) / (y1 - y0))), k = k0 + (1 - k0) * t; c.setXYZ(i, c.getX(i) * k, c.getY(i) * k, c.getZ(i) * k); } return g; }
 // Seitenprofil (Punkte [z, y], vorne = +z) über die Breite extrudieren
 function sideProfile(pts, width, bevel = 0.05) {
   const s = new THREE.Shape();
