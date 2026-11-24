@@ -1,5 +1,5 @@
 // Kampagnenzustand: Finanzen, Soldaten, Forschung, Lager, Speichern/Laden
-import { WEAPONS, ARMORS, GRENADES, RESEARCH, FACILITIES, RANKS, RANK_XP, REGIONS, CRAFTS } from './data.js';
+import { WEAPONS, ARMORS, GRENADES, ITEMS, BELT_SLOTS, RESEARCH, FACILITIES, RANKS, RANK_XP, REGIONS, CRAFTS } from './data.js';
 import { randInt, randomName, rand, Emitter } from './util.js';
 
 const SAVE_KEY = 'aegis_save_v1';
@@ -11,7 +11,7 @@ export function newSoldier() {
     rank: 0, xp: 0, kills: 0, missions: 0,
     tu: randInt(50, 62), hp: randInt(38, 48), acc: randInt(45, 72), react: randInt(35, 65), brave: randInt(30, 70),
     wound: 0, // Heilungstage verbleibend
-    weapon: 'rifle', armor: 'none', grenades: 1,
+    weapon: 'rifle', armor: 'none', grenades: 1, items: ['frag', 'smoke', null],
     look: { skin: [0xf1c27d, 0xc68642, 0x8d5524, 0xe0ac69, 0xffdbac][randInt(0, 4)], hair: [0x2c1b10, 0x6b4423, 0xd4b06a, 0x111111, 0x8a3b12][randInt(0, 4)] },
   };
 }
@@ -33,7 +33,7 @@ export function createCampaign() {
     researched: [],
     research: null, // {id, progress}
     artifacts: {},
-    stock: { sniper: 1, shotgun: 1, frag: 8 }, // gekaufte Ausrüstung (Waffen sind wiederverwendbar)
+    stock: { sniper: 1, shotgun: 1, frag: 10, smoke: 6, flare: 4, medkit: 2 }, // gekaufte Ausrüstung (Waffen sind wiederverwendbar)
     score: 0, monthScore: 0,
     regionScore: Object.fromEntries(REGIONS.map((r) => [r.id, 0])),
     funding: Object.fromEntries(REGIONS.map((r) => [r.id, 160000])),
@@ -43,6 +43,21 @@ export function createCampaign() {
     finalUnlocked: false,
     won: false,
   };
+}
+
+// Ältere Spielstände auf das Gürtel-System umstellen
+export function migrateCampaign(c) {
+  for (const s of c.soldiers || []) {
+    if (!Array.isArray(s.items)) {
+      s.items = Array(BELT_SLOTS).fill(null);
+      for (let i = 0; i < Math.min(BELT_SLOTS, s.grenades || 0); i++) s.items[i] = 'frag';
+    }
+    while (s.items.length < BELT_SLOTS) s.items.push(null);
+  }
+  c.stock ||= {};
+  if (c.stock.smoke == null) c.stock.smoke = 6;
+  if (c.stock.flare == null) c.stock.flare = 4;
+  if (c.stock.medkit == null) c.stock.medkit = 2;
 }
 
 class GameState extends Emitter {
@@ -60,6 +75,7 @@ class GameState extends Emitter {
       const raw = data || localStorage.getItem(SAVE_KEY);
       if (!raw) return false;
       this.c = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      migrateCampaign(this.c);
       this.emit('change');
       return true;
     } catch { return false; }
@@ -84,6 +100,7 @@ class GameState extends Emitter {
   // Verfügbarkeit von Ausrüstung
   weaponAvailable(id) { const w = WEAPONS[id]; return !!w && (w.avail || (w.req && this.has(w.req)) || (this.cheats.allGear && w.cost > 0)); }
   armorAvailable(id) { const a = ARMORS[id]; return a && (a.avail || (a.req && this.has(a.req)) || this.cheats.allGear); }
+  itemAvailable(id) { const it = ITEMS[id]; return !!it && (!it.req || this.has(it.req) || this.cheats.allGear); }
   grenadeAvailable(id) { const g = GRENADES[id]; return g && (!g.req || this.has(g.req) || this.cheats.allGear); }
 
   researchAvailable() {

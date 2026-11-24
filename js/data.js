@@ -14,6 +14,18 @@ export const WEAPONS = {
   a_claw: { name: 'Klauen', dmg: 58, fx: 'melee', melee: true, snap: { tu: 0.25, acc: 0.85 }, range: 1.5 },
 };
 
+// Gürtel-Ausrüstung: jeder Soldat hat BELT_SLOTS Plätze (soldier.items = ['frag', 'smoke', null]).
+// Lagerbestand liegt in Game.c.stock[<id>] (Verbrauchsgüter werden bei Benutzung abgezogen).
+export const BELT_SLOTS = 3;
+export const ITEMS = {
+  frag: { name: 'Splittergranate', short: 'Splitter', kind: 'grenade', dmg: 55, radius: 2.6, cost: 1500, icon: '💣' },
+  alien: { name: 'Alien-Granate', short: 'Alien-Gr.', kind: 'grenade', dmg: 95, radius: 3.2, cost: 9000, req: 'plasma', icon: '☢' },
+  smoke: { name: 'Nebelgranate', short: 'Nebel', kind: 'smoke', radius: 2.5, turns: 3, cost: 800, icon: '☁' },
+  flare: { name: 'Leuchtfackel', short: 'Fackel', kind: 'flare', radius: 6, turns: 4, cost: 500, icon: '✦' },
+  medkit: { name: 'Medi-Kit', short: 'Medi-Kit', kind: 'medkit', heal: 25, uses: 3, cost: 6000, icon: '✚' },
+};
+
+// Veraltet – nur noch für Abwärtskompatibilität (Granaten-Werte)
 export const GRENADES = {
   frag: { name: 'Splittergranate', dmg: 55, radius: 2.6, cost: 1500 },
   alien: { name: 'Alien-Granate', dmg: 95, radius: 3.2, cost: 9000, req: 'plasma' },
