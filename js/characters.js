@@ -605,8 +605,9 @@ function skinVariant(base, coverKey, coverPred) {
 }
 
 // ---- Stiefel / Schuhe -------------------------------------------------------------------------
-function buildFootwear(base, side, kind, clearance) {
+function buildFootwear(base, side, kind, clearance, lay) {
   const an = base.an, S = side === 'L' ? 1 : -1;
+  const lp = (i, k) => an.P[i * 3 + k] + an.N[i * 3 + k] * lay(i);
   const ankle = an.key[side === 'L' ? 'ankleL' : 'ankleR'];
   const toeB = an.bone('toe3-1.' + side);
   const toe = toeB ? wpos(toeB) : ankle.clone().add(new THREE.Vector3(0, -0.06, 0.14));
@@ -615,7 +616,7 @@ function buildFootwear(base, side, kind, clearance) {
   const F = [], cand = [];
   for (let i = 0; i < an.n; i++) {
     if (an.side[i] !== S || (an.reg[i] !== R.foot && an.reg[i] !== R.shin)) continue;
-    const x = an.P[i * 3] - O.x, z = an.P[i * 3 + 2] - O.z, y = an.P[i * 3 + 1];
+    const x = lp(i, 0) - O.x, z = lp(i, 2) - O.z, y = lp(i, 1);
     if (y > 0.42) continue;
     cand.push(i);
     if (an.reg[i] === R.foot) F.push([x * X.x + z * X.z, y, x * Z.x + z * Z.z]);
@@ -684,8 +685,8 @@ function buildFootwear(base, side, kind, clearance) {
   const ring = ringsY.map((y) => {
     let x0 = 1, x1 = -1, zz0 = 1, zz1 = -1;
     for (const i of cand) {
-      const py = an.P[i * 3 + 1]; if (Math.abs(py - y) > 0.022) continue;
-      const dx = an.P[i * 3] - O.x, dz = an.P[i * 3 + 2] - O.z, lx = dx * X.x + dz * X.z, lz = dx * Z.x + dz * Z.z;
+      const py = lp(i, 1); if (Math.abs(py - y) > 0.022) continue;
+      const dx = lp(i, 0) - O.x, dz = lp(i, 2) - O.z, lx = dx * X.x + dz * X.z, lz = dx * Z.x + dz * Z.z;
       if (lz > 0.045) continue;
       x0 = Math.min(x0, lx); x1 = Math.max(x1, lx); zz0 = Math.min(zz0, lz); zz1 = Math.max(zz1, lz);
     }
@@ -735,7 +736,7 @@ function buildFootwear(base, side, kind, clearance) {
 function buildHelmet(base, type) {
   const an = base.an, hb = an.headBox, e = an.eyeC;
   const c = new THREE.Vector3((hb.min.x + hb.max.x) / 2, e.y + 0.025, (hb.min.z + hb.max.z) / 2 - 0.004);
-  const power = type === 'power', mg = power ? 0.045 : 0.03;
+  const power = type === 'power', mg = power ? 0.036 : 0.03;
   const rx = (hb.max.x - hb.min.x) / 2 + mg, rzF = hb.max.z - c.z + mg, rzB = c.z - hb.min.z + mg, ry = an.topY - c.y + mg * 0.9;
   const ryDown = power ? 0.24 : 0.12;
   const f = power ? e.y - 0.135 : e.y + 0.042, s = power ? e.y - 0.14 : e.y + 0.0, b = power ? e.y - 0.16 : e.y - 0.045;
@@ -881,39 +882,36 @@ function outfitParts(base, o) {
   const soldier = o.role === 'soldier', power = o.armorType === 'power', personal = o.armorType === 'personal';
   const hipsY = K.hips.y, shY = (K.shoulderL.y + K.shoulderR.y) / 2;
   const longPants = !soldier && o.longPants;
-  // Abdeckung (Haut-Dreiecke ausblenden)
-  const coverRegs = new Set([R.foot]);
-  if (soldier) [R.torso, R.hips, R.shoulder, R.upperarm, R.forearm, R.thigh, R.shin].forEach((r) => coverRegs.add(r));
-  if (soldier && power) coverRegs.add(R.neck);
-  if (longPants) [R.hips, R.thigh, R.shin].forEach((r) => coverRegs.add(r));
+  // Schichten: Haut (bzw. Kleidung) → Uniform-/Hosen-Schale aus der Haut → Ausrüstung.
+  // Unter T-Shirt/Hose existiert keine Haut (MakeHuman) → Kleidung bleibt und wird umgefärbt; nur freie Gliedmaßen bekommen eine Schale.
+  const ovRegs = soldier ? [R.upperarm, R.forearm, R.thigh, R.shin].concat(power ? [R.neck] : []) : longPants ? [R.thigh, R.shin] : [];
+  const ovSet = new Set(ovRegs);
+  const offU = { [R.upperarm]: 0.012, [R.forearm]: 0.010, [R.thigh]: 0.021, [R.shin]: 0.019, [R.neck]: 0.006 };
+  const lay = (i) => (an.srcOf[i] ? 0.003 : ovSet.has(an.reg[i]) ? offU[an.reg[i]] : 0);
+  const layKey = ovRegs.join(',');
+  const offL = (d) => offsetFn(an, (i) => lay(i) + d);
+  const coverRegs = new Set([R.foot, ...ovRegs]);
   if (o.gloves) coverRegs.add(R.hand);
-  const lowTorso = (i) => an.reg[i] === R.torso && an.P[i * 3 + 1] < hipsY + 0.1;
-  const covered = (i) => coverRegs.has(an.reg[i]) || (longPants && lowTorso(i));
-  const ckey = [...coverRegs].sort().join(',') + (longPants ? 'p' : '');
-  const res = { skinGeo: skinVariant(base, ckey, covered), skinned: [], helmet: null, hideHair: false, hairGeo: null };
+  const covered = (i) => i < an.nSkin && coverRegs.has(an.reg[i]);
+  const res = { skinGeo: skinVariant(base, [...coverRegs].sort().join(','), covered), skinned: [], helmet: null, hideHair: false, hairGeo: null };
   const q = o.quality === 'low';
-  // Uniform / Hose (Schale aus der Haut)
-  const offU = { [R.torso]: 0.011, [R.hips]: 0.013, [R.shoulder]: 0.011, [R.upperarm]: 0.010, [R.forearm]: 0.009, [R.thigh]: 0.013, [R.shin]: 0.015, [R.neck]: 0.006 };
-  if (soldier || longPants) {
-    const regs = soldier ? [R.torso, R.hips, R.shoulder, R.upperarm, R.forearm, R.thigh, R.shin].concat(power ? [R.neck] : []) : [R.hips, R.thigh, R.shin];
-    const rs = new Set(regs);
-    const pred = (i) => rs.has(an.reg[i]) || (longPants && lowTorso(i));
-    const geo = cached(base, 'uniform:' + regs.join(',') + (longPants ? 'p' : ''), () => buildShell(an, maj3(pred), offsetFn(an, (i) => offU[an.reg[i]] || 0.012), null, { smooth: 1 }));
+  if (ovRegs.length) {
+    const pred = (i) => i < an.nSkin && ovSet.has(an.reg[i]);
+    const geo = cached(base, 'uniform:' + layKey, () => buildShell(an, maj3(pred), offsetFn(an, lay), null, { smooth: 1 }));
     res.skinned.push({ geo, mat: soldier ? 'uniform' : 'pants', shadow: true });
   }
-  if (o.gloves) res.skinned.push({ geo: cached(base, 'gloves', () => buildShell(an, maj3((i) => an.reg[i] === R.hand), offsetFn(an, () => 0.0028), null)), mat: 'gloves', shadow: !q });
+  if (o.gloves) res.skinned.push({ geo: cached(base, 'gloves', () => buildShell(an, maj3((i) => i < an.nSkin && an.reg[i] === R.hand), offsetFn(an, () => 0.0028), null)), mat: 'gloves', shadow: !q });
   // Schuhwerk
   const fw = soldier ? 'combat' : (o.shoes || 'sneaker');
-  const clr = soldier ? 0.022 : longPants ? 0.02 : 0.006;
   for (const s of ['L', 'R']) {
-    const f = cached(base, `foot:${s}:${fw}:${clr}`, () => buildFootwear(base, s, fw, clr));
+    const f = cached(base, `foot:${s}:${fw}:${layKey}`, () => buildFootwear(base, s, fw, 0.007, lay));
     if (f.upper) res.skinned.push({ geo: f.upper, mat: 'shoeUpper', shadow: true });
     if (f.sole) res.skinned.push({ geo: f.sole, mat: 'shoeSole', shadow: !q });
     if (f.lace) res.skinned.push({ geo: f.lace, mat: 'lace', shadow: false });
   }
   // Weste / Plattenträger
   if (soldier && (personal || power)) {
-    const vest = cached(base, 'vest:' + o.armorType, () => {
+    const vest = cached(base, 'vest:' + o.armorType + ':' + layKey, () => {
       const plateW = power ? 0.15 : 0.125, bottom = hipsY + (power ? -0.01 : 0.055);
       const frontTop = shY - (power ? 0.02 : 0.085), backTop = shY - (power ? 0.0 : 0.05), sideTop = shY - (power ? 0.1 : 0.15);
       const torsoRegs = new Set([R.torso, R.hips, R.shoulder].concat(power ? [R.neck] : []));
@@ -927,16 +925,16 @@ function outfitParts(base, o) {
       };
       let Zf = -1e9, Zb = 1e9; const offF = power ? 0.045 : 0.034;
       for (let i = 0; i < an.n; i++) if (ok(i) && Math.abs(an.P[i * 3]) < plateW && an.P[i * 3 + 1] < frontTop) {
-        if (an.P[i * 3 + 2] > an.zc) Zf = Math.max(Zf, an.P[i * 3 + 2] + offF); else Zb = Math.min(Zb, an.P[i * 3 + 2] - offF + 0.006);
+        if (an.P[i * 3 + 2] > an.zc) Zf = Math.max(Zf, an.P[i * 3 + 2] + lay(i) + offF); else Zb = Math.min(Zb, an.P[i * 3 + 2] - lay(i) - offF + 0.006);
       }
       const outer = (i, t) => {
         const x = an.P[i * 3], y = an.P[i * 3 + 1], ax = Math.abs(x), front = an.P[i * 3 + 2] > an.zc;
         const plate = ax < plateW && y < (front ? frontTop : backTop) + 0.005;
-        const o2 = plate ? 0.03 : (ax > 0.045 && y > sideTop) ? (power ? 0.03 : 0.02) : (power ? 0.028 : 0.022);
+        const o2 = lay(i) + (plate ? 0.028 : (ax > 0.045 && y > sideTop) ? (power ? 0.028 : 0.017) : (power ? 0.026 : 0.02));
         t.set(x + an.N[i * 3] * o2, y + an.N[i * 3 + 1] * o2, an.P[i * 3 + 2] + an.N[i * 3 + 2] * o2);
         if (plate) { const k = 1.6 * x * x; if (front) t.z = Math.max(t.z, Zf - k); else t.z = Math.min(t.z, Zb + k); }
       };
-      return buildShell(an, all3(ok), outer, offsetFn(an, () => 0.017), { smooth: power ? 1 : 2 });
+      return buildShell(an, all3(ok), outer, offL(0.009), { smooth: power ? 1 : 2 });
     });
     res.skinned.push({ geo: vest, mat: power ? 'plate' : 'vest', shadow: true });
     // Taschen (Magazintaschen vorn, Mehrzwecktaschen seitlich)
@@ -961,23 +959,23 @@ function outfitParts(base, o) {
   }
   // Knieschützer (personal) bzw. Panzerplatten (power)
   if (soldier && (personal || power)) {
-    const pieces = cached(base, 'plates:' + o.armorType, () => {
+    const pieces = cached(base, 'plates:' + o.armorType + ':' + layKey, () => {
       const geos = [];
       const fwdN = (i) => an.N[i * 3 + 2];
       for (const s of ['L', 'R']) {
         const S = s === 'L' ? 1 : -1, knee = K['knee' + s], hip = K['hip' + s], ank = K['ankle' + s], sh = K['shoulder' + s], el = K['elbow' + s], wr = K['wrist' + s];
         const onSide = (i) => an.side[i] === S;
         const kneeP = (i) => onSide(i) && (an.reg[i] === R.thigh || an.reg[i] === R.shin) && an.P[i * 3 + 1] < knee.y + 0.075 && an.P[i * 3 + 1] > knee.y - 0.085 && fwdN(i) > 0.15 && an.P[i * 3 + 2] > knee.z - 0.01;
-        geos.push(buildShell(an, all3(kneeP), offsetFn(an, () => (power ? 0.042 : 0.036)), offsetFn(an, () => 0.018), { smooth: 3 }));
+        geos.push(buildShell(an, all3(kneeP), offL(power ? 0.03 : 0.026), offL(0.007), { smooth: 3 }));
         if (!power) continue;
         const thighP = (i) => onSide(i) && an.reg[i] === R.thigh && fwdN(i) > -0.25 && (() => { const t = along(an, i, hip, knee); return t > 0.22 && t < 0.78; })();
-        geos.push(buildShell(an, all3(thighP), offsetFn(an, () => 0.034), offsetFn(an, () => 0.019), { smooth: 2 }));
+        geos.push(buildShell(an, all3(thighP), offL(0.022), offL(0.007), { smooth: 2 }));
         const shinP = (i) => onSide(i) && an.reg[i] === R.shin && fwdN(i) > -0.1 && (() => { const t = along(an, i, knee, ank); return t > 0.22 && t < 0.56; })();
-        geos.push(buildShell(an, all3(shinP), offsetFn(an, () => 0.034), offsetFn(an, () => 0.021), { smooth: 2 }));
+        geos.push(buildShell(an, all3(shinP), offL(0.02), offL(0.007), { smooth: 2 }));
         const paulP = (i) => onSide(i) && (an.reg[i] === R.upperarm || an.reg[i] === R.shoulder) && an.P[i * 3] * S > sh.x * S - 0.045 && an.P[i * 3 + 1] > sh.y - 0.15 && along(an, i, sh, el) < 0.5;
-        geos.push(buildShell(an, all3(paulP), offsetFn(an, () => 0.05), offsetFn(an, () => 0.024), { smooth: 3 }));
+        geos.push(buildShell(an, all3(paulP), offL(0.04), offL(0.012), { smooth: 3 }));
         const braceP = (i) => onSide(i) && an.reg[i] === R.forearm && (() => { const t = along(an, i, el, wr); return t > 0.25 && t < 0.82; })();
-        geos.push(buildShell(an, all3(braceP), offsetFn(an, () => 0.024), offsetFn(an, () => 0.012), { smooth: 1 }));
+        geos.push(buildShell(an, all3(braceP), offL(0.016), offL(0.004), { smooth: 1 }));
       }
       const valid = geos.filter(Boolean); if (!valid.length) return null;
       const m = mergeGeometries(valid); valid.forEach((g) => g.dispose()); return m;
@@ -1146,14 +1144,14 @@ export function makeCharacter(opts = {}) {
   const B = (canon) => { for (const n of aliasesOf(canon)) if (boneByName.has(n)) return boneByName.get(n); return null; };
 
   // --- Materialien & Sichtbarkeit
-  const remove = [];
+  const remove = [], clothMeshes = [];
   for (const [name, list] of Object.entries(meshes)) for (const m of list) {
     if (name === 'skin') { m.geometry = parts.skinGeo; if (bmats.skin) m.material = bmats.skin; }
     else if (name === 'hair') { if (parts.hideHair) remove.push(m); else { if (parts.hairGeo) m.geometry = parts.hairGeo; if (bmats.hair) m.material = bmats.hair; } }
     else if (name === 'eyes') { if (bmats.eyes) m.material = bmats.eyes; }
     else if (bmats[name]) m.material = bmats[name];
     else if (name === 'clothes_top' || name === 'clothes_bottom') {
-      if (soldier || (name === 'clothes_bottom' && o.longPants)) { remove.push(m); continue; }
+      if (soldier || (o.longPants && name === 'clothes_bottom')) { clothMeshes.push(m); continue; }
       const mm = own(m.material.clone()); mm.color.set(name === 'clothes_top' ? clothes.top : clothes.bottom); m.material = mm;
     }
   }
@@ -1175,6 +1173,7 @@ export function makeCharacter(opts = {}) {
   };
   const matCache = {};
   const getMat = (k) => (matCache[k] = matCache[k] || (k === 'helmet' && armor.type === 'power' ? matFor.plate() : matFor[k]()));
+  for (const m of clothMeshes) { m.material = getMat(soldier ? 'uniform' : 'pants'); m.castShadow = true; }
   const attached = [];
   for (const p of parts.skinned) {
     const sm = new THREE.SkinnedMesh(p.geo, getMat(p.mat));

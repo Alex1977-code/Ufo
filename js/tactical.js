@@ -758,7 +758,7 @@ export class Tactical {
         const li = ITEMS[lid];
         if (li && (li.free || Game.cheats.allGear)) load = { id: lid, rounds: W0.mag };
         else if (li && (stockLeft[lid] || 0) > 0) { stockLeft[lid]--; load = { id: lid, rounds: W0.mag }; }
-        else { load = { id: lid, rounds: 0 }; this.beltShort.push(`${li?.short || 'Munition'} (Waffe leer)`); }
+        else { load = { id: lid, rounds: 0, none: true }; this.beltShort.push(`${li?.short || 'Munition'} (Waffe leer)`); }
       }
       // Gürtel bestücken: jeder Gegenstand braucht ein Stück im Lager (Cheat „alle Ausrüstung“: unbegrenzt)
       const belt = [];
@@ -1998,7 +1998,7 @@ export class Tactical {
     u.load = { id: b.id, rounds };
     if (!Game.cheats.allGear) {
       if (old && old.rounds > 0) u.belt[slot] = { id: old.id, uses: 1, rounds: old.rounds }; // Tausch: angebrochenes Magazin in den Gürtel
-      else { u.belt[slot] = null; if (old && !ITEMS[old.id]?.free) this.result.itemsUsed[old.id] = (this.result.itemsUsed[old.id] || 0) + 1; }
+      else { u.belt[slot] = null; if (old && !old.none && !ITEMS[old.id]?.free) this.result.itemsUsed[old.id] = (this.result.itemsUsed[old.id] || 0) + 1; }
     }
     sfx('click');
     this.floatAt(u, `${ITEMS[b.id].icon} nachgeladen`, '#cfe6ff');
@@ -2292,17 +2292,26 @@ export class Tactical {
     const totalKills = Object.values(r.kills).reduce((a, b) => a + b, 0);
     const artifacts = {};
     const addA = (k, n) => { if (n > 0) artifacts[k] = (artifacts[k] || 0) + n; };
+    const plasmaW = (wk) => wk === 'a_rifle' || wk === 'a_pistol' || wk === 'a_heavy';
+    const loot = r.ammoLoot; // erbeutete Plasma-Zellen (nur mit erforschtem Plasma)
     for (const [type, n] of Object.entries(r.kills)) {
       score += ALIENS[type].score * n;
       if (won) {
         addA(ALIENS[type].corpse, n);
         const wk = ALIENS[type].weapon;
-        if (wk === 'a_rifle' || wk === 'a_pistol' || wk === 'a_heavy') addA('Plasmawaffe', n);
+        if (plasmaW(wk)) { addA('Plasmawaffe', n); if (Game.has('plasma')) loot.pz_cell = (loot.pz_cell || 0) + n; }
       }
     }
     if (won) {
-      const stunnedAll = this.units.filter((u) => u.team === 'alien' && u.alive);
-      stunnedAll.forEach(() => {}); // alle Aliens erledigt
+      // Bewusstlose Aliens werden Gefangene (Artefakt „Gefangener …“); nicht fangbare Arten zählen wie eine Tötung
+      for (const a of this.units.filter((u) => u.team === 'alien' && u.ko)) {
+        const A = ALIENS[a.spec];
+        r.captured[a.spec] = (r.captured[a.spec] || 0) + 1;
+        score += Math.round(A.score * 1.5);
+        if (A.captive) addA(A.captive, 1); else addA(A.corpse, 1);
+        if (plasmaW(A.weapon)) { addA('Plasmawaffe', 1); if (Game.has('plasma')) loot.pz_cell = (loot.pz_cell || 0) + 1; }
+      }
+      if (Game.has('verhoer_vael') && site.ufoType) addA('Zerium', 1); // Verhör: Vael
       if (site.ufoType) {
         const R = UFOS[site.ufoType].radius;
         addA('Alien-Legierung', R * (site.kind === 'crash' ? 2 : 3));
@@ -2317,25 +2326,36 @@ export class Tactical {
       r.civSaved = won ? this.units.filter((u) => u.team === 'civ' && u.alive).length : 0;
       score += r.civSaved * 10 - r.civKilled * 15;
     }
-    // Soldaten
+    // Soldaten (bewusstlos: bei Sieg gerettet, bei Niederlage vermisst)
     const dead = [], survivors = [];
     for (const u of this.units.filter((x) => x.team === 'player')) {
       const s = u.soldier;
-      if (!u.alive) { dead.push(u); score -= 25; c.soldiers = c.soldiers.filter((x) => x.id !== s.id); c.stats.lost++; continue; }
-      const promoted = Game.awardXp(s, u.kills, true);
+      if (!u.alive && !(u.ko && won)) { if (u.ko) u.mia = true; dead.push(u); score -= 25; c.soldiers = c.soldiers.filter((x) => x.id !== s.id); c.stats.lost++; continue; }
+      const promoted = Game.awardXp(s, (u.kills || 0) + (u.captures || 0), true);
       s.wound = Math.ceil(Math.max(0, u.dmgTaken - (u.healed || 0)) / 4);
       survivors.push({ u, promoted });
     }
     // Lager
     for (const [k, n] of Object.entries(artifacts)) c.artifacts[k] = (c.artifacts[k] || 0) + n;
     // gefallene/vermisste Soldaten verlieren ihre mitgeführten Gürtel-Gegenstände (Medi-Kit = 1 Stück)
-    if (!Game.cheats.allGear) for (const u of dead) for (const b of u.belt || []) if (b && ITEMS[b.id]) r.itemsUsed[b.id] = (r.itemsUsed[b.id] || 0) + 1;
+    // Munition: Magazin zählt als verbraucht, wenn es leer in der Waffe steckt oder der Träger fällt (angebrochene kehren voll zurück)
+    const used = (id, n = 1) => { if (id && ITEMS[id] && !ITEMS[id].free) r.itemsUsed[id] = (r.itemsUsed[id] || 0) + n; };
+    if (!Game.cheats.allGear) {
+      for (const u of dead) { for (const b of u.belt || []) if (b && ITEMS[b.id]) used(b.id); if (u.load && !u.load.none) used(u.load.id); }
+      for (const { u } of survivors) if (u.load && !u.load.none && u.load.rounds <= 0) used(u.load.id);
+      // nicht ausgelöste Sensorminen werden nach einem Sieg geborgen
+      if (won) for (const m of this.mines) if (m.counted && r.itemsUsed[m.id] > 0) r.itemsUsed[m.id]--;
+    }
     c.stock ||= {};
     for (const [k, n] of Object.entries(r.itemsUsed)) c.stock[k] = Math.max(0, (c.stock[k] || 0) - n);
+    for (const [k, n] of Object.entries(loot)) c.stock[k] = (c.stock[k] || 0) + n;
     const usedTxt = Object.entries(r.itemsUsed).filter(([k, n]) => n > 0 && ITEMS[k]).map(([k, n]) => `${ITEMS[k].icon} ${ITEMS[k].name} ×${n}`).join('<br>');
+    const capTxt = Object.entries(r.captured).map(([k, n]) => `${ALIENS[k].name} ×${n}`).join(', ');
+    const lootTxt = Object.entries(loot).filter(([, n]) => n > 0).map(([k, n]) => `${ITEMS[k].icon} ${ITEMS[k].name} ×${n}`).join('<br>');
     // tote Soldaten verlieren ihre Ausrüstung
     for (const u of dead) { const s = u.soldier; if (s.weapon !== 'rifle') c.stock[s.weapon] = Math.max(0, (c.stock[s.weapon] || 0) - 1); if (s.armor !== 'none') c.stock[s.armor] = Math.max(0, (c.stock[s.armor] || 0) - 1); }
-    const bounty = won ? totalKills * 15000 + (site.ufoType ? UFOS[site.ufoType].radius * 40000 : 0) : 0;
+    const capN = Object.values(r.captured).reduce((a, b) => a + b, 0);
+    const bounty = won ? Math.round(((totalKills + capN) * 15000 + (site.ufoType ? UFOS[site.ufoType].radius * 40000 : 0)) * (Game.has('verhoer_krull') ? 1.2 : 1)) : 0;
     c.credits += bounty;
     c.stats.missions++; if (won) c.stats.won++;
     c.stats.kills += totalKills;
@@ -2351,13 +2371,15 @@ export class Tactical {
           html: `<div class="grid2"><div>
             <h4>Ergebnis</h4>
             <p>Eliminierte Aliens: <b>${totalKills}</b></p>
+            ${capTxt ? `<p>Gefangene: <b class="good">${capTxt}</b></p>` : ''}
             ${site.kind === 'terror' ? `<p>Gerettete Zivilisten: <b class="good">${r.civSaved}</b> · Opfer: <b class="bad">${r.civKilled}</b></p>` : ''}
             <p>Wertung: <b class="${score >= 0 ? 'good' : 'bad'}">${score >= 0 ? '+' : ''}${score}</b></p>
             ${bounty ? `<p>Bergungsprämie: <b class="good">${bounty.toLocaleString('de-DE')} ¢</b></p>` : ''}
             <h4>Geborgene Artefakte</h4><p class="muted">${Object.entries(artifacts).map(([k, n]) => `${k} ×${n}`).join('<br>') || 'Keine'}</p>
-            <h4>Verbrauchte Ausrüstung</h4><p class="muted">${usedTxt || 'Keine'}</p></div>
+            <h4>Verbrauchte Ausrüstung</h4><p class="muted">${usedTxt || 'Keine'}</p>
+            ${lootTxt ? `<h4>Erbeutete Munition</h4><p class="muted">${lootTxt}</p>` : ''}</div>
             <div><h4>Trupp</h4>
-            ${survivors.map(({ u, promoted }) => `<div class="res-sol">✔ ${u.name} <small>${RANKS[u.soldier.rank]} · ${u.kills} Kills${u.soldier.wound ? ` · verwundet ${u.soldier.wound} T` : ''}</small>${promoted ? ' <b class="good">Beförderung!</b>' : ''}</div>`).join('')}
+            ${survivors.map(({ u, promoted }) => `<div class="res-sol">✔ ${u.name} <small>${RANKS[u.soldier.rank]} · ${u.kills} Kills${u.captures ? ` · ${u.captures} Gefangene` : ''}${u.soldier.wound ? ` · verwundet ${u.soldier.wound} T` : ''}</small>${promoted ? ' <b class="good">Beförderung!</b>' : ''}</div>`).join('')}
             ${dead.map((u) => `<div class="res-sol bad">☠ ${u.name} <small>${u.mia ? 'vermisst' : 'gefallen'}</small></div>`).join('')}
             </div></div>`,
           buttons: [{ label: 'Zurück zum Hauptquartier', primary: true, action: () => this.hooks.endMission(site, r) }],
