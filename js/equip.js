@@ -141,15 +141,17 @@ export async function openEquipment({ soldiers, onDone }) {
     }).join('');
     const clear = field === 'items' ? `<button class="btn eq-opt" data-opt="">✕ Platz leeren</button>` : '';
     const label = field === 'weapon' ? 'Waffe wählen' : field === 'armor' ? 'Rüstung wählen' : `Gürtel ${slot + 1}`;
-    const ph = modal({ title: `${label} – ${s.name}`, html: `<div class="eq-opts">${rows}${clear}</div>`, buttons: [{ label: 'Zurück' }] });
+    // Abgelehnte Auswahl: Kopfschütteln, sobald die (die Figur verdeckende) Auswahlliste wieder zu ist
+    let denied = false, done = false;
+    const ph = modal({ title: `${label} – ${s.name}`, html: `<div class="eq-opts">${rows}${clear}</div>`, buttons: [{ label: 'Zurück' }], onClose: () => { if (denied && !done) view?.play('deny'); } });
     ph.el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-opt]'); if (!b || b.disabled) return;
       const id = b.dataset.opt || null;
       const before = field === 'items' ? s.items?.[slot] ?? null : s[field];
       if (!b.classList.contains('dis') && setEquip(s, field, id, pool, stock, slot, gear)) {
-        sfx('select'); focusKey = `[data-slot="${key}"]`; ph.close(); redraw();
+        sfx('select'); focusKey = `[data-slot="${key}"]`; done = true; ph.close(); redraw();
         if (id !== before) view?.play(field === 'weapon' ? 'aim' : 'approve');
-      } else { sfx('deny'); toast(b.classList.contains('dis') ? 'Kein Bestand frei.' : 'Nicht verfügbar.', 'warn'); view?.play('deny'); }
+      } else { sfx('deny'); toast(b.classList.contains('dis') ? 'Kein Bestand frei.' : 'Nicht verfügbar.', 'warn'); denied = true; view?.play('deny'); }
     });
     setTimeout(() => ph.el.querySelector('.eq-opt.on, .eq-opt:not(:disabled):not(.dis)')?.focus(), 40);
   }
@@ -209,7 +211,7 @@ const POSES = {
   approve: { dur: 2.6, fi: 0.45, fo: 0.55, fn(o, t) { // Nicken + Salut, Waffe präsentiert in der linken Hand
     neutral(o);
     o.arx = -2.35; o.arz = -0.62; o.ary = 0.15;
-    o.alx = -0.55; o.alz = 0.32; o.gpx = -0.2; o.gpy = 1.02; o.gpz = 0.3; o.grx = -1.45; o.gry = 0; o.grz = 0;
+    o.alx = -0.35; o.alz = 0.05; o.gpx = -0.36; o.gpy = 1.05; o.gpz = 0.2; o.grx = -1.5; o.gry = 0; o.grz = 0.04;
     o.hx = t < 1.3 ? Math.max(0, Math.sin(t * 9.5)) * 0.28 : 0; o.by = 0.01;
   } },
   aim: { dur: 3.0, fi: 0.5, fo: 0.6, fn(o, t) { // Waffencheck: anlegen, anvisieren, leichtes Schwenken
@@ -366,7 +368,7 @@ function createSoldierViewer(THREE, makeSoldier) {
   }
   // Licht: Spot (Schlüssellicht), Rim-Lights, Füllung
   scene.add(new THREE.HemisphereLight(0x8fb4d8, 0x12161c, 0.45));
-  const spot = new THREE.SpotLight(0xfff0dc, 70, 14, 0.5, 0.65, 1.6);
+  const spot = new THREE.SpotLight(0xfff0dc, 95, 14, 0.5, 0.65, 1.6);
   spot.position.set(2.0, 4.6, 3.4); spot.target.position.set(0, 0.9, 0); scene.add(spot, spot.target);
   if (!weak) { spot.castShadow = true; spot.shadow.mapSize.set(512, 512); spot.shadow.bias = -0.0006; spot.shadow.normalBias = 0.02; spot.shadow.camera.near = 2; spot.shadow.camera.far = 10; }
   const rim = new THREE.DirectionalLight(0x4fd2ff, 3.2); rim.position.set(-2.6, 2.6, -3); scene.add(rim);
