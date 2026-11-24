@@ -296,7 +296,7 @@ function makeSkinMaterial(src) {
   return patchMaterial(m, {
     key: 'aegis-skin-1', defines: { SKIN_SSS: '', SKIN_DETAIL: '' },
     uniforms: { uSssColor: { value: new THREE.Color(1.0, 0.32, 0.18) }, uSssWrap: { value: 0.55 }, uSssTrans: { value: 0.55 },
-      uDetailMap: { value: T.pores }, uDetailRepeat: { value: new THREE.Vector2(26, 26) }, uDetailStrength: { value: 0.5 }, uRoughVar: { value: 0.45 } },
+      uDetailMap: { value: T.pores }, uDetailRepeat: { value: new THREE.Vector2(44, 44) }, uDetailStrength: { value: 0.2 }, uRoughVar: { value: 0.45 } },
     vHead: 'attribute float aThin; varying float vThin;', vMain: 'vThin = aThin;',
     fHead: 'varying float vThin; uniform vec3 uSssColor; uniform float uSssWrap; uniform float uSssTrans; uniform sampler2D uDetailMap; uniform vec2 uDetailRepeat; uniform float uDetailStrength; uniform float uRoughVar;',
     fAfter: {
@@ -317,7 +317,7 @@ function makeHairMaterial(src) {
     sheenColor: new THREE.Color(0.6, 0.5, 0.4), specularIntensity: 0.35,
   });
   return patchMaterial(m, {
-    key: 'aegis-hair-1', defines: { HAIR_ANISO: '' }, uniforms: { uHairSpec: { value: 1.0 } },
+    key: 'aegis-hair-1', defines: { HAIR_ANISO: '' }, uniforms: { uHairSpec: { value: 0.45 } },
     fHead: 'uniform float uHairSpec; vec3 gHairT = vec3( 0.0, 1.0, 0.0 );',
     fAfter: { normal_fragment_maps: '#ifdef USE_NORMALMAP_TANGENTSPACE\n gHairT = normalize( tbn[1] );\n#endif' },
   });
@@ -331,7 +331,7 @@ function makeFabricMaterial({ color = 0x5b6345, camo = null, molle = false, roug
   const cc = camo || [color, color, color, color];
   return patchMaterial(m, {
     key: 'aegis-fabric-' + (camo ? 'c' : '') + (molle ? 'm' : ''), defines,
-    uniforms: { uCamo: { value: T.camo }, uCamoScale: { value: 1.9 }, uC0: { value: new THREE.Color(cc[0]) }, uC1: { value: new THREE.Color(cc[1]) }, uC2: { value: new THREE.Color(cc[2]) }, uC3: { value: new THREE.Color(cc[3]) } },
+    uniforms: { uCamo: { value: T.camo }, uCamoScale: { value: 3.0 }, uC0: { value: new THREE.Color(cc[0]) }, uC1: { value: new THREE.Color(cc[1]) }, uC2: { value: new THREE.Color(cc[2]) }, uC3: { value: new THREE.Color(cc[3]) } },
     vHead: 'attribute vec3 aRest; attribute vec3 aRestN; varying vec3 vRest; varying vec3 vRestN;', vMain: 'vRest = aRest; vRestN = aRestN;',
     fHead: 'varying vec3 vRest; varying vec3 vRestN; uniform sampler2D uCamo; uniform float uCamoScale; uniform vec3 uC0; uniform vec3 uC1; uniform vec3 uC2; uniform vec3 uC3;',
     fAfter: {
@@ -726,6 +726,9 @@ function buildFootwear(base, side, kind, clearance, lay) {
     const merged = mergeGeometries(gs); merged.applyMatrix4(toWorld);
     const pos = merged.attributes.position.array, nrm = merged.attributes.normal.array;
     const { SI, SW } = knnSkin(an, pos, cand, 4);
+    // Zehen-Gewichte auf den Fuß-Bone legen: Schuh bleibt formstabil
+    const fIdx = an.bi('foot.' + side), fb = an.bones[fIdx];
+    for (let q2 = 0; q2 < SI.length; q2++) { const b = an.bones[SI[q2]]; if (b !== fb && SW[q2] > 0) { let x = b.parent, inFoot = false; while (x && x.isBone) { if (x === fb) { inFoot = true; break; } x = x.parent; } if (inFoot) SI[q2] = fIdx; } }
     out[k] = finalizeSkinned(an, { pos: Float32Array.from(pos), nrm: Float32Array.from(nrm), uv: Float32Array.from(merged.attributes.uv.array), index: null, SI, SW });
     gs.forEach((g) => g.dispose()); merged.dispose(); list.forEach((g) => g.dispose());
   }
@@ -919,7 +922,7 @@ function outfitParts(base, o) {
         const x = Math.abs(an.P[i * 3]), y = an.P[i * 3 + 1], front = an.P[i * 3 + 2] > an.zc;
         if (!torsoRegs.has(an.reg[i]) || y < bottom) return false;
         if (an.reg[i] === R.neck) return y < shY + 0.06;
-        if (x >= 0.045 && x <= (power ? 0.2 : 0.118) && y <= shY + 0.1) return true; // Schultergurte / Schulterteil
+        if (x >= 0.05 && x <= (power ? 0.2 : 0.115) && y <= shY + 0.08 && (power || an.srcOf[i])) return true; // Schultergurte / Schulterteil
         if (x < plateW) return y <= (front ? frontTop : backTop);
         return y <= sideTop;
       };

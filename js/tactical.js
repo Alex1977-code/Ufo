@@ -2397,7 +2397,7 @@ export class Tactical {
     if (!quiet) sfx('select');
     this.camT.x = u.obj.position.x; this.camT.z = u.obj.position.z;
     this.cursor = { x: u.x, y: u.y };
-    if (this.mode === 'belt' ? (u !== prev || !this.beltEntry(u)) : WEAPONS[u.weapon][this.mode] == null) this.mode = 'snap';
+    if (this.mode === 'belt' ? (u !== prev || !this.beltEntry(u) || isInstantItem(ITEMS[this.beltEntry(u).id])) : WEAPONS[u.weapon][this.mode] == null) this.mode = this.firstMode(u);
     this.computeRange();
     this.updateHover();
     this.refreshUi();
@@ -2426,26 +2426,33 @@ export class Tactical {
     this.rangeMesh.count = k;
     this.rangeMesh.instanceMatrix.needsUpdate = true;
   }
-  clearTarget() { this.target = null; this.grenadeTarget = null; this.pendingMove = null; this.tgtRing.visible = false; }
+  clearTarget() { this.target = null; this.grenadeTarget = null; this.pendingMove = null; this.tgtRing.visible = false; this.waypoints = []; this.groundTarget = null; this.groundAim = false; }
+  // Lenkschuss-Modus aktiv? (Leitwerfer, W1 4.8)
+  isGuided(u = this.selected) { const w = u && WEAPONS[u.weapon]; return !!(w && this.mode !== 'belt' && w[this.mode]?.guided); }
+  // Waffe/Munition darf auf leere Felder feuern (Bodenziel, W1 4.3)
+  canGround(u = this.selected) { const w = u && this.weaponOf(u); return !!(w && !w.melee && this.mode !== 'belt' && !this.isGuided(u) && (w.tile || w.radius)); }
   setMode(m) {
     const u = this.selected; if (!u || this.busy || this.phase !== 'player') return;
     if (m === 'grenade' || m === 'belt') { // Kompatibilität: erster Wurfgegenstand
-      const k = this.beltSlots(u).find((i) => ITEMS[u.belt[i].id].kind !== 'medkit');
+      const k = this.beltSlots(u).find((i) => !['medkit', 'ammo', 'scanner', 'stunrod'].includes(ITEMS[u.belt[i].id].kind));
       if (k == null) { toast('Keine Wurfgegenstände im Gürtel.', 'warn'); sfx('deny'); return; }
       this.setBelt(k); return;
     }
     if (!WEAPONS[u.weapon][m]) { sfx('deny'); return; }
+    if (m !== this.mode) { this.waypoints = []; this.groundAim = false; }
     this.mode = m; this.grenadeTarget = null; sfx('click');
     this.updateHover(); this.refreshUi();
   }
   // Gürtelplatz wählen (erneut wählen = zurück zum Schnappschuss)
-  setBelt(slot) {
+  // Sofort-Gegenstände (Magazin, Scanner) lösen per Maus/Touch/Tastatur direkt aus; Controller (pad) wählt nur, Ⓐ löst aus
+  setBelt(slot, pad = false) {
     const u = this.selected; if (!u || this.busy || this.phase !== 'player') return;
-    if (this.mode === 'belt' && this.beltSlot === slot) { this.setMode('snap'); return; }
+    if (this.mode === 'belt' && this.beltSlot === slot) { this.setMode(this.firstMode(u)); return; }
     const b = this.beltEntry(u, slot);
     if (!b) { toast('Gürtelplatz leer.', 'warn'); sfx('deny'); return; }
-    this.mode = 'belt'; this.beltSlot = slot; this.grenadeTarget = null; this.pendingMove = null;
-    if (ITEMS[b.id].kind === 'medkit') { this.target = null; this.tgtRing.visible = false; }
+    if (isInstantItem(ITEMS[b.id]) && !pad) { this.useInstant(u, slot); return; }
+    this.mode = 'belt'; this.beltSlot = slot; this.grenadeTarget = null; this.pendingMove = null; this.waypoints = []; this.groundTarget = null; this.groundAim = false;
+    if (['medkit', 'ammo', 'scanner'].includes(ITEMS[b.id].kind)) { this.target = null; this.tgtRing.visible = false; }
     sfx('click');
     this.updateHover(); this.refreshUi();
   }
@@ -2454,14 +2461,21 @@ export class Tactical {
     const u = this.selected; if (!u) return;
     const slots = this.beltSlots(u);
     if (!slots.length) { toast('Gürtel leer.', 'warn'); sfx('deny'); return; }
-    if (this.mode !== 'belt') { this.setBelt(slots[0]); return; }
+    if (this.mode !== 'belt') { this.setBelt(slots[0], true); return; }
     const i = slots.indexOf(this.beltSlot);
-    if (i < 0 || i === slots.length - 1) this.setMode('snap'); else this.setBelt(slots[i + 1]);
+    if (i < 0 || i === slots.length - 1) this.setMode(this.firstMode(u)); else this.setBelt(slots[i + 1], true);
+  }
+  async useInstant(u, slot) {
+    if (this.busy) return;
+    const it = ITEMS[this.beltEntry(u, slot)?.id];
+    await this.useBelt(u, slot, u.x, u.y);
+    if (this.mode === 'belt' && (!this.beltEntry(u) || it?.kind === 'ammo' || it?.kind === 'scanner')) this.mode = this.firstMode(u);
+    this.afterAction();
   }
   cycleMode() {
     const u = this.selected; if (!u) return;
     const opts = ['snap', 'aimed', 'auto'].filter((m) => WEAPONS[u.weapon][m]).map((m) => ({ m }));
-    this.beltSlots(u).forEach((k) => opts.push({ m: 'belt', k }));
+    this.beltSlots(u).filter((k) => !isInstantItem(ITEMS[u.belt[k].id])).forEach((k) => opts.push({ m: 'belt', k }));
     const i = opts.findIndex((o) => o.m === this.mode && (o.m !== 'belt' || o.k === this.beltSlot));
     const n = opts[(i + 1) % opts.length];
     if (n.m === 'belt') { if (this.mode === 'belt' && this.beltSlot === n.k) return; this.setBelt(n.k); } else this.setMode(n.m);
@@ -2481,16 +2495,26 @@ export class Tactical {
     let other = this.unitAt(x, y);
     if (other && u && !this.knownBlocker(u, other)) other = null; // unsichtbare Einheiten nicht verraten
     const item = u && this.mode === 'belt' ? this.beltEntry(u) : null;
-    if (u && this.mode === 'belt' && !item) { this.mode = 'snap'; this.refreshUi(); }
-    // Medi-Kit: Klick auf eigenen Soldaten heilt statt auszuwählen
-    if (item && ITEMS[item.id].kind === 'medkit' && other && other.team === 'player') {
+    const ik = item && ITEMS[item.id].kind;
+    if (u && this.mode === 'belt' && !item) { this.mode = this.firstMode(u); this.refreshUi(); }
+    // Sofort-Gegenstand per Controller gewählt: Ⓐ löst aus
+    if (item && isInstantItem(ITEMS[item.id])) { await this.useInstant(u, this.beltSlot); return; }
+    // Medi-Kit: Klick auf eigenen Soldaten heilt (bzw. weckt Bewusstlose) statt auszuwählen
+    const koT = this.koAt(x, y);
+    if (ik === 'medkit' && ((other && other.team === 'player') || (!other && koT?.team === 'player'))) {
       const ok = await this.useBelt(u, this.beltSlot, x, y);
-      if (ok && !this.beltEntry(u)) this.mode = 'snap';
+      if (ok && !this.beltEntry(u)) this.mode = this.firstMode(u);
       this.afterAction(); return;
     }
+    // Lenkschuss: Wegpunkte setzen / kürzen / starten
+    if (u && this.isGuided(u)) { await this.guidedClick(u, x, y, other); return; }
     if (other && other.team === 'player' && other !== u) { this.select(other); return; }
     if (!u) return;
-    if (item && ITEMS[item.id].kind === 'medkit') { toast('Medi-Kit: eigenen Soldaten (selbst oder angrenzend) wählen.', 'warn'); sfx('deny'); return; }
+    if (ik === 'medkit') { toast('Medi-Kit: eigenen Soldaten (selbst oder angrenzend) wählen.', 'warn'); sfx('deny'); return; }
+    if (ik === 'stunrod') {
+      if (other && other.team === 'alien' && this.isVisibleAlien(other)) { await this.useBelt(u, this.beltSlot, x, y); this.afterAction(); return; }
+      toast('Schockstab: angrenzendes, sichtbares Alien antippen.', 'warn'); sfx('deny'); return;
+    }
     if (item) {
       if (this.grenadeTarget && this.grenadeTarget.x === x && this.grenadeTarget.y === y) {
         this.grenadeArea.visible = false; this.clearPath();
@@ -2506,10 +2530,19 @@ export class Tactical {
       this.refreshUi();
       return;
     }
-    if (other) return;
-    // Bewegung
+    if (other && !(this.canGround(u) && other.team !== 'player' && !this.knownBlocker(u, other))) return;
+    // Bodenziel (Werfer, Explosiv-/Brand-/Schockmunition): zweiter Klick feuert
+    if (this.groundTarget && this.groundTarget.x === x && this.groundTarget.y === y) { await this.fireAtTarget(); return; }
     if (!this.reach) this.computeRange();
     const d = this.reach.dist[y * this.W + x];
+    if (this.canGround(u) && (this.groundAim || d === Infinity || d === 0) && !(x === u.x && y === u.y)) {
+      if (this.vis[y * this.W + x] && this.canSee(u, x, y)) {
+        this.groundTarget = { x, y }; this.target = null; this.tgtRing.visible = false; this.groundAim = false; this.pendingMove = null;
+        sfx('click'); this.updateHover(); this.refreshUi(); return;
+      }
+      if (this.groundAim) { toast('Bodenziel: nur sichtbare Felder in Sichtlinie.', 'warn'); sfx('deny'); return; }
+    }
+    // Bewegung
     if (d === Infinity || d === 0) { if (this.explored[y * this.W + x]) { sfx('deny'); if (u.kneel && u.tu < STAND_TU + 4) toast(`Aufstehen kostet ${STAND_TU} ZE.`, 'warn', 1800); } return; }
     if (confirmTwice && !(this.pendingMove && this.pendingMove.x === x && this.pendingMove.y === y)) { this.pendingMove = { x, y }; this.cursor = { x, y }; this.updateHover(); sfx('click'); return; }
     this.pendingMove = null;
@@ -2519,13 +2552,111 @@ export class Tactical {
     this.afterAction();
   }
   async fireAtTarget() {
-    const u = this.selected, t = this.target;
-    if (!u || !u.alive || !t || !t.alive || this.busy || this.ended || this.phase !== 'player') return;
-    if (this.mode === 'belt') return;
+    const u = this.selected;
+    if (!u || !u.alive || this.busy || this.ended || this.phase !== 'player' || this.mode === 'belt') return;
+    if (this.needsReload(u)) { toast('Magazin leer – nachladen (N)', 'warn'); sfx('deny'); return; }
+    if (this.groundTarget && !this.target) {
+      const g = this.groundTarget;
+      if (!this.canSee(u, g.x, g.y)) { toast('Keine Sichtlinie zum Bodenziel.', 'warn'); sfx('deny'); return; }
+      const gp = this.cellPos(g.x, g.y);
+      const pseudo = { x: g.x, y: g.y, ground: true, kneel: false, flying: false, alive: true, armor: 0, obj: { position: new THREE.Vector3(gp.x, 0, gp.z) } };
+      this.rangeMesh.count = 0; this.clearPath(); this.grenadeArea.visible = false;
+      this.groundTarget = null;
+      await this.fire(u, pseudo, this.mode);
+      this.afterAction(); return;
+    }
+    const t = this.target;
+    if (!t || !t.alive) return;
     if (!this.canSee(u, t.x, t.y) && !(WEAPONS[u.weapon].melee)) { toast('Keine Sichtlinie zum Ziel.', 'warn'); sfx('deny'); return; }
     this.rangeMesh.count = 0; this.clearPath();
     await this.fire(u, t, this.mode);
     this.afterAction();
+  }
+  reloadAuto() {
+    const u = this.selected;
+    if (!u || this.busy || this.phase !== 'player' || this.ended) return;
+    this.reload(u);
+  }
+  // ---- Lenkschuss (W1 4.8) ----
+  guidedUndo() { if (!this.waypoints.length) return false; this.waypoints.pop(); sfx('click'); this.updateHover(); this.refreshUi(); return true; }
+  async guidedClick(u, x, y, other) {
+    const w = WEAPONS[u.weapon], wp = this.waypoints;
+    if (other && other.team === 'player') {
+      if (other === u) { if (wp.length) { this.waypoints = []; toast('Wegpunkte verworfen.', 'info', 1400); sfx('click'); } }
+      else this.select(other);
+      this.updateHover(); this.refreshUi(); return;
+    }
+    const last = wp[wp.length - 1];
+    if (last && last.x === x && last.y === y) { await this.launchGuided(u); return; }
+    const k = wp.findIndex((p) => p.x === x && p.y === y);
+    if (k >= 0) { wp.length = k + 1; sfx('click'); this.updateHover(); this.refreshUi(); return; }
+    if (x === u.x && y === u.y) return;
+    if (wp.length >= (w.waypoints || 6)) { toast(`Maximal ${w.waypoints || 6} Wegpunkte – letzten Punkt erneut wählen oder „Abfeuern“.`, 'warn'); sfx('deny'); return; }
+    const len = this.polyLength(u, [...wp, { x, y }]);
+    if (len > w.range) { toast(`Flugstrecke zu lang (max. ${w.range} Felder).`, 'warn'); sfx('deny'); return; }
+    wp.push({ x, y }); sfx('click');
+    this.updateHover(); this.refreshUi();
+  }
+  polyLength(u, wps) { let L = 0, a = { x: u.x, y: u.y }; for (const b of wps) { L += Math.hypot(b.x - a.x, b.y - a.y); a = b; } return L; }
+  // Flugbahn entlang der Rasterpunkte: halbe Deckung wird überflogen, Vollwände/Einheiten stoppen die Rakete
+  guidedTrace(u, wps) {
+    const pts = [{ x: u.x, y: u.y }, ...wps], samples = [];
+    let hit = null, last = pts[0];
+    for (let k = 1; k < pts.length; k++) {
+      const a = pts[k - 1], b = pts[k], L = Math.hypot(b.x - a.x, b.y - a.y);
+      for (let s = 0.25; s <= L + 1e-6; s += 0.25) {
+        const fx = a.x + (b.x - a.x) * s / L, fy = a.y + (b.y - a.y) * s / L, cx = Math.round(fx), cy = Math.round(fy);
+        samples.push({ fx, fy, blocked: !!hit });
+        if (hit) continue;
+        if (cx === u.x && cy === u.y) continue;
+        if (!this.inb(cx, cy)) { hit = last; samples[samples.length - 1].blocked = true; continue; }
+        const wl = this.wallAt(cx, cy);
+        if ((wl && WALLS[wl.type]?.full) || (() => { const o = this.unitAt(cx, cy); return o && o !== u && o.alive && (o.team === 'player' || this.knownBlocker(u, o) || this._tracing); })()) { hit = { x: cx, y: cy, fx, fy }; continue; }
+        last = { x: cx, y: cy, fx, fy };
+      }
+    }
+    return { hit: hit || { ...pts[pts.length - 1], fx: pts[pts.length - 1].x, fy: pts[pts.length - 1].y }, samples, pts };
+  }
+  async launchGuided(u) {
+    if (!u || this.busy || this.ended || this.phase !== 'player') return;
+    const w = this.weaponOf(u), mode = this.mode;
+    if (!this.waypoints.length) { toast('Lenkschuss: zuerst Wegpunkte auf Felder setzen.', 'warn'); sfx('deny'); return; }
+    if (this.needsReload(u)) { toast('Kein Geschoss geladen – nachladen (N)', 'warn'); sfx('deny'); return; }
+    const cost = this.modeCost(u, mode);
+    if (!this.hasTu(u, cost)) { toast('Nicht genügend Zeiteinheiten.', 'warn'); sfx('deny'); return; }
+    this.busy = true;
+    this.spendTu(u, cost);
+    if (u.load) u.load.rounds = Math.max(0, u.load.rounds - 1);
+    this._tracing = true; const tr = this.guidedTrace(u, this.waypoints); this._tracing = false; // echte Einheiten (auch unentdeckte) stoppen die Rakete
+    this.waypoints = []; this.clearPath(); this.grenadeArea.visible = false; this.rangeMesh.count = 0;
+    const route = [{ fx: u.x, fy: u.y }];
+    for (const s of tr.samples) { if (s.blocked) break; route.push(s); if (Math.round(s.fx) === tr.hit.x && Math.round(s.fy) === tr.hit.y) break; }
+    this.faceTo(u, Math.round(route[Math.min(2, route.length - 1)].fx), Math.round(route[Math.min(2, route.length - 1)].fy));
+    await this.flyAlong(u, route);
+    await this.explode(tr.hit.x, tr.hit.y, w.dmg, w.radius, u, { dtype: w.dtype, burn: w.burn || 0 });
+    this.busy = !!this.ended;
+    this.afterAction();
+  }
+  async flyAlong(u, route) {
+    const spd = this.engine.settings.animSpeed || 1, p0 = this.cellPos(0, 0);
+    const P = route.map((r) => new THREE.Vector3(p0.x + r.fx * TILE, 1.6, p0.z + r.fy * TILE));
+    P[0] = this.muzzleWorld(u);
+    sfx('launch'); this.flash(P[0], 0xffa040, 8);
+    const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 1.6, 0.6), transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+    const mesh = new THREE.Mesh(this.tracerGeo, mat); mesh.scale.set(2.6, 2.6, 0.8); this.scene.add(mesh);
+    const seg = []; let total = 0;
+    for (let i = 1; i < P.length; i++) { const l = P[i - 1].distanceTo(P[i]); seg.push(l); total += l; }
+    let d = 0; const v = new THREE.Vector3(), look = new THREE.Vector3();
+    while (d < total && !this.disposed) {
+      const dt = await this.frame(); d = Math.min(total, d + 25 * TILE * spd * dt);
+      let r = d, i = 0; while (i < seg.length - 1 && r > seg[i]) { r -= seg[i]; i++; }
+      v.lerpVectors(P[i], P[i + 1], seg[i] ? Math.min(1, r / seg[i]) : 1);
+      look.copy(P[i + 1]); mesh.position.copy(v); if (look.distanceToSquared(v) > 1e-6) mesh.lookAt(look);
+      this.emit(v.clone(), new THREE.Color(0.32, 0.31, 0.3), 0.2, 0.25, 1.2, false, true);
+      this.emit(v.clone(), new THREE.Color(3, 1.5, 0.4), 0, 0.3, 0.2);
+      this.camT.x = v.x; this.camT.z = v.z;
+    }
+    this.scene.remove(mesh); mat.dispose();
   }
   afterAction() {
     if (this.ended) return;
@@ -2679,7 +2810,19 @@ export class Tactical {
     this.updatePadHints();
   }
   btnAction(a) {
-    if (a === 'fire') { if (this.mode === 'belt' && this.grenadeTarget) this.actAt(this.grenadeTarget.x, this.grenadeTarget.y, false); else this.fireAtTarget(); }
+    if (a === 'fire') {
+      const u = this.selected;
+      if (!u || this.busy || this.phase !== 'player') return;
+      if (this.isGuided(u)) { if (this.needsReload(u)) this.reloadAuto(); else this.launchGuided(u); }
+      else if (this.mode === 'belt' && this.grenadeTarget) this.actAt(this.grenadeTarget.x, this.grenadeTarget.y, false);
+      else if (this.mode !== 'belt' && this.needsReload(u)) this.reloadAuto();
+      else if (this.target || this.groundTarget) this.fireAtTarget();
+      else if (this.canGround(u)) { this.groundAim = !this.groundAim; sfx('click'); if (this.groundAim) toast('Bodenziel: sichtbares Feld antippen, erneut antippen oder FEUER = Schuss.', 'info', 2600); this.updateHover(); this.refreshUi(); }
+    }
+    if (a === 'reload') this.reloadAuto();
+    if (a === 'g-fire') { const u = this.selected; if (u && this.isGuided(u)) this.launchGuided(u); }
+    if (a === 'g-undo') this.guidedUndo();
+    if (a === 'g-cancel') { this.waypoints = []; sfx('click'); this.updateHover(); this.refreshUi(); }
     if (a === 'kneel') this.toggleKneel();
     if (a === 'prev') this.cycleUnit(-1);
     if (a === 'next') this.cycleUnit(1);
