@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { generateMap, WALLS } from './tacmap.js';
 import { TILE, propParts, patchFog, fogUniforms, makeSoldier, makeAlien, makeCivilian, makeTransport, textures, FACADES, atlasTile, makeRoof, releaseTextures, makeWater } from './models.js';
 import { canvasTexture } from './engine.js';
-import { WEAPONS, ARMORS, ALIENS, ITEMS, BELT_SLOTS, RANKS, UFOS } from './data.js';
+import { WEAPONS, ARMORS, ALIENS, ITEMS, BELT_SLOTS, RANKS, UFOS, effWeapon, ammoFits, ammoList, defaultLoad, isInstantItem, guidedMode } from './data.js';
 import { Game } from './game.js';
 import { Input, padLabel } from './input.js';
 import { modal, toast, confirmBox, anyModalOpen, floatText, banner, bar, el } from './ui.js';
@@ -12,10 +12,17 @@ import { sfx, setMusicMood } from './audio.js';
 import { clamp, rand, randInt, randRange, choice, shuffle, sleep, smooth, lerp, makeValueNoise2D, fbm2 } from './util.js';
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
-const FX_COLORS = { bullet: 0xffd27a, laser: 0xff3030, plasma: 0x50ff7a, beam: 0xff40a0, melee: 0xffffff };
-// ZE-Kosten der Gürtel-Gegenstände (Anteil der maximalen ZE) und Wurf-/Zonenfarben
-const ITEM_TU = { grenade: 0.3, smoke: 0.25, flare: 0.2, medkit: 0.3 };
-const ITEM_COLORS = { grenade: 0xff8030, smoke: 0xb8c0c8, flare: 0xffe070, medkit: 0x60ff90 };
+// Waffenform für models.js gun(): 'fx:variante' (pistol = einhändig, tube = Werfer, heavy = schwer)
+const gunFx = (w) => `${w.fx}:${w.hands === 1 ? 'pistol' : w.tile ? 'tube' : w.heavy ? 'heavy' : 'rifle'}`;
+const FX_COLORS = { bullet: 0xffd27a, laser: 0xff3030, plasma: 0x50ff7a, beam: 0xff40a0, melee: 0xffffff, rocket: 0xffa040, stun: 0x60a0ff };
+// ZE-Kosten der Gürtel-Gegenstände (Rückfall, falls ITEMS[id].tu fehlt) und Wurf-/Zonenfarben
+const ITEM_TU = { grenade: 0.3, smoke: 0.25, flare: 0.2, medkit: 0.3, mine: 0.3, charge: 0.35, stunrod: 0.25, scanner: 0.15, ammo: 0.15 };
+const ITEM_COLORS = { grenade: 0xff8030, smoke: 0xb8c0c8, flare: 0xffe070, medkit: 0x60ff90, mine: 0xff4040, charge: 0xff5020, stunrod: 0x60a0ff, scanner: 0xffe040, fire: 0xff7020, stun: 0x60a0ff };
+// Brand (W1 4.4)
+const BURN_DMG = 15, MAX_FIRE = 60;
+const FLAMMABLE_FLOOR = new Set(['grass', 'field', 'field2', 'wood', 'crops', 'vineyard', 'plank']);
+const FLAMMABLE_WALL = new Set(['wood', 'tree', 'pine', 'hedge', 'hay', 'crate', 'fence', 'log', 'woodpile', 'bush', 'tallhedge', 'birch', 'oak', 'palm', 'deadtree', 'stump', 'pallet', 'tent', 'scaffold', 'fuelbarrel', 'fuelpump']);
+const BLIPS = 16, CHAIN_MAX = 8; // Scanner-Ringe, max. Kettenexplosionen (Fässer/Minen) je Auslösung
 const KNEEL_TU = 4, STAND_TU = 8; // Knien 4 ZE, Aufstehen 8 ZE (wie im Original)
 const THROW_RANGE = 13;
 const PATH_LABELS = 60;
@@ -111,6 +118,9 @@ export class Tactical {
     this.result = { kills: {}, civSaved: 0, civKilled: 0, itemsUsed: {} };
     this.beltSlot = 0;
     this.smokes = []; this.flares = [];
+    this.mines = []; this.charges = []; this.blips = []; this.waypoints = []; this.groundTarget = null;
+    this.blastQueue = []; this.fireCount = 0;
+    this.result.captured = {}; this.result.ammoLoot = {};
     this.pathLabelData = []; this.plabCount = 0;
     this.ended = false;
     this._frameWaiters = [];
@@ -723,6 +733,12 @@ export class Tactical {
     // vorab angelegte Fackel-Lichter (keine Shader-Neukompilierung zur Laufzeit)
     this.flareLights = [];
     for (let i = 0; i < 2; i++) { const l = new THREE.PointLight(0xffd6a0, 0, 24, 1.5); l.userData.busy = false; this.scene.add(l); this.flareLights.push(l); }
+    // Brand: Restrunden, Ausbreitungsgeneration, Nachrauch je Feld + ein Licht für das Brandzentrum
+    this.fireCells = new Uint8Array(this.N); this.fireGen = new Uint8Array(this.N); this.fireSmoke = new Uint8Array(this.N);
+    this.fireLight = new THREE.PointLight(0xff7a30, 0, 18, 1.6); this.scene.add(this.fireLight);
+    // Scanner-Blips (gelbe, pulsierende Ringe) und Bodenziel-Markierung
+    this.blipRings = [];
+    for (let i = 0; i < BLIPS; i++) { const r = add(new THREE.Mesh(new THREE.RingGeometry(0.45, 0.62, 24).rotateX(-Math.PI / 2), ringMat(0xffe040, 0.85))); r.visible = false; r.position.y = 0.08; this.blipRings.push(r); }
   }
 
   spawnUnits() {
@@ -734,21 +750,32 @@ export class Tactical {
     this.opts.squad.forEach((s, i) => {
       const sp = spawns[i]; if (!sp) return;
       const arm = ARMORS[s.armor];
+      // Magazin in der Waffe (soldier.load, W1 3.1); fehlt der Bestand, startet die Waffe leer
+      const wid = WEAPONS[s.weapon] ? s.weapon : 'rifle', W0 = WEAPONS[wid];
+      let load = null;
+      if (W0.mag) {
+        const lid = s.load && ammoFits(wid, s.load) ? s.load : defaultLoad(wid);
+        const li = ITEMS[lid];
+        if (li && (li.free || Game.cheats.allGear)) load = { id: lid, rounds: W0.mag };
+        else if (li && (stockLeft[lid] || 0) > 0) { stockLeft[lid]--; load = { id: lid, rounds: W0.mag }; }
+        else { load = { id: lid, rounds: 0 }; this.beltShort.push(`${li?.short || 'Munition'} (Waffe leer)`); }
+      }
       // Gürtel bestücken: jeder Gegenstand braucht ein Stück im Lager (Cheat „alle Ausrüstung“: unbegrenzt)
       const belt = [];
       for (let k = 0; k < BELT_SLOTS; k++) {
         const id = Array.isArray(s.items) ? s.items[k] : null;
         const it = id && ITEMS[id];
         if (!it) { belt.push(null); continue; }
-        if (!Game.cheats.allGear) {
+        if (it.kind === 'ammo' && !ammoFits(wid, id)) { belt.push(null); continue; } // passt nicht zur Waffe: bleibt im Lager
+        if (!Game.cheats.allGear && !it.free) {
           if ((stockLeft[id] || 0) <= 0) { belt.push(null); this.beltShort.push(it.short); continue; }
           stockLeft[id]--;
         }
-        belt.push({ id, uses: it.uses || 1 });
+        belt.push(it.kind === 'ammo' ? { id, uses: 1, rounds: null } : { id, uses: it.uses || 1 });
       }
       const u = this.addUnit({
-        team: 'player', name: s.name, soldier: s, x: sp.x, y: sp.y, hp: s.hp + arm.hp, tu: s.tu, acc: s.acc, react: s.react, armor: arm.armor, weapon: s.weapon,
-        belt, healed: 0, obj: makeSoldier(s, arm.color, WEAPONS[s.weapon].fx), sight: m.night ? 12 : 20, rank: s.rank,
+        team: 'player', name: s.name, soldier: s, x: sp.x, y: sp.y, hp: s.hp + arm.hp, tu: s.tu, acc: s.acc, react: s.react, armor: arm.armor, weapon: wid,
+        belt, load, healed: 0, captures: 0, stun: 0, obj: makeSoldier(s, arm.color, gunFx(W0)), sight: m.night ? 12 : 20, rank: s.rank,
       });
       u.obj.rotation.y = Math.PI;
     });
@@ -788,7 +815,7 @@ export class Tactical {
   }
 
   addUnit(o) {
-    const u = { id: this.units.length, alive: true, kneel: false, kills: 0, dmgTaken: 0, maxHp: o.hp, maxTu: o.tu, ...o };
+    const u = { id: this.units.length, alive: true, kneel: false, kills: 0, captures: 0, stun: 0, ko: false, dmgTaken: 0, maxHp: o.hp, maxTu: o.tu, ...o };
     u.tu = u.maxTu;
     const p = this.cellPos(u.x, u.y);
     u.obj.position.set(p.x, 0, p.z);
@@ -819,6 +846,15 @@ export class Tactical {
   inSmoke(x, y) { return !!(this.inb(x, y) && this.smokeCells[y * this.W + x]); }
   litByFlare(x, y) { return this.flares.some((f) => f.turns > 0 && Math.hypot(f.x - x, f.y - y) <= f.r); }
   unitAt(x, y) { const i = this.occ[y * this.W + x]; return i >= 0 ? this.units[i] : null; }
+  // bewusstlose Einheit auf einem Feld (gibt ihr Feld frei, liegt aber noch dort)
+  koAt(x, y) { return this.units.find((u) => u.ko && u.x === x && u.y === y) || null; }
+  // alle betroffenen Einheiten eines Felds: lebend (occ) und bewusstlos (u.ko)
+  unitsInCell(x, y) { const r = []; const a = this.unitAt(x, y); if (a) r.push(a); for (const u of this.units) if (u.ko && u.x === x && u.y === y && u !== a) r.push(u); return r; }
+  mineAt(x, y) { return this.mines.find((m) => m.x === x && m.y === y) || null; }
+  burning(x, y) { return !!(this.inb(x, y) && this.fireCells[y * this.W + x]); }
+  // Waffe mit Überschreibungen der geladenen Munition (W1 4.0)
+  weaponOf(u) { return effWeapon(u.weapon, u.load?.id) || WEAPONS[u.weapon]; }
+  needsReload(u) { const w = WEAPONS[u?.weapon]; return !!(u && u.team === 'player' && w?.mag && !(u.load?.rounds > 0)); }
   dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
   los(x0, y0, x1, y1) {
@@ -868,7 +904,7 @@ export class Tactical {
         if (dx && dy && (this.blocksMove(x + dx, y, u) || this.blocksMove(x, y + dy, u))) continue;
         const j = ny * W + nx;
         if (!ignoreUnits && this.occ[j] >= 0 && this.occ[j] !== u.id && this.knownBlocker(u, this.units[this.occ[j]])) continue;
-        const nd = d + (dx && dy ? 6 : 4) + (i === s ? stand : 0);
+        const nd = d + (dx && dy ? 6 : 4) + (i === s ? stand : 0) + (this.fireCells[j] ? 12 : 0); // Feuer meiden (alle Parteien)
         if (nd > maxCost || nd >= dist[j]) continue;
         dist[j] = nd; prev[j] = i; h.push(j, nd);
       }
@@ -963,7 +999,12 @@ export class Tactical {
     if (!m) return Infinity;
     return Math.round(u.maxTu * m.tu);
   }
-  itemCost(u, id) { return Math.round(u.maxTu * (ITEM_TU[ITEMS[id]?.kind] ?? 0.3)); }
+  itemCost(u, id) {
+    const it = ITEMS[id];
+    if (it?.kind === 'ammo') return Math.round(u.maxTu * (WEAPONS[u.weapon]?.reload ?? 0.15)); // Nachladen
+    return Math.round(u.maxTu * (it?.tu ?? ITEM_TU[it?.kind] ?? 0.3));
+  }
+  reloadCost(u) { return Math.round(u.maxTu * (WEAPONS[u.weapon]?.reload ?? 0.15)); }
   beltEntry(u, slot = this.beltSlot) { const b = u?.belt?.[slot]; return b && ITEMS[b.id] ? b : null; }
   beltSlots(u) { const r = []; (u?.belt || []).forEach((b, k) => { if (b && ITEMS[b.id]) r.push(k); }); return r; }
   hasTu(u, cost) { return (u.team === 'player' && Game.cheats.infTU) || u.tu >= cost; }
@@ -982,10 +1023,11 @@ export class Tactical {
 
   hitChance(u, t, mode) {
     if (u.team === 'player' && Game.cheats.aimbot) return 1;
-    const w = WEAPONS[u.weapon]; const m = w?.[mode]; if (!m) return 0;
+    const w = this.weaponOf(u); const m = w?.[mode]; if (!m) return 0;
     if (w.melee) return this.dist(u, t) < 1.6 ? clamp((u.acc / 100) * m.acc * (t.kneel ? 0.92 : 1), 0.05, 0.95) : 0;
     let c = (u.acc / 100) * m.acc;
     if (u.kneel) c *= 1.15;
+    else if (w.heavy && mode === 'snap') c *= 0.85; // schwere Waffe aus dem Stand
     const d = this.dist(u, t);
     if (d > 10) c -= (d - 10) * 0.02;
     if (w.falloff) c -= Math.max(0, d - 3) * w.falloff;
@@ -1021,6 +1063,7 @@ export class Tactical {
       u.obj.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
       u.x = step.x; u.y = step.y;
       this.occ[u.y * this.W + u.x] = u.id;
+      u.movedTurn = this.turn; // Bewegungsscanner
       const visible = u.team === 'player' || this.isVisibleAlien(u) || (u.team === 'civ' && this.vis[u.y * this.W + u.x]);
       const dur = (visible ? 0.24 : 0.02) / spd;
       if (visible && u.team !== 'civ') { this.camT.x = to.x; this.camT.z = to.z; }
@@ -1034,6 +1077,20 @@ export class Tactical {
       }
       u.obj.position.x = to.x; u.obj.position.z = to.z;
       if (visible) sfx('step');
+      // brennendes Feld betreten: Brandschaden (einmal pro Schritt)
+      if (this.fireCells[u.y * this.W + u.x]) { this.damage(u, BURN_DMG, null, { dtype: 'fire' }); if (!u.alive || this.ended) break; }
+      // Sensormine (Freund-Feind-Kennung: nur Aliens lösen aus) – VOR jedem Reaktionsfeuer
+      if (u.team === 'alien' && this.mines.length) {
+        const mn = this.mines.find((q) => Math.hypot(q.x - u.x, q.y - u.y) <= (ITEMS[q.id].trigger || 1.5) && this.los(q.x, q.y, u.x, u.y));
+        if (mn) {
+          this.removeMine(mn);
+          if (!u.obj.visible) { u.revealed = true; u.obj.visible = true; this.updateAlienBadges(); }
+          this.camT.x = to.x; this.camT.z = to.z;
+          toast('◎ Sensormine ausgelöst!', 'good', 1600);
+          await this.explode(mn.x, mn.y, ITEMS[mn.id].dmg, ITEMS[mn.id].radius, mn.owner);
+          if (!u.alive || this.ended) break;
+        }
+      }
       if (u.team === 'player') {
         const spotted = this.updateVisibility();
         if (spotted.length && !opts.noStop) {
@@ -1063,12 +1120,15 @@ export class Tactical {
       if (!mover.alive) return;
       if (o.team === 'alien' && mover.team === 'player' && Game.cheats.noReaction) continue;
       if (o.team === 'player' && !this.isVisibleAlien(mover)) continue;
-      const w = WEAPONS[o.weapon];
+      const w = this.weaponOf(o);
+      if (w.noReact || w.radius || w.snap?.guided) continue;                     // Werfer, Explosiv-/Brand-/Schockmunition: nie Reaktionsfeuer
+      if (o.team === 'player' && w.mag && !(o.load?.rounds > 0)) continue;       // leeres Magazin
       const cost = this.modeCost(o, 'snap');
       if (!this.hasTu(o, cost)) continue;
       if (w.melee && this.dist(o, mover) > 1.6) continue;
       if (!this.canSee(o, mover.x, mover.y)) continue;
-      const chance = (o.react / 100) * (o.tu / o.maxTu) * 0.30;
+      let chance = (o.react / 100) * (o.tu / o.maxTu) * 0.30;
+      chance *= (w.hands === 1 ? 1.25 : 1) * (w.heavy ? 0.7 : 1);              // einhändig / schwer
       if (rand() < chance) {
         if (o.team === 'player') toast(`${o.name}: Reaktionsfeuer!`, 'good', 1500);
         else toast(`${o.name} eröffnet Reaktionsfeuer!`, 'bad', 1500);
