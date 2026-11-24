@@ -296,3 +296,15 @@ body[data-mode="geo"] #fps { top: auto; bottom: calc(90px + var(--safe-b)); }
   .eq-sold { flex: 0 0 auto; }
   .eq-slots { grid-template-columns: 1fr; }
 }
+
+/* === T1: ZE-Zählspur und Gürtel-Ausrüstung (Bodenkampf) === */
+.tac-plabels { position: fixed; inset: 0; pointer-events: none !important; overflow: hidden; z-index: 0; }
+.plab { position: absolute; left: 0; top: 0; translate: -50% -115%; min-width: 1.6em; padding: 0 4px; border-radius: 4px; text-align: center; font: 800 12px/1.35 var(--font-head, sans-serif); color: #7dffb0; background: rgba(0, 0, 0, 0.55); text-shadow: 0 1px 2px #000; white-space: nowrap; pointer-events: none; will-change: transform; }
+.plab.mv { color: #ffd34a; }
+.plab.no { color: #ff6a5a; }
+.plab.end { font-size: 16px; padding: 1px 7px; translate: -50% -125%; border: 1px solid currentColor; background: rgba(0, 0, 0, 0.72); box-shadow: 0 0 10px rgba(0, 0, 0, 0.6); z-index: 1; }
+.btn.act.belt b { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.btn.act.belt .bi { font-size: 1.15em; line-height: 1; }
+.btn.act.belt.active { box-shadow: 0 0 0 2px var(--accent, #4fd2ff) inset, 0 0 12px rgba(79, 210, 255, 0.35); }
+.uc-belt span { white-space: nowrap; }
+@media (pointer: coarse) { .plab { font-size: 13px; } .plab.end { font-size: 18px; } }
