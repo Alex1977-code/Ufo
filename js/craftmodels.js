@@ -860,7 +860,7 @@ export function makeInterceptor(type = 'falcon', opts = {}) {
   mk(g, kit.geo('trim'), trim, o, L);
   mk(g, kit.geo('glass'), glassMat(o, ...J.glass), o, null, null, false);
   // Kennung am Seitenleitwerk
-  const code = o.code || `${J.prefix}-${String(1 + (Math.abs(o.seed) % 9)).padStart(2, '0')}`;
+  const code = o.code || `${J.prefix}-${String(((Math.abs(o.seed) || 1) - 1) % 99 + 1).padStart(2, '0')}`;
   const dk = [];
   for (const F of J.fins) {
     const p = F.pts, at = (k) => ({ y: lerp(p[0][1], p[1][1], k), le: lerp(p[0][0], p[1][0], k), te: lerp(p[3][0], p[2][0], k), t: F.t * lerp(1, 0.45, k) / 2 + 0.012 });
@@ -1116,7 +1116,7 @@ export function makeTransport(opts = {}) {
     engines.push({ object: marker, glow, pivot: piv }); nacelles.push(piv);
   }
   // Abziehbilder (nur hoch): AEGIS + Kennung an Rumpf und Leitwerk
-  const code = o.code || `KD-${String(1 + (Math.abs(o.seed) % 9)).padStart(2, '0')}`;
+  const code = o.code || `KD-${String(((Math.abs(o.seed) || 1) - 1) % 99 + 1).padStart(2, '0')}`;
   if (hi) {
     const dk = [];
     for (const s of [-1, 1]) {
@@ -1355,7 +1355,7 @@ export function makeUfo(type = 'scout', opts = {}) {
   const ringMat = new THREE.MeshStandardMaterial({ color: 0x050505, emissive: accent, emissiveIntensity: 3.2, roughness: 0.4, metalness: 0.2 });
   const ring = new THREE.Mesh(rk.geo('r'), ringMat); ring.position.y = U.ring.y; g.add(ring);
   // Unterseite: Antriebsfelder
-  const emitM = glowMat(accent.getHex(), 1.5, glowTex()), engines = [];
+  const emitM = glowMat(accent.getHex(), 2.4, glowTex()), engines = [];
   const emitGeo = (e) => { const c = new THREE.CircleGeometry(e.r, 32); c.rotateX(Math.PI / 2); return ni(c, true); };
   if (hi || U.emit.length === 1) {
     for (const e of U.emit) { const [x, z] = azXZ(e.az, e.d); const m = new THREE.Mesh(emitGeo(e), emitM); m.position.set(x, e.y - 0.02, z); g.add(m); engines.push({ object: m, glow: m }); }

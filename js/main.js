@@ -10,6 +10,7 @@ import { Cast } from './cast.js';
 import { modal, toast, confirmBox, closeAllModals, el, alertBox } from './ui.js';
 import { initAudio, sfx, setVolumes, setMusicMood } from './audio.js';
 import { isTouchDevice, rand } from './util.js';
+import { makeUfo, animateCraft } from './craftmodels.js';
 
 const SETTINGS_KEY = 'aegis_settings_v1';
 const mobile = isTouchDevice() && Math.min(screen.width, screen.height) < 900;
@@ -59,18 +60,10 @@ function buildMenuScene() {
   }));
   planet.position.set(0, -31.5, -6);
   scene.add(planet);
+  // Jäger-UFO aus der gemeinsamen Modellbibliothek (~18 m Ø, Leuchtring/Lichter über userData animiert)
   const ufo = new THREE.Group();
-  const prof = [[0, 0.55], [0.9, 0.45], [2.3, 0.08], [2.5, 0], [2.2, -0.15], [0.9, -0.35], [0, -0.38]].map(([r, y]) => new THREE.Vector2(r, y));
-  const hullMat = new THREE.MeshStandardMaterial({ color: 0xc4ccd6, metalness: 0.7, roughness: 0.28 });
-  ufo.add(new THREE.Mesh(new THREE.LatheGeometry(prof, 64), hullMat));
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.85, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x0a2030, metalness: 0.2, roughness: 0.05, emissive: 0x104040, emissiveIntensity: 0.6 }));
-  dome.position.y = 0.4; ufo.add(dome);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(2.42, 0.06, 8, 96), new THREE.MeshStandardMaterial({ color: 0, emissive: 0x30ffd0, emissiveIntensity: 4 }));
-  ring.rotation.x = Math.PI / 2; ufo.add(ring);
-  for (let i = 0; i < 12; i++) {
-    const l = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), new THREE.MeshStandardMaterial({ color: 0, emissive: i % 2 ? 0xff3050 : 0x40ffd0, emissiveIntensity: 5 }));
-    const a = (i / 12) * Math.PI * 2; l.position.set(Math.cos(a) * 1.6, -0.25, Math.sin(a) * 1.6); ufo.add(l);
-  }
+  const craft = makeUfo('fighter', { accent: 0x30ffd0, shadows: false, transmission: false });
+  craft.scale.setScalar(0.29); ufo.add(craft);
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 2.2, 6, 32, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.6, 1.3), transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
   beam.position.y = -3.3; ufo.add(beam);
   ufo.position.set(2.2, 1.4, 0);
@@ -80,6 +73,7 @@ function buildMenuScene() {
   const lamp = new THREE.Mesh(new THREE.SphereGeometry(5, 8, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 4, 4.5) })); lamp.position.set(20, 20, 10); env.add(lamp);
   const lamp2 = new THREE.Mesh(new THREE.SphereGeometry(8, 8, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 0.6, 1.4) })); lamp2.position.set(0, -30, 0); env.add(lamp2);
   scene.environment = pmrem.fromScene(env, 0.02).texture;
+  scene.environmentIntensity = 2.4; // nur das PBR-UFO nutzt die Umgebung
   pmrem.dispose();
   env.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
   const key = new THREE.DirectionalLight(0xffffff, 3); key.position.set(5, 6, 4); scene.add(key);
@@ -91,6 +85,7 @@ function buildMenuScene() {
     update(dt) {
       t += dt;
       ufo.rotation.y += dt * 0.6;
+      animateCraft(craft, t, { throttle: 0.7 });
       ufo.position.y = 1.4 + Math.sin(t * 0.9) * 0.18;
       ufo.rotation.z = Math.sin(t * 0.7) * 0.06;
       planet.rotation.y += dt * 0.01;

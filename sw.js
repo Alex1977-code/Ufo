@@ -3,7 +3,7 @@ const CACHE = 'aegis-v3';
 const ASSETS = [
   './', './index.html', './css/style.css', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
   './js/main.js', './js/engine.js', './js/util.js', './js/data.js', './js/input.js', './js/ui.js', './js/audio.js', './js/game.js',
-  './js/geoscape.js', './js/aircombat.js', './js/shaders.js', './js/tacmap.js', './js/tactical.js', './js/models.js', './js/cheats.js', './js/equip.js', './js/cast.js', './js/basescape.js',
+  './js/geoscape.js', './js/aircombat.js', './js/shaders.js', './js/tacmap.js', './js/tactical.js', './js/models.js', './js/cheats.js', './js/equip.js', './js/cast.js', './js/basescape.js', './js/craftmodels.js',
   './vendor/three/three.module.min.js',
   './fonts/orbitron-latin.woff2', './fonts/rajdhani-500-latin.woff2', './fonts/rajdhani-500-latin-ext.woff2', './fonts/rajdhani-600-latin.woff2', './fonts/rajdhani-600-latin-ext.woff2', './fonts/rajdhani-700-latin.woff2', './fonts/rajdhani-700-latin-ext.woff2',
   './vendor/three/addons/postprocessing/EffectComposer.js', './vendor/three/addons/postprocessing/RenderPass.js',
