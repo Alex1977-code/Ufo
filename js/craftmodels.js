@@ -290,7 +290,7 @@ class Painter {
   // Fugen + Schmutz in den Fugen + Nieten
   panels(lines, o = {}) {
     const w = o.w ?? 0.02;
-    this.strokes(lines, w * 6, { A: [48, 42, 34, 0.06], O: [150, 0.35], R: [205, 0.15] });
+    this.strokes(lines, w * 7, { A: [48, 42, 34, 0.1], O: [140, 0.4], R: [205, 0.2] });
     this.strokes(lines, w, { A: [16, 18, 22, o.dark ?? 0.55], H: [62, 1], O: [110, 0.8], R: [210, 0.4] });
     if (o.rivet) {
       const dots = [], dark = [];
@@ -468,14 +468,14 @@ function damagePatch(mat, dmg, seed) {
         float dmgV = dmgF(vDmgP * 0.85 + uDmgSeed);
         float dmgT = 1.0 - uDmg * 0.62;
         float dmgBurn = smoothstep(dmgT - 0.02, dmgT + 0.1, dmgV);
-        float dmgCore = smoothstep(dmgT + 0.14, dmgT + 0.2, dmgV);
+        float dmgCore = smoothstep(dmgT + 0.08, dmgT + 0.14, dmgV);
         float dmgHole = step(0.985 - uDmg * 0.03, dmgN(vDmgP * 9.0 + uDmgSeed)) * step(0.3, uDmg);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.045, 0.04), dmgBurn * 0.85);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.012), max(dmgCore, dmgHole));`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.95, dmgBurn);')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.15, dmgBurn);')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance += vec3(1.0, 0.32, 0.06) * (dmgBurn - dmgCore) * step(0.55, uDmg) * 0.6 * (0.6 + 0.4 * sin(vDmgP.x * 3.0 + vDmgP.z * 2.0));`);
+        totalEmissiveRadiance += vec3(1.0, 0.3, 0.05) * smoothstep(0.75, 1.0, dmgBurn - dmgCore) * step(0.55, uDmg) * 0.18;`);
   };
   mat.customProgramCacheKey = () => 'craftDmg' + mat.type;
   return mat;
@@ -571,7 +571,7 @@ const decalMat = (tex) => new THREE.MeshStandardMaterial({ map: tex, alphaTest: 
 // =====================================================================
 const JETS = {
   falcon: {
-    name: 'Falke', prefix: 'FK', len: 14, color: [146, 153, 160, 1], camo: [112, 120, 128], accent: [214, 104, 32], rough: 0.5, metal: 0.25,
+    name: 'Falke', prefix: 'FK', len: 14, color: [128, 135, 142, 1], camo: [98, 106, 115], accent: [214, 104, 32], rough: 0.5, metal: 0.25,
     ink: [44, 50, 58, 0.95], glow: 0xff9440, glass: [0x6f8796, 0xb7a68a],
     ext: { x: [-5.3, 5.3], y: [-1.3, 3.4], z: [-7.45, 7.75] },
     fus: [[-7.25, 0, 0, 0, -0.06, 2], [-6.9, 0.12, 0.11, 0.1, -0.05, 2], [-6.3, 0.27, 0.25, 0.22, -0.03, 2.1], [-5.4, 0.43, 0.42, 0.36, 0, 2.2], [-4.4, 0.55, 0.56, 0.46, 0.04, 2.3],
@@ -626,7 +626,7 @@ function paintJet(P, J, L) {
   for (const r of [top, bot, side]) {
     P.use(r);
     for (let i = 0; i < 150; i++) P.soft(rr(r.al, r.ah), rr(r.bl, r.bh), rr(0.3, 1.5), rr(0.3, 1.5), R() < 0.5 ? { A: [255, 255, 255, 0.045], R: [110, 0.15] } : { A: [8, 10, 12, 0.05], R: [175, 0.15] }, R() * 3);
-    if (r !== bot) for (let i = 0; i < 11; i++) P.poly(blob(rr(r.al, r.ah), rr(r.bl, r.bh), rr(0.8, 2.0), R, 12), { A: [...J.camo, 0.6], blur: Math.max(2, r.ppm * 0.08) });
+    if (r !== bot) for (let i = 0; i < 12; i++) P.poly(blob(rr(r.al, r.ah), rr(r.bl, r.bh), rr(0.8, 2.0), R, 12), { A: [...J.camo, 0.75], blur: Math.max(1.5, r.ppm * 0.035) });
   }
   P.use(top); P.poly([[top.al, top.bl], [top.ah, top.bl], [top.ah, top.bh], [top.al, top.bh]], { A: [255, 250, 240, 0.05], R: [215, 0.12] });
   // 2) Fugen und Nieten
@@ -704,11 +704,16 @@ function paintJet(P, J, L) {
   { const s = f(J.seat), a = s[4] + s[2] * 0.45, b = J.seat + 0.3;
     P.poly([[a, b + 0.45], [a + 0.06, b + 0.45], [a + 0.06, b - 0.05], [a + 0.13, b - 0.05], [a + 0.03, b - 0.22], [a - 0.07, b - 0.05], [a, b - 0.05]], { A: [230, 196, 30, 0.9] });
     P.poly([[a - 0.1, b + 0.7], [a + 0.12, b + 0.58], [a - 0.1, b + 0.46]], { A: [200, 30, 25, 0.9] }); }
+  // Laufspuren entlang der Anströmung (Regen, Staub, Hydraulik)
+  for (const r of [top, side]) {
+    P.use(r);
+    for (let i = 0; i < 110; i++) { const a = rr(r.al, r.ah) * (r === top ? 0.9 : 0.35), b = rr(r.bl + 2, r.bh - 1); P.streak(a, b, r === side ? -0.12 : 0, 1, rr(0.4, 2.2), rr(0.02, 0.07), rr(0.06, 0.16), { A: [38, 34, 28, rr(0.06, 0.16)], R: [195, 0.15] }); }
+  }
   // 7) Ruß: Düsen, Bordkanone, Raketenstarts
-  const zt = J.nozzles[0].z;
-  P.use(top); for (const n of J.nozzles) P.soft(n.x, zt + 0.1, n.r * 1.6, 1.3, { A: [6, 6, 6, 0.75], R: [235, 0.8], M: [30, 0.6], O: [150, 0.6] });
-  P.use(bot); for (const n of J.nozzles) P.soft(n.x, zt + 0.1, n.r * 1.7, 1.4, { A: [6, 6, 6, 0.8], R: [235, 0.8], M: [30, 0.6], O: [150, 0.6] });
-  P.use(side); for (const n of J.nozzles) P.soft(n.y, zt + 0.1, n.r * 1.4, 1.3, { A: [6, 6, 6, 0.8], R: [235, 0.8], M: [30, 0.6] });
+  const zt = J.nozzles[0].z, soot = { A: [6, 6, 6, 0.9], R: [235, 0.8], M: [30, 0.6], O: [150, 0.6] };
+  P.use(top); for (const n of J.nozzles) { P.soft(n.x, zt + 0.15, n.r * 1.9, 1.5, soot); P.streak(n.x, zt + 0.2, 0, -1, 2.6, n.r * 2.4, n.r * 1.2, { A: [8, 8, 8, 0.7], R: [230, 0.6] }); }
+  P.use(bot); for (const n of J.nozzles) { P.soft(n.x, zt + 0.15, n.r * 2.0, 1.6, soot); P.streak(n.x, zt + 0.2, 0, -1, 3.0, n.r * 2.4, n.r * 1.2, { A: [8, 8, 8, 0.75], R: [230, 0.6] }); }
+  P.use(side); for (const n of J.nozzles) { P.soft(n.y, zt + 0.15, n.r * 1.7, 1.5, soot); P.streak(n.y, zt + 0.2, 0, -1, 2.6, n.r * 2.2, n.r * 1.0, { A: [8, 8, 8, 0.7], R: [230, 0.6] }); }
   P.streak(J.gun[1], J.gun[2], -0.15, 1, 1.9, 0.12, 0.55, { A: [8, 8, 8, 0.85], R: [230, 0.8], M: [30, 0.6] });
   P.dots([[J.gun[1], J.gun[2], 0.045]], { A: [5, 5, 5, 1], H: [40, 1] });
   P.use(bot);
@@ -727,7 +732,7 @@ function paintJet(P, J, L) {
     P.use(r);
     for (const [Q, sx] of wings) {
       const le = [quadPt(Q, sx, 0, 0), quadPt(Q, sx, 1, 0)], big = Q === J.wing;
-      P.chips(le, big ? 90 : 35, 0.22, 0.03, R() < 0.5 ? bare : bare);
+      P.chips(le, big ? 130 : 45, 0.26, 0.04, bare);
       P.chips(le, big ? 25 : 10, 0.15, 0.03, primer);
       P.chips([quadPt(Q, sx, 1, 0), quadPt(Q, sx, 1, 1)], 18, 0.12, 0.025, bare);
     }
@@ -758,7 +763,7 @@ function paintJet(P, J, L) {
     P.use(r);
     const d = [];
     for (let i = 0; i < 1400; i++) d.push([rr(r.al, r.ah), rr(r.bl, r.bh), rr(0.004, 0.014)]);
-    P.dots(d, { A: [70, 64, 54, 0.25], R: [190, 0.3] });
+    P.dots(d, { A: [70, 64, 54, 0.35], R: [190, 0.3] });
   }
 }
 
@@ -924,8 +929,8 @@ export function makeInterceptor(type = 'falcon', opts = {}) {
 // =====================================================================
 const KONDOR = {
   len: 28, color: [98, 106, 92, 1], camo: [74, 82, 70], tan: [128, 120, 98], accent: [222, 180, 40], rough: 0.62, metal: 0.2, ink: [28, 30, 30, 0.95], glow: 0x9fd4ff,
-  ext: { x: [-12.6, 12.6], y: [-2.0, 7.2], z: [-14.3, 14.3] },
-  fus: [[-14.0, 0.5, 0.55, 0.35, 0.55, 2.5], [-13.5, 1.15, 1.15, 0.9, 0.5, 3], [-12.4, 1.7, 1.6, 1.35, 0.5, 3.6], [-10.6, 2.0, 1.88, 1.6, 0.5, 4.5], [-7.0, 2.1, 2.0, 1.7, 0.5, 5.5],
+  ext: { x: [-12.6, 12.6], y: [-2.0, 7.2], z: [-14.5, 14.3] },
+  fus: [[-14.25, 0.2, 0.22, 0.15, 0.55, 2.2], [-14.0, 0.62, 0.66, 0.45, 0.55, 2.5], [-13.5, 1.15, 1.15, 0.9, 0.5, 3], [-12.4, 1.7, 1.6, 1.35, 0.5, 3.6], [-10.6, 2.0, 1.88, 1.6, 0.5, 4.5], [-7.0, 2.1, 2.0, 1.7, 0.5, 5.5],
     [4.0, 2.1, 2.0, 1.7, 0.5, 5.5], [6.6, 2.05, 2.0, 1.55, 0.55, 5.2], [9.0, 1.75, 1.8, 0.9, 1.1, 4.5], [11.5, 1.2, 1.35, 0.55, 1.75, 3.6], [13.4, 0.6, 0.75, 0.35, 2.15, 3], [14.0, 0.25, 0.3, 0.2, 2.25, 2.5]],
   wing: [[1.8, -2.3], [9.2, -1.7], [9.2, 1.7], [1.8, 2.6]], wingY: 2.85, wingT: 0.5,
   fin: [[8.6, 2.3], [12.3, 6.9], [13.8, 6.9], [14.1, 2.3]], htail: [[0.1, 12.0], [4.2, 13.1], [4.2, 13.95], [0.1, 14.05]], htailY: 6.85,
@@ -989,6 +994,10 @@ function paintKondor(P, K, L) {
   { const [a, b] = quadPt(K.wing, 1, 0.55, 0.5); emblem(P, a, b, 0.85, [0, -1]); }
   P.use(top); for (const sx of [-1, 1]) P.poly([quadPt(K.wing, sx, 0.95, 0), quadPt(K.wing, sx, 1.02, 0), quadPt(K.wing, sx, 1.02, 1), quadPt(K.wing, sx, 0.95, 1)], { A: [...K.accent, 0.8] });
   P.use(side); { const p = K.fin; P.poly([[lerp(p[0][1], p[1][1], 0.86), lerp(p[0][0], p[1][0], 0.86)], [p[1][1] + 0.1, p[1][0]], [p[2][1] + 0.1, p[2][0] + 0.1], [lerp(p[3][1], p[2][1], 0.86), lerp(p[3][0], p[2][0], 0.86)]], { A: [...K.accent, 0.8] }); }
+  for (const r of [top, side]) {
+    P.use(r);
+    for (let i = 0; i < 120; i++) { const a = r === top ? rr(-2, 2) : rr(-1.2, 2.2), b = rr(-12, 12); P.streak(a, b, r === side ? -0.2 : 0, 1, rr(0.6, 3), rr(0.04, 0.1), rr(0.1, 0.25), { A: [40, 36, 26, rr(0.06, 0.16)], R: [200, 0.15] }); }
+  }
   // Ruß: Gondeln (Flügelspitzen), Hilfsturbine, Bordkanone
   P.use(top);
   for (const sx of [-1, 1]) { P.soft(sx * 9.0, 1.2, 1.0, 2.2, { A: [8, 8, 8, 0.7], R: [235, 0.8], M: [30, 0.6] }); P.soft(sx * 9.0, -1.5, 0.8, 0.8, { A: [8, 8, 8, 0.35] }); }

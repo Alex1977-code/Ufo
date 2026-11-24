@@ -2,7 +2,7 @@
 export const WEAPONS = {
   rifle: { name: 'Sturmgewehr M7', short: 'Gewehr', dmg: 30, fx: 'bullet', snap: { tu: 0.25, acc: 0.6 }, aimed: { tu: 0.5, acc: 1.1 }, auto: { tu: 0.35, acc: 0.35, shots: 3 }, range: 22, cost: 0, avail: true },
   sniper: { name: 'Präzisionsgewehr S2', short: 'Sniper', dmg: 40, fx: 'bullet', snap: { tu: 0.35, acc: 0.5 }, aimed: { tu: 0.6, acc: 1.35 }, range: 30, cost: 18000, avail: true },
-  shotgun: { name: 'Schrotflinte K12', short: 'Schrot', dmg: 46, fx: 'bullet', snap: { tu: 0.25, acc: 0.75 }, aimed: { tu: 0.45, acc: 0.95 }, range: 9, falloff: 0.09, cost: 12000, avail: true },
+  shotgun: { name: 'Schrotflinte K12', short: 'Schrot', dmg: 46, fx: 'bullet', snap: { tu: 0.25, acc: 0.9 }, aimed: { tu: 0.45, acc: 0.95 }, range: 9, falloff: 0.06, cost: 12000, avail: true },
   laser: { name: 'Laser-Gewehr L4', short: 'Laser', dmg: 52, fx: 'laser', snap: { tu: 0.25, acc: 0.68 }, aimed: { tu: 0.5, acc: 1.2 }, auto: { tu: 0.33, acc: 0.48, shots: 3 }, range: 26, cost: 42000, req: 'laser' },
   plasma: { name: 'Plasmagewehr', short: 'Plasma', dmg: 82, fx: 'plasma', snap: { tu: 0.3, acc: 0.75 }, aimed: { tu: 0.6, acc: 1.25 }, auto: { tu: 0.36, acc: 0.55, shots: 3 }, range: 28, cost: 90000, req: 'plasma' },
   hplasma: { name: 'Schwerer Plasmawerfer', short: 'S-Plasma', dmg: 118, fx: 'plasma', snap: { tu: 0.33, acc: 0.65 }, aimed: { tu: 0.6, acc: 1.1 }, auto: { tu: 0.4, acc: 0.5, shots: 3 }, range: 28, cost: 160000, req: 'hplasma' },
@@ -11,7 +11,7 @@ export const WEAPONS = {
   a_rifle: { name: 'Plasmagewehr', dmg: 56, fx: 'plasma', snap: { tu: 0.3, acc: 0.7 }, aimed: { tu: 0.6, acc: 1.0 }, auto: { tu: 0.36, acc: 0.5, shots: 3 }, range: 24 },
   a_beam: { name: 'Strahlemitter', dmg: 48, fx: 'beam', snap: { tu: 0.3, acc: 0.8 }, aimed: { tu: 0.5, acc: 1.0 }, range: 22 },
   a_heavy: { name: 'Hive-Kanone', dmg: 95, fx: 'plasma', snap: { tu: 0.3, acc: 0.7 }, aimed: { tu: 0.5, acc: 1.0 }, auto: { tu: 0.4, acc: 0.55, shots: 3 }, range: 26 },
-  a_claw: { name: 'Klauen', dmg: 58, fx: 'melee', melee: true, snap: { tu: 0.25, acc: 0.85 }, range: 1.5 },
+  a_claw: { name: 'Klauen', dmg: 58, fx: 'melee', melee: true, snap: { tu: 0.25, acc: 1.1 }, range: 1.5 },
 };
 
 // Gürtel-Ausrüstung: jeder Soldat hat BELT_SLOTS Plätze (soldier.items = ['frag', 'smoke', null]).
@@ -39,11 +39,11 @@ export const ARMORS = {
 
 export const ALIENS = {
   vael: { name: 'Vael', hp: 30, armor: 4, tu: 54, acc: 46, react: 55, sight: 20, weapon: 'a_pistol', corpse: 'Vael-Leichnam', score: 10, model: 'vael' },
-  vael_s: { name: 'Vael-Soldat', hp: 40, armor: 8, tu: 56, acc: 52, react: 60, sight: 20, weapon: 'a_rifle', corpse: 'Vael-Leichnam', score: 15, model: 'vael' },
-  krull: { name: 'Krull', hp: 70, armor: 20, tu: 52, acc: 50, react: 50, sight: 20, weapon: 'a_rifle', corpse: 'Krull-Leichnam', score: 25, model: 'krull' },
+  vael_s: { name: 'Vael-Soldat', hp: 40, armor: 8, tu: 56, acc: 48, react: 60, sight: 20, weapon: 'a_rifle', corpse: 'Vael-Leichnam', score: 15, model: 'vael' },
+  krull: { name: 'Krull', hp: 80, armor: 20, tu: 52, acc: 56, react: 50, sight: 20, weapon: 'a_rifle', corpse: 'Krull-Leichnam', score: 25, model: 'krull' },
   drone: { name: 'Wächterdrohne', hp: 55, armor: 28, tu: 60, acc: 56, react: 70, sight: 22, weapon: 'a_beam', corpse: 'Drohnen-Wrack', score: 25, model: 'drone', flying: true },
   beast: { name: 'Klauenbestie', hp: 90, armor: 12, tu: 78, acc: 75, react: 40, sight: 18, weapon: 'a_claw', corpse: 'Bestien-Kadaver', score: 20, model: 'beast' },
-  hive: { name: 'Hive-Kommandant', hp: 240, armor: 40, tu: 60, acc: 62, react: 70, sight: 24, weapon: 'a_heavy', corpse: 'Hive-Gewebe', score: 200, model: 'hive', boss: true },
+  hive: { name: 'Hive-Kommandant', hp: 300, armor: 34, tu: 60, acc: 62, react: 70, sight: 24, weapon: 'a_heavy', corpse: 'Hive-Gewebe', score: 200, model: 'hive', boss: true },
 };
 
 export const UFOS = {

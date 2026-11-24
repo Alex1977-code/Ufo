@@ -16,6 +16,7 @@ const FX_COLORS = { bullet: 0xffd27a, laser: 0xff3030, plasma: 0x50ff7a, beam: 0
 // ZE-Kosten der Gürtel-Gegenstände (Anteil der maximalen ZE) und Wurf-/Zonenfarben
 const ITEM_TU = { grenade: 0.3, smoke: 0.25, flare: 0.2, medkit: 0.3 };
 const ITEM_COLORS = { grenade: 0xff8030, smoke: 0xb8c0c8, flare: 0xffe070, medkit: 0x60ff90 };
+const KNEEL_TU = 4, STAND_TU = 8; // Knien 4 ZE, Aufstehen 8 ZE (wie im Original)
 const THROW_RANGE = 13;
 const PATH_LABELS = 60;
 const SMOKE_SPRITES = 96;
@@ -546,7 +547,7 @@ export class Tactical {
       }
       const u = this.addUnit({
         team: 'player', name: s.name, soldier: s, x: sp.x, y: sp.y, hp: s.hp + arm.hp, tu: s.tu, acc: s.acc, react: s.react, armor: arm.armor, weapon: s.weapon,
-        belt, healed: 0, obj: makeSoldier(s, arm.color, WEAPONS[s.weapon].fx), sight: m.night ? 10 : 20, rank: s.rank,
+        belt, healed: 0, obj: makeSoldier(s, arm.color, WEAPONS[s.weapon].fx), sight: m.night ? 12 : 20, rank: s.rank,
       });
       u.obj.rotation.y = Math.PI;
     });
@@ -578,10 +579,10 @@ export class Tactical {
 
   addAlien(type, x, y, guard) {
     const a = ALIENS[type];
-    const scale = 1 + Math.min(0.5, (Game.c.lastMonth || 0) * 0.06);
+    const scale = a.boss ? 1 : 1 + Math.min(0.5, (Game.c.lastMonth || 0) * 0.06);
     return this.addUnit({
       team: 'alien', name: a.name, spec: type, x, y, hp: Math.round(a.hp * scale), tu: a.tu, acc: a.acc, react: a.react, armor: a.armor, weapon: a.weapon,
-      grenades: type === 'krull' || type === 'vael_s' ? (rand() < 0.4 ? 1 : 0) : 0, grenadeKind: 'alien', obj: makeAlien(a.model), sight: this.map.night ? Math.round(a.sight * 0.7) : a.sight, flying: !!a.flying, guard, boss: !!a.boss,
+      grenades: type === 'krull' || type === 'vael_s' ? (rand() < 0.4 ? 1 : 0) : 0, grenadeKind: 'alien', obj: makeAlien(a.model), sight: this.map.night ? Math.round(a.sight * 0.65) : a.sight, flying: !!a.flying, guard, boss: !!a.boss,
     });
   }
 
@@ -653,6 +654,7 @@ export class Tactical {
     const prev = new Int32Array(N).fill(-1);
     const s = u.y * W + u.x;
     dist[s] = 0;
+    const stand = u.kneel ? STAND_TU : 0; // kniender Soldat zahlt vor dem ersten Schritt das Aufstehen
     const h = new Heap(); h.push(s, 0);
     while (h.size) {
       const [d, i] = h.pop();
@@ -665,7 +667,7 @@ export class Tactical {
         if (dx && dy && (this.blocksMove(x + dx, y, u) || this.blocksMove(x, y + dy, u))) continue;
         const j = ny * W + nx;
         if (!ignoreUnits && this.occ[j] >= 0 && this.occ[j] !== u.id && this.knownBlocker(u, this.units[this.occ[j]])) continue;
-        const nd = d + (dx && dy ? 6 : 4);
+        const nd = d + (dx && dy ? 6 : 4) + (i === s ? stand : 0);
         if (nd > maxCost || nd >= dist[j]) continue;
         dist[j] = nd; prev[j] = i; h.push(j, nd);
       }
@@ -780,11 +782,11 @@ export class Tactical {
   hitChance(u, t, mode) {
     if (u.team === 'player' && Game.cheats.aimbot) return 1;
     const w = WEAPONS[u.weapon]; const m = w?.[mode]; if (!m) return 0;
-    if (w.melee) return this.dist(u, t) < 1.6 ? m.acc : 0;
+    if (w.melee) return this.dist(u, t) < 1.6 ? clamp((u.acc / 100) * m.acc * (t.kneel ? 0.92 : 1), 0.05, 0.95) : 0;
     let c = (u.acc / 100) * m.acc;
     if (u.kneel) c *= 1.15;
     const d = this.dist(u, t);
-    if (d > 12) c -= (d - 12) * 0.015;
+    if (d > 10) c -= (d - 10) * 0.02;
     if (w.falloff) c -= Math.max(0, d - 3) * w.falloff;
     if (d > w.range) c *= 0.5;
     if (this.coverBetween(u, t)) c *= 0.7;
@@ -797,8 +799,13 @@ export class Tactical {
   // ======================= Aktionen =======================
   async moveUnit(u, path, opts = {}) {
     if (!path.length) return;
+    if (u.kneel) {
+      const first = path[0], c1 = first.x !== u.x && first.y !== u.y ? 6 : 4;
+      if (!this.hasTu(u, STAND_TU + c1)) { if (u.team === 'player') { toast(`Aufstehen kostet ${STAND_TU} ZE – nicht genug ZE zum Aufstehen und Gehen.`, 'warn', 2200); sfx('deny'); } return; }
+      this.spendTu(u, STAND_TU);
+      u.kneel = false;
+    }
     this.busy = true;
-    u.kneel = false;
     if (u.team === 'player') this.refreshUi();
     const spd = this.engine.settings.animSpeed || 1;
     for (const step of path) {
@@ -860,7 +867,7 @@ export class Tactical {
       if (!this.hasTu(o, cost)) continue;
       if (w.melee && this.dist(o, mover) > 1.6) continue;
       if (!this.canSee(o, mover.x, mover.y)) continue;
-      const chance = (o.react / 100) * (o.tu / o.maxTu) * 0.85;
+      const chance = (o.react / 100) * (o.tu / o.maxTu) * 0.30;
       if (rand() < chance) {
         if (o.team === 'player') toast(`${o.name}: Reaktionsfeuer!`, 'good', 1500);
         else toast(`${o.name} eröffnet Reaktionsfeuer!`, 'bad', 1500);
@@ -986,7 +993,8 @@ export class Tactical {
 
   damage(t, raw, src) {
     if (!t.alive || this.disposed) return;
-    let dmg = Math.max(0, Math.round(raw * randRange(0.5, 1.5) - t.armor));
+    const roll = raw * randRange(0.5, 1.5);
+    let dmg = Math.max(Math.round(roll * 0.15), Math.round(roll - t.armor));
     if (src?.team === 'player' && Game.cheats.oneHit && t.team !== 'player') dmg = 9999;
     if (t.team === 'player' && Game.cheats.god) dmg = 0;
     t.hp -= dmg; t.dmgTaken += dmg;
@@ -1516,7 +1524,7 @@ export class Tactical {
           const moved = await this.repositionToShoot(a, best);
           if (moved) continue;
         }
-        await this.fire(a, best, bm); shots++;
+        await this.fire(a, best, bm); shots += bm === 'auto' ? 2 : 1;
         continue;
       }
       // Kein Ziel sichtbar: suchen / patrouillieren
@@ -1796,8 +1804,8 @@ export class Tactical {
   }
   toggleKneel() {
     const u = this.selected; if (!u || !u.alive || this.busy || this.ended || this.phase !== 'player') return;
-    const cost = u.kneel ? 6 : 4;
-    if (!this.hasTu(u, cost)) { toast('Nicht genügend Zeiteinheiten.', 'warn'); return; }
+    const cost = u.kneel ? STAND_TU : KNEEL_TU;
+    if (!this.hasTu(u, cost)) { toast(u.kneel ? `Aufstehen kostet ${STAND_TU} ZE.` : `Knien kostet ${KNEEL_TU} ZE.`, 'warn'); sfx('deny'); return; }
     this.spendTu(u, cost); u.kneel = !u.kneel; sfx('click'); this.computeRange(); this.updateHover(); this.refreshUi();
   }
 
@@ -1838,7 +1846,7 @@ export class Tactical {
     // Bewegung
     if (!this.reach) this.computeRange();
     const d = this.reach.dist[y * this.W + x];
-    if (d === Infinity || d === 0) { if (this.explored[y * this.W + x]) { sfx('deny'); } return; }
+    if (d === Infinity || d === 0) { if (this.explored[y * this.W + x]) { sfx('deny'); if (u.kneel && u.tu < STAND_TU + 4) toast(`Aufstehen kostet ${STAND_TU} ZE.`, 'warn', 1800); } return; }
     if (confirmTwice && !(this.pendingMove && this.pendingMove.x === x && this.pendingMove.y === y)) { this.pendingMove = { x, y }; this.cursor = { x, y }; this.updateHover(); sfx('click'); return; }
     this.pendingMove = null;
     this.clearTarget();
@@ -1957,7 +1965,7 @@ export class Tactical {
           }
           this.pathDots.count = n;
           this.pathDots.instanceMatrix.needsUpdate = true; if (this.pathDots.instanceColor) this.pathDots.instanceColor.needsUpdate = true;
-          this.hoverInfo = `Bewegen: ${d} ZE (Rest ${Math.max(0, left)})${this.pendingMove ? ' · erneut tippen zum Bestätigen' : ''}`;
+          this.hoverInfo = `Bewegen: ${d} ZE${u.kneel ? ` (inkl. Aufstehen ${STAND_TU})` : ''} (Rest ${Math.max(0, left)})${this.pendingMove ? ' · erneut tippen zum Bestätigen' : ''}`;
           col = new THREE.Color(0.5, 2.5, 1.5);
         } else if (this.explored[y * this.W + x]) { this.hoverInfo = 'Nicht erreichbar'; col = new THREE.Color(2, 0.6, 0.3); }
       }
@@ -1986,7 +1994,7 @@ export class Tactical {
           <button class="btn act" data-mode="auto"><b>⌖ Salve</b><small id="m-auto"></small></button>
           ${Array.from({ length: BELT_SLOTS }, (_, k) => `<button class="btn act belt" data-belt="${k}" title="Gürtelplatz ${k + 1} (Taste ${k + 4})"><b>Gürtel</b><small>leer</small></button>`).join('')}
           <button class="btn act fire" data-a="fire"><b>FEUER</b><small id="m-fire"></small></button>
-          <button class="btn act" data-a="kneel"><b>Knien</b><small>4 ZE</small></button>
+          <button class="btn act" data-a="kneel"><b>Knien</b><small id="m-kneel">4 ZE</small></button>
           <button class="btn act" data-a="prev"><b>◀</b><small>Soldat</small></button>
           <button class="btn act" data-a="next"><b>▶</b><small>Soldat</small></button>
           <button class="btn act end" data-a="end"><b>Zug beenden</b><small id="m-end"></small></button>
@@ -2082,6 +2090,7 @@ export class Tactical {
       const bi = this.mode === 'belt' ? this.beltEntry(u) : null;
       const fb = document.querySelector('[data-a="fire"]');
       fb.disabled = this.phase !== 'player' || !((this.target && this.mode !== 'belt') || (bi && this.grenadeTarget));
+      { const mk = document.getElementById('m-kneel'); if (mk) { mk.textContent = `${u.kneel ? STAND_TU : KNEEL_TU} ZE`; mk.previousElementSibling.textContent = u.kneel ? 'Aufstehen' : 'Knien'; } }
       document.getElementById('m-fire').textContent = this.target && this.mode !== 'belt' ? `${Math.round(this.hitChance(u, this.target, this.mode) * 100)} %` : bi && this.grenadeTarget ? 'werfen' : bi && ITEMS[bi.id].kind === 'medkit' ? 'Soldat wählen' : 'Ziel wählen';
     }
     document.querySelectorAll('.tac-actions .btn').forEach((b) => { if (!b.dataset.mode && b.dataset.belt == null && b.dataset.a !== 'fire') b.disabled = this.phase !== 'player' || this.busy && b.dataset.a !== 'abort'; });
