@@ -376,6 +376,9 @@ function applyPhysique(sex, { P, N, reg, side, n, index, key, lscale, meshOf }) 
   const c = PHYSIQUE[sex] || PHYSIQUE.m, d = new Float32Array(n);
   const shY = (key.shoulderL.y + key.shoulderR.y) / 2, hipsY = key.hips.y;
   const g = (x, m, w) => Math.exp(-(((x - m) / w) ** 2));
+  // Bauch abflachen: Vorderseite zwischen Becken und Rippenbogen höchstens bis zur Beckenfront (+1,5 cm)
+  let zHip = -1e9; for (let i = 0; i < n; i++) if ((reg[i] === R.hips || reg[i] === R.torso) && Math.abs(P[i * 3 + 1] - (hipsY - 0.02)) < 0.03 && Math.abs(P[i * 3]) < 0.08) zHip = Math.max(zHip, P[i * 3 + 2]);
+  const zBelly = zHip + 0.015;
   const t01 = (i, A, B) => { const dx = B.x - A.x, dy = B.y - A.y, dz = B.z - A.z; return clamp(((P[i * 3] - A.x) * dx + (P[i * 3 + 1] - A.y) * dy + (P[i * 3 + 2] - A.z) * dz) / (dx * dx + dy * dy + dz * dz), 0, 1); };
   for (let i = 0; i < n; i++) {
     const y = P[i * 3 + 1], nx = N[i * 3], ny = N[i * 3 + 1], nz = N[i * 3 + 2], s = side[i] || (P[i * 3] > 0 ? 1 : -1), r = reg[i];
@@ -393,6 +396,8 @@ function applyPhysique(sex, { P, N, reg, side, n, index, key, lscale, meshOf }) 
       v += c.traps * Math.max(0, ny) * smooth01(shY - 0.09, shY - 0.01, y);
       const w = g(y, hipsY + 0.13, 0.085);
       v += c.waistFront * Math.max(0, nz) * w + c.waistSide * Math.abs(nx) * w;
+      const bw = smooth01(hipsY - 0.03, hipsY + 0.04, y) * (1 - smooth01(shY - 0.3, shY - 0.2, y));
+      if (nz > 0.2 && P[i * 3 + 2] > zBelly) v -= (P[i * 3 + 2] - zBelly) * 0.85 * bw * nz;
     }
     if (r === R.neck) v += c.neck;
     if (r === R.thigh) v += c.quads * Math.pow(Math.sin(Math.PI * t01(i, key['hip' + L], key['knee' + L])), 0.7) * (0.55 + 0.45 * Math.max(0, nz + lat));
@@ -683,7 +688,6 @@ function buildFootwear(base, side, kind, clearance, lay) {
   }
   const soleY = Math.min(...F.map((p) => p[1])), heelZ = Math.min(...F.map((p) => p[2])), toeZ = Math.max(...F.map((p) => p[2]));
   const footTop = Math.max(...F.map((p) => p[1]));
-  if (globalThis.__g5dbg) globalThis.__g5dbg.push({ side, nF: F.length, soleY, heelZ, toeZ, footTop, X: X.toArray(), Z: Z.toArray(), O: O.toArray() });
   const NB = 12, L = toeZ - heelZ;
   const bins = Array.from({ length: NB }, (_, k) => ({ z: heelZ + (k + 0.5) / NB * L, x0: 1, x1: -1, h: soleY + 0.04 }));
   for (const [x, y, z] of F) { const b = bins[clamp(Math.floor((z - heelZ) / L * NB), 0, NB - 1)]; if (y < soleY + 0.045) { b.x0 = Math.min(b.x0, x); b.x1 = Math.max(b.x1, x); } if (z > 0.02 || y < 0.12) b.h = Math.max(b.h, y); }
@@ -1163,7 +1167,9 @@ function twoBoneIK(a, b, c, target, pole, bendFallback) {
   const cur = Math.acos(clamp(ba.dot(bc), -1, 1));
   const want = Math.acos(clamp((lab * lab + lcb * lcb - lat * lat) / (2 * lab * lcb), -1, 1));
   const axis = _v[5].crossVectors(ba, bc);
-  if (axis.lengthSq() < 1e-8) axis.copy(bendFallback); axis.normalize();
+  // fast gestreckt → Kreuzprodukt verrauscht: natürliche Beugeachse verwenden
+  if (axis.lengthSq() < 0.04) { const w = Math.sqrt(axis.lengthSq()) / 0.2; axis.normalize().multiplyScalar(w).addScaledVector(bendFallback, 1 - w); if (axis.lengthSq() < 1e-8) axis.copy(bendFallback); }
+  axis.normalize();
   rotateWorld(b, _q[0].setFromAxisAngle(axis, want - cur));
   // Kette ausrichten
   wpos(c, pc); wpos(a, pa);
@@ -1518,10 +1524,16 @@ export function makeCharacter(opts = {}) {
     });
   }
 
+  // Von IK veränderte Bones: animierte Pose vor jedem Mixer-Schritt wiederherstellen (Clips ohne Keys für diese Bones
+  // würden die IK-Korrekturen sonst Bild für Bild aufaddieren)
+  const ikBones = [hips, ...legs.flatMap((l) => [l.a, l.b, l.c]), ...Object.values(arms).flatMap((a) => [a.a, a.b, a.c])].filter(Boolean);
+  const ikSnap = ikBones.map((b) => [b.position.clone(), b.quaternion.clone()]);
   ch.update = (dt, groundHeightFn) => {
     dt = Math.min(dt, 0.1);
     stateTime += dt;
+    ikBones.forEach((b, i) => { b.position.copy(ikSnap[i][0]); b.quaternion.copy(ikSnap[i][1]); });
     mixer.update(dt);
+    ikBones.forEach((b, i) => { ikSnap[i][0].copy(b.position); ikSnap[i][1].copy(b.quaternion); });
     group.updateMatrixWorld(true);
     if (hips) hips.updateMatrixWorld(true);
     rifleIK(dt);
@@ -1529,6 +1541,12 @@ export function makeCharacter(opts = {}) {
     return ch;
   };
   ch.setFootIK = (on) => { ch.footIK = !!on; return ch; };
+  // Frustum-Culling: Standard aus (Skinning verschiebt Bounds). Mit on=true: Kugel aus der aktuellen Pose ×1,6 (deckt Clips/Sturz ab)
+  ch.setFrustumCulled = (on) => {
+    group.updateMatrixWorld(true);
+    group.traverse((x) => { if (!x.isMesh) return; x.frustumCulled = !!on; if (on && x.isSkinnedMesh) { x.computeBoundingSphere(); x.boundingSphere.radius *= 1.6; } });
+    return ch;
+  };
   ch.setShadows = (on) => { group.traverse((x) => { if (x.isMesh && !(x.material && x.material.transparent)) x.castShadow = !!on; }); return ch; };
   ch.dispose = () => {
     mixer.stopAllAction(); mixer.uncacheRoot(clone);
@@ -1538,6 +1556,7 @@ export function makeCharacter(opts = {}) {
     ownMats.length = 0; attached.length = 0;
   };
   ch.setState(opts.state || 'idle', { fade: 0.0001 });
+  if (opts.frustumCulled) ch.setFrustumCulled(true);
   return ch;
 }
 
@@ -1594,4 +1613,3 @@ export function retargetClips(srcBase, targetScene, { fps = 30, clipNames = null
   src.updateMatrixWorld(true);
   return out;
 }
-export const __g5debug = { LIB, analyze, buildFootwear };
