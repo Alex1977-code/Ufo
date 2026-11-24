@@ -405,7 +405,7 @@ export function propParts() {
       lights.push([bx(0.34, 0.11, 0.05, s * (hw - 0.3), o.headY, zf + 0.02), [2.4, 2.3, 1.9]]);
       lights.push([bx(0.3, 0.12, 0.05, s * (hw - 0.24), o.tailY, zr - 0.02), [2.0, 0.12, 0.08]]);
     }
-    const out = [{ geo: mergeGeos(paint), mat: o.burnt ? M.burnt : M.paint, paint: !o.burnt }, { geo: mergeGeos(dark), mat: M.carDark }];
+    const out = [{ geo: mergeGeos(paint), mat: o.burnt ? M.burnt : M.paint, paint: !o.burnt }, { geo: mergeGeos(dark), mat: M.carDark, shadow: false }];
     if (o.glass && !o.burnt) out.push({ geo: mergeGeos(o.glass.map((g) => (g.isBufferGeometry ? g : sideProfile(g, W - 0.16, 0.03)))), mat: M.carGlass });
     if (!o.burnt) out.push({ geo: mergeGeos(lights), mat: M.glow, shadow: false });
     if (o.burnt) out[0].geo = mergeGeos([[out[0].geo, '#4a3c34']]);
@@ -424,45 +424,45 @@ export function propParts() {
     // --- Gebäude: Außenwand (mit optionalen Obergeschossen), Fenster, Innenwand, Türrahmen ---
     wallOut: () => [
       { geo: F(bx(T, H, T)), mat: M.facade, atlas: true },
-      { geo: mergeGeos([[bx(T + 0.06, 0.32, T + 0.06), PL], ...cornice()]), mat: M.trim },
+      { geo: mergeGeos([[bx(T + 0.06, 0.32, T + 0.06), PL], ...cornice()]), mat: M.trim, shadow: false },
       up1(), up2(),
     ],
     window: () => [
       { geo: mergeGeos([F(bx(T, 0.95, T)), F(bx(T, 0.6, T, 0, 2.2)), F(bx(0.32, 1.25, T, -0.84, 0.95)), F(bx(0.32, 1.25, T, 0.84, 0.95))]), mat: M.facade, atlas: true },
       { geo: mergeGeos([[bx(T + 0.06, 0.32, T + 0.06), PL], ...cornice(), ...both((s) => [bx(1.56, 0.07, 0.22, 0, 0.9, s * (T / 2 + 0.06)), '#e2ddd2']),
-        ...[1, -1].flatMap((s) => { const z = s * (T / 2 - 0.05); return [[bx(0.07, 1.25, 0.08, -0.645, 0.95, z), FR], [bx(0.07, 1.25, 0.08, 0.645, 0.95, z), FR], [bx(1.36, 0.07, 0.08, 0, 2.13, z), FR], [bx(1.36, 0.06, 0.08, 0, 0.95, z), FR], [bx(0.05, 1.2, 0.06, 0, 0.97, z), FR], [bx(1.3, 0.05, 0.06, 0, 1.72, z), FR]]; })]), mat: M.trim },
+        ...[1, -1].flatMap((s) => { const z = s * (T / 2 - 0.05); return [[bx(0.07, 1.25, 0.08, -0.645, 0.95, z), FR], [bx(0.07, 1.25, 0.08, 0.645, 0.95, z), FR], [bx(1.36, 0.07, 0.08, 0, 2.13, z), FR], [bx(1.36, 0.06, 0.08, 0, 0.95, z), FR], [bx(0.05, 1.2, 0.06, 0, 0.97, z), FR], [bx(1.3, 0.05, 0.06, 0, 1.72, z), FR]]; })]), mat: M.trim, shadow: false },
       { geo: mergeGeos(both((s) => bx(1.3, 1.22, 0.02, 0, 0.96, s * (T / 2 - 0.06)))), mat: M.winGlass, shadow: false },
       up1(), up2(),
     ],
     wallIn: () => [
       { geo: F(bx(T, H, T)), mat: M.facade, atlas: true },
-      { geo: mergeGeos([[bx(T + 0.04, 0.14, T + 0.04), '#5a4632'], [bx(T + 0.04, 0.1, T + 0.04, 0, H - 0.07), '#f0ece4']]), mat: M.trim },
+      { geo: mergeGeos([[bx(T + 0.04, 0.14, T + 0.04), '#5a4632'], [bx(T + 0.04, 0.1, T + 0.04, 0, H - 0.07), '#f0ece4']]), mat: M.trim, shadow: false },
     ],
     door: () => [
       { geo: mergeGeos([F(bx(T, 0.6, T, 0, 2.2)), F(bx(0.36, 2.2, T, -0.82)), F(bx(0.36, 2.2, T, 0.82))]), mat: M.facade, atlas: true },
       { geo: mergeGeos([[bx(0.4, 0.32, T + 0.06, -0.82), PL], [bx(0.4, 0.32, T + 0.06, 0.82), PL], ...cornice(), [bx(1.28, 0.04, T, 0, 0), '#8a8580'],
         ...[1, -1].flatMap((s) => { const z = s * (T / 2 - 0.05); return [[bx(0.08, 2.2, 0.1, -0.62, 0, z), FR], [bx(0.08, 2.2, 0.1, 0.62, 0, z), FR], [bx(1.32, 0.1, 0.1, 0, 2.12, z), FR]]; }),
-        [bx(0.05, 2.06, 0.92, 0.585, 0.03, T / 2 - 0.52), '#7a4a2a'], [bx(0.04, 0.04, 0.12, 0.55, 1.0, T / 2 - 0.9), '#c8c8c8']]), mat: M.trim },
+        [bx(0.05, 2.06, 0.92, 0.585, 0.03, T / 2 - 0.52), '#7a4a2a'], [bx(0.04, 0.04, 0.12, 0.55, 1.0, T / 2 - 0.9), '#c8c8c8']]), mat: M.trim, shadow: false },
       up1(), up2(),
     ],
     // --- Möbel (Deckung wie Kisten), Rückseite an der Wand (-z) ---
     'furn:table': () => [{ geo: mergeGeos([[bx(1.3, 0.06, 0.85, 0, 0.72, 0.1), '#b88a5c'], ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => [bx(0.07, 0.72, 0.07, a * 0.57, 0, 0.1 + b * 0.35), '#8a6440']),
       ...[-1, 1].flatMap((s) => { const z = 0.1 + s * 0.66; return [[bx(0.44, 0.05, 0.42, 0, 0.44, z), '#7a5634'], [bx(0.44, 0.5, 0.04, 0, 0.49, z + s * 0.2), '#7a5634'], ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => [bx(0.04, 0.44, 0.04, a * 0.18, 0, z + b * 0.17), '#5e4027'])]; }),
-      [new THREE.CylinderGeometry(0.07, 0.05, 0.18, 8).translate(0.2, 0.87, 0.1), '#e8e4dc']]), mat: M.furnWood }],
+      [new THREE.CylinderGeometry(0.07, 0.05, 0.18, 8).translate(0.2, 0.87, 0.1), '#e8e4dc']]), mat: M.furnWood, shadow: false }],
     'furn:bed': () => [
-      { geo: mergeGeos([[bx(1.1, 0.26, 1.96, 0, 0.1, 0), '#8a6440'], [bx(1.12, 0.9, 0.08, 0, 0, -0.98), '#7a5634'], ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => [bx(0.07, 0.12, 0.07, a * 0.5, 0, b * 0.9), '#5e4027'])]), mat: M.furnWood },
-      { geo: mergeGeos([[bx(1.02, 0.16, 1.86, 0, 0.36, 0.02), '#f0f0ee'], [bx(1.08, 0.08, 1.2, 0, 0.47, 0.36), '#ffffff'], [bx(0.72, 0.12, 0.34, 0, 0.52, -0.7), '#f8f8f8']]), mat: M.furnSoft, tint: true },
+      { geo: mergeGeos([[bx(1.1, 0.26, 1.96, 0, 0.1, 0), '#8a6440'], [bx(1.12, 0.9, 0.08, 0, 0, -0.98), '#7a5634'], ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => [bx(0.07, 0.12, 0.07, a * 0.5, 0, b * 0.9), '#5e4027'])]), mat: M.furnWood, shadow: false },
+      { geo: mergeGeos([[bx(1.02, 0.16, 1.86, 0, 0.36, 0.02), '#f0f0ee'], [bx(1.08, 0.08, 1.2, 0, 0.47, 0.36), '#ffffff'], [bx(0.72, 0.12, 0.34, 0, 0.52, -0.7), '#f8f8f8']]), mat: M.furnSoft, tint: true, shadow: false },
     ],
     'furn:shelf': () => {
       const g = [[bx(0.05, 1.9, 0.4, -0.74, 0, -0.75), '#7a5634'], [bx(0.05, 1.9, 0.4, 0.74, 0, -0.75), '#7a5634'], [bx(1.5, 1.9, 0.03, 0, 0, -0.94), '#5e4027']];
       for (const y of [0.04, 0.44, 0.84, 1.24, 1.64, 1.88]) g.push([bx(1.46, 0.04, 0.38, 0, y, -0.75), '#8a6440']);
       const pal = ['#8a2a2a', '#2a4a7a', '#2e6a3a', '#c8a040', '#5a3a6a', '#d8d0c0', '#3a3a3a'];
       for (const y of [0.08, 0.48, 0.88, 1.28]) for (let x = -0.68; x < 0.62;) { const w = 0.04 + Math.random() * 0.05, h = 0.22 + Math.random() * 0.12; if (Math.random() < 0.85) g.push([bx(w, h, 0.28, x + w / 2, y, -0.78), pal[(Math.random() * pal.length) | 0]]); x += w + 0.005; }
-      return [{ geo: mergeGeos(g), mat: M.furnWood }];
+      return [{ geo: mergeGeos(g), mat: M.furnWood, shadow: false }];
     },
-    'furn:cabinet': () => [{ geo: mergeGeos([[bx(1.3, 1.95, 0.62, 0, 0, -0.66), '#a07a54'], [bx(1.36, 0.06, 0.66, 0, 1.95, -0.66), '#8a6440'], [bx(0.02, 1.8, 0.02, 0, 0.08, -0.34), '#3a2a1a'], [bx(0.03, 0.22, 0.03, -0.07, 0.95, -0.33), '#cfcfcf'], [bx(0.03, 0.22, 0.03, 0.07, 0.95, -0.33), '#cfcfcf'], [bx(1.3, 0.08, 0.6, 0, 0, -0.66), '#5e4027']]), mat: M.furnWood }],
-    'furn:sofa': () => [{ geo: mergeGeos([[bx(1.7, 0.34, 0.85, 0, 0.1, -0.45), '#d0d0d0'], [bx(1.7, 0.52, 0.22, 0, 0.4, -0.78), '#d8d8d8'], [bx(0.2, 0.26, 0.85, -0.85, 0.42, -0.45), '#c8c8c8'], [bx(0.2, 0.26, 0.85, 0.85, 0.42, -0.45), '#c8c8c8'], [bx(0.76, 0.12, 0.62, -0.38, 0.44, -0.36), '#ececec'], [bx(0.76, 0.12, 0.62, 0.38, 0.44, -0.36), '#ececec'], ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => [bx(0.06, 0.1, 0.06, a * 0.78, 0, -0.45 + b * 0.36), '#2a2018'])]), mat: M.furnSoft, tint: true }],
-    'furn:counter': () => [{ geo: mergeGeos([[bx(1.9, 0.82, 0.62, 0, 0.04, -0.68), '#f2efe8'], [bx(1.86, 0.06, 0.6, 0, 0, -0.68), '#3a3a3a'], [bx(1.96, 0.05, 0.68, 0, 0.86, -0.68), '#5a5a5c'], [bx(0.5, 0.012, 0.36, -0.45, 0.91, -0.66), '#9aa0a6'], ...[-1, 1].flatMap((s) => [[new THREE.CylinderGeometry(0.1, 0.1, 0.012, 14).translate(0.35 + s * 0.13, 0.917, -0.6), '#1a1a1a']]), [bx(0.02, 0.7, 0.01, -0.32, 0.1, -0.37), '#c8c4bc'], [bx(0.02, 0.7, 0.01, 0.32, 0.1, -0.37), '#c8c4bc']]), mat: M.furnWood }],
+    'furn:cabinet': () => [{ geo: mergeGeos([[bx(1.3, 1.95, 0.62, 0, 0, -0.66), '#a07a54'], [bx(1.36, 0.06, 0.66, 0, 1.95, -0.66), '#8a6440'], [bx(0.02, 1.8, 0.02, 0, 0.08, -0.34), '#3a2a1a'], [bx(0.03, 0.22, 0.03, -0.07, 0.95, -0.33), '#cfcfcf'], [bx(0.03, 0.22, 0.03, 0.07, 0.95, -0.33), '#cfcfcf'], [bx(1.3, 0.08, 0.6, 0, 0, -0.66), '#5e4027']]), mat: M.furnWood, shadow: false }],
+    'furn:sofa': () => [{ geo: mergeGeos([[bx(1.7, 0.34, 0.85, 0, 0.1, -0.45), '#d0d0d0'], [bx(1.7, 0.52, 0.22, 0, 0.4, -0.78), '#d8d8d8'], [bx(0.2, 0.26, 0.85, -0.85, 0.42, -0.45), '#c8c8c8'], [bx(0.2, 0.26, 0.85, 0.85, 0.42, -0.45), '#c8c8c8'], [bx(0.76, 0.12, 0.62, -0.38, 0.44, -0.36), '#ececec'], [bx(0.76, 0.12, 0.62, 0.38, 0.44, -0.36), '#ececec'], ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => [bx(0.06, 0.1, 0.06, a * 0.78, 0, -0.45 + b * 0.36), '#2a2018'])]), mat: M.furnSoft, tint: true, shadow: false }],
+    'furn:counter': () => [{ geo: mergeGeos([[bx(1.9, 0.82, 0.62, 0, 0.04, -0.68), '#f2efe8'], [bx(1.86, 0.06, 0.6, 0, 0, -0.68), '#3a3a3a'], [bx(1.96, 0.05, 0.68, 0, 0.86, -0.68), '#5a5a5c'], [bx(0.5, 0.012, 0.36, -0.45, 0.91, -0.66), '#9aa0a6'], ...[-1, 1].flatMap((s) => [[new THREE.CylinderGeometry(0.1, 0.1, 0.012, 14).translate(0.35 + s * 0.13, 0.917, -0.6), '#1a1a1a']]), [bx(0.02, 0.7, 0.01, -0.32, 0.1, -0.37), '#c8c4bc'], [bx(0.02, 0.7, 0.01, 0.32, 0.1, -0.37), '#c8c4bc']]), mat: M.furnWood, shadow: false }],
     // --- Heuballen-Stapel, Baumstamm ---
     'hay:stack': () => [{ geo: mergeGeos([bx(1.1, 0.5, 0.56, 0, 0, -0.29), bx(1.1, 0.5, 0.56, 0, 0, 0.29), bx(1.1, 0.5, 0.56, 0.05, 0.5, 0).rotateY(0.12)]), mat: M.hay }],
     log: () => [
@@ -512,15 +512,15 @@ export function propParts() {
         bx(1.4, 0.08, 1.3, 0, 2.3, -0.5), ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => bx(0.06, 1.2, 0.06, a * 0.62, 1.1, -0.5 + b * 0.55))];
       const dark = [...wheel(-0.82, -0.55, 0.78, 0.45, '#d8b020'), ...wheel(0.82, -0.55, 0.78, 0.45, '#d8b020'), ...wheel(-0.62, 1.05, 0.42, 0.28, '#d8b020'), ...wheel(0.62, 1.05, 0.42, 0.28, '#d8b020'),
         [bx(0.6, 0.4, 0.06, 0, 0.9, 1.52), '#1a1a1a'], [new THREE.CylinderGeometry(0.05, 0.05, 1.1, 8).translate(0.25, 1.9, 1.1), '#2a2a2a'], [bx(0.45, 0.12, 0.4, 0, 1.15, -0.45), '#1e1e1e'], [bx(0.45, 0.4, 0.08, 0, 1.15, -0.68), '#1e1e1e'], [bx(0.3, 0.06, 0.3, 0, 1.35, 0.3), '#222222']];
-      return [{ geo: mergeGeos(paint), mat: M.paint, paint: true }, { geo: mergeGeos(dark), mat: M.carDark },
+      return [{ geo: mergeGeos(paint), mat: M.paint, paint: true }, { geo: mergeGeos(dark), mat: M.carDark, shadow: false },
         { geo: mergeGeos([bx(1.2, 0.9, 0.02, 0, 1.3, 0.04)]), mat: M.winGlass, shadow: false },
         { geo: mergeGeos([[bx(0.16, 0.1, 0.04, -0.25, 1.25, 1.51), [2.4, 2.3, 1.9]], [bx(0.16, 0.1, 0.04, 0.25, 1.25, 1.51), [2.4, 2.3, 1.9]]]), mat: M.glow, shadow: false }];
     },
     // --- Deko (ohne Kollision) ---
-    'deco:bench': () => [{ geo: mergeGeos([...[-0.1, 0.03, 0.16].map((z) => [bx(1.6, 0.04, 0.11, 0, 0.44, z), '#a87444']), [bx(1.6, 0.09, 0.03, 0, 0.56, -0.2), '#a87444'], [bx(1.6, 0.09, 0.03, 0, 0.7, -0.2), '#a87444'], ...[-0.7, 0.7].flatMap((x) => [[bx(0.05, 0.44, 0.42, x, 0, 0.02), '#2a2d30'], [bx(0.05, 0.42, 0.04, x, 0.44, -0.2), '#2a2d30']])]), mat: M.furnWood }],
-    'deco:bin': () => [{ geo: mergeGeos([[cyl(0.24, 0.2, 0.8, 12), '#2e5a3a'], [cyl(0.26, 0.26, 0.05, 12, 0, 0.8), '#1e2a22'], [new THREE.SphereGeometry(0.24, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.4, 1).translate(0, 0.85, 0), '#2e5a3a']]), mat: M.decoVC }],
-    'deco:hydrant': () => [{ geo: mergeGeos([[cyl(0.17, 0.17, 0.06, 10), '#8a1414'], [cyl(0.11, 0.13, 0.5, 10), '#c42020'], [cyl(0.15, 0.15, 0.06, 10, 0, 0.46), '#c42020'], [new THREE.SphereGeometry(0.12, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.52, 0), '#c42020'], [new THREE.CylinderGeometry(0.05, 0.05, 0.34, 8).rotateZ(Math.PI / 2).translate(0, 0.33, 0), '#d8c8b0'], [cyl(0.03, 0.03, 0.06, 6, 0, 0.62), '#d8c8b0']]), mat: M.decoVC }],
-    'deco:sign': () => [{ geo: mergeGeos([[cyl(0.035, 0.035, 2.35, 6), '#8a8d90'], [new THREE.CylinderGeometry(0.32, 0.32, 0.03, 20).rotateX(Math.PI / 2).translate(0, 2.05, 0.05), '#c01818'], [bx(0.42, 0.1, 0.04, 0, 2.0, 0.055), '#f4f4f4']]), mat: M.decoVC }],
+    'deco:bench': () => [{ geo: mergeGeos([...[-0.1, 0.03, 0.16].map((z) => [bx(1.6, 0.04, 0.11, 0, 0.44, z), '#a87444']), [bx(1.6, 0.09, 0.03, 0, 0.56, -0.2), '#a87444'], [bx(1.6, 0.09, 0.03, 0, 0.7, -0.2), '#a87444'], ...[-0.7, 0.7].flatMap((x) => [[bx(0.05, 0.44, 0.42, x, 0, 0.02), '#2a2d30'], [bx(0.05, 0.42, 0.04, x, 0.44, -0.2), '#2a2d30']])]), mat: M.furnWood, shadow: false }],
+    'deco:bin': () => [{ geo: mergeGeos([[cyl(0.24, 0.2, 0.8, 12), '#2e5a3a'], [cyl(0.26, 0.26, 0.05, 12, 0, 0.8), '#1e2a22'], [new THREE.SphereGeometry(0.24, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.4, 1).translate(0, 0.85, 0), '#2e5a3a']]), mat: M.decoVC, shadow: false }],
+    'deco:hydrant': () => [{ geo: mergeGeos([[cyl(0.17, 0.17, 0.06, 10), '#8a1414'], [cyl(0.11, 0.13, 0.5, 10), '#c42020'], [cyl(0.15, 0.15, 0.06, 10, 0, 0.46), '#c42020'], [new THREE.SphereGeometry(0.12, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.52, 0), '#c42020'], [new THREE.CylinderGeometry(0.05, 0.05, 0.34, 8).rotateZ(Math.PI / 2).translate(0, 0.33, 0), '#d8c8b0'], [cyl(0.03, 0.03, 0.06, 6, 0, 0.62), '#d8c8b0']]), mat: M.decoVC, shadow: false }],
+    'deco:sign': () => [{ geo: mergeGeos([[cyl(0.035, 0.035, 2.35, 6), '#8a8d90'], [new THREE.CylinderGeometry(0.32, 0.32, 0.03, 20).rotateX(Math.PI / 2).translate(0, 2.05, 0.05), '#c01818'], [bx(0.42, 0.1, 0.04, 0, 2.0, 0.055), '#f4f4f4']]), mat: M.decoVC, shadow: false }],
     'deco:tlight': () => [
       { geo: mergeGeos([[cyl(0.06, 0.07, 3.2, 8), '#2b2f33'], [bx(0.3, 0.92, 0.24, 0, 2.3, 0.16), '#1c1f22'], ...[2.98, 2.73, 2.48].map((y) => [bx(0.26, 0.04, 0.12, 0, y + 0.1, 0.32), '#141618'])]), mat: M.decoVC },
       { geo: mergeGeos([[new THREE.CylinderGeometry(0.085, 0.085, 0.03, 12).rotateX(Math.PI / 2).translate(0, 3.0, 0.29), [2.6, 0.15, 0.1]], [new THREE.CylinderGeometry(0.085, 0.085, 0.03, 12).rotateX(Math.PI / 2).translate(0, 2.75, 0.29), [0.35, 0.25, 0.03]], [new THREE.CylinderGeometry(0.085, 0.085, 0.03, 12).rotateX(Math.PI / 2).translate(0, 2.5, 0.29), [0.03, 0.3, 0.1]]]), mat: M.glow, shadow: false },
@@ -534,14 +534,14 @@ export function propParts() {
       for (let i = 0; i < 9; i++) { const a = Math.random() * 6.28, r = Math.random() * 0.35, x = Math.cos(a) * r, z = Math.sin(a) * r, h = 0.18 + Math.random() * 0.2; leaves.push([new THREE.ConeGeometry(0.05, h, 4).translate(x, h / 2, z), '#bfe0a0']); blooms.push(new THREE.IcosahedronGeometry(0.055, 0).translate(x, h + 0.02, z)); }
       return [{ geo: mergeGeos(leaves), mat: M.leafVC, shadow: false }, { geo: mergeGeos(blooms), mat: M.decoVC, tint: true, shadow: false }];
     },
-    'deco:mailbox': () => [{ geo: mergeGeos([[bx(0.08, 1.0, 0.08), '#6b4a2a'], [bx(0.24, 0.24, 0.44, 0, 1.0, 0), '#3a5a8a'], [new THREE.CylinderGeometry(0.12, 0.12, 0.44, 10, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateY(Math.PI / 2).translate(0, 1.24, 0), '#3a5a8a'], [bx(0.02, 0.16, 0.05, 0.13, 1.12, 0.12), '#c42020']]), mat: M.decoVC }],
+    'deco:mailbox': () => [{ geo: mergeGeos([[bx(0.08, 1.0, 0.08), '#6b4a2a'], [bx(0.24, 0.24, 0.44, 0, 1.0, 0), '#3a5a8a'], [new THREE.CylinderGeometry(0.12, 0.12, 0.44, 10, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateY(Math.PI / 2).translate(0, 1.24, 0), '#3a5a8a'], [bx(0.02, 0.16, 0.05, 0.13, 1.12, 0.12), '#c42020']]), mat: M.decoVC, shadow: false }],
     'deco:bush': () => [{ geo: mergeGeos([[new THREE.IcosahedronGeometry(0.5, 1).scale(1, 0.75, 1).translate(0, 0.32, 0), '#d8f0c0'], [new THREE.IcosahedronGeometry(0.38, 1).scale(1, 0.8, 1).translate(0.38, 0.26, 0.12), '#c8e4b0'], [new THREE.IcosahedronGeometry(0.32, 1).translate(-0.3, 0.24, -0.2), '#e0f4cc']]), mat: M.leafVC, tint: true }],
     'deco:fern': () => [{ geo: mergeGeos(Array.from({ length: 8 }, (_, i) => [new THREE.BoxGeometry(0.16, 0.015, 0.62).translate(0, 0, 0.31).rotateX(-0.55 - (i % 2) * 0.2).rotateY((i / 8) * Math.PI * 2 + Math.random() * 0.3).translate(0, 0.06, 0), i % 2 ? '#b8e09a' : '#a0d088'])), mat: M.leafVC, shadow: false }],
     'deco:mushroom': () => [{ geo: mergeGeos([[0, 0, 1], [0.14, 0.08, 0.7], [-0.1, 0.12, 0.8]].flatMap(([x, z, s]) => [[cyl(0.025 * s, 0.035 * s, 0.13 * s, 6, x, 0, z), '#efe8dc'], [new THREE.SphereGeometry(0.075 * s, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, 0.7, 1).translate(x, 0.12 * s, z), s > 0.9 ? '#b8281a' : '#8a5a34']])), mat: M.decoVC, shadow: false }],
-    'deco:stump': () => [{ geo: mergeGeos([[cyl(0.26, 0.34, 0.42, 10), '#4a3423'], [cyl(0.25, 0.25, 0.02, 10, 0, 0.42), '#c8a070'], ...[0, 2.1, 4.2].map((a) => [new THREE.BoxGeometry(0.12, 0.1, 0.4).translate(0, 0.05, 0.38).rotateY(a), '#4a3423'])]), mat: M.furnWood }],
+    'deco:stump': () => [{ geo: mergeGeos([[cyl(0.26, 0.34, 0.42, 10), '#4a3423'], [cyl(0.25, 0.25, 0.02, 10, 0, 0.42), '#c8a070'], ...[0, 2.1, 4.2].map((a) => [new THREE.BoxGeometry(0.12, 0.1, 0.4).translate(0, 0.05, 0.38).rotateY(a), '#4a3423'])]), mat: M.furnWood, shadow: false }],
     'deco:cactus': () => [{ geo: mergeGeos([[cyl(0.16, 0.19, 1.6, 10), '#5f8f44'], [ball(0.16, 0, 1.6, 0, 10, 6), '#5f8f44'], [new THREE.CylinderGeometry(0.09, 0.09, 0.34, 8).rotateZ(Math.PI / 2).translate(-0.28, 0.75, 0), '#5a8a40'], [cyl(0.09, 0.1, 0.55, 8, -0.42, 0.72, 0), '#5a8a40'], [ball(0.09, -0.42, 1.27, 0, 8, 6), '#5a8a40'], [new THREE.CylinderGeometry(0.08, 0.08, 0.26, 8).rotateZ(Math.PI / 2).translate(0.24, 1.0, 0), '#5a8a40'], [cyl(0.08, 0.09, 0.38, 8, 0.36, 0.97, 0), '#5a8a40'], [ball(0.08, 0.36, 1.35, 0, 8, 6), '#5a8a40']]), mat: M.cactus }],
     'deco:drybush': () => [{ geo: mergeGeos(Array.from({ length: 14 }, () => [new THREE.CylinderGeometry(0.01, 0.022, 0.55, 4).translate(0, 0.27, 0).rotateZ(0.3 + Math.random() * 0.9).rotateY(Math.random() * 6.28), '#9a7a4c'])), mat: M.furnWood, shadow: false }],
-    'deco:pebbles': () => [{ geo: mergeGeos([new THREE.DodecahedronGeometry(0.2, 0).scale(1, 0.6, 1).translate(0, 0.08, 0), new THREE.DodecahedronGeometry(0.14, 0).translate(0.3, 0.06, 0.1), new THREE.DodecahedronGeometry(0.1, 0).translate(-0.2, 0.04, 0.25)]), mat: M.rock }],
+    'deco:pebbles': () => [{ geo: mergeGeos([new THREE.DodecahedronGeometry(0.2, 0).scale(1, 0.6, 1).translate(0, 0.08, 0), new THREE.DodecahedronGeometry(0.14, 0).translate(0.3, 0.06, 0.1), new THREE.DodecahedronGeometry(0.1, 0).translate(-0.2, 0.04, 0.25)]), mat: M.rock, shadow: false }],
     'deco:drift': () => [{ geo: new THREE.SphereGeometry(1, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2).scale(1.3, 0.34, 0.85), mat: M.snow, shadow: false }],
     'deco:ice': () => [{ geo: mergeGeos([new THREE.DodecahedronGeometry(0.38, 0).scale(1, 0.8, 1).translate(0, 0.2, 0), new THREE.DodecahedronGeometry(0.24, 0).translate(0.38, 0.12, 0.15), new THREE.OctahedronGeometry(0.2, 0).translate(-0.28, 0.12, -0.25)]), mat: M.ice }],
     'deco:rug': () => [{ geo: mergeGeos([[bx(1.5, 0.012, 1.0), '#ffffff'], [bx(1.3, 0.014, 0.8), '#d8d0c4']]), mat: M.furnSoft, tint: true, shadow: false }],
