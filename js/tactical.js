@@ -281,31 +281,90 @@ export class Tactical {
 
   buildProps() {
     const m = this.map;
-    const { parts } = propParts();
+    const { parts, mats } = propParts();
+    this.propParts = parts;
     const shadows = this.engine.settings.shadows !== 'off';
-    const counts = {};
-    m.cells.forEach((c) => { if (c.wall) counts[c.wall.type] = (counts[c.wall.type] || 0) + 1; });
-    this.props = {};
-    for (const [t, n] of Object.entries(counts)) this.props[t] = new PropSet(this.scene, parts[t], n, shadows);
-    const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), pos = new THREE.Vector3();
+    const T2 = Math.PI / 2;
+    // Gebäude: Fassadenstil (Atlas-Kachel + Tönung), sichtbare Zusatzstockwerke, Instanzen für Dach-/Obergeschoss-Ausblendung
+    this.bInfo = m.buildings.map((b) => {
+      const f = FACADES[b.style] || FACADES.brick;
+      const extra = b.ruined ? 0 : Math.max(0, Math.min(2, (b.storeys || 1) - 1));
+      return { b, f, extra, perm: extra >= 2 ? 0 : extra === 1 ? 2 : 3, tint: new THREE.Color(choice(f.tint)).multiplyScalar(randRange(0.94, 1.04)), trim: new THREE.Color(f.trim), inst: [], doors: [], open: false, revealed: false, roof: null };
+    });
+    const inner = new THREE.Color('#f2eee6'), white = new THREE.Color(1, 1, 1);
+    const plan = [], counts = {};
+    const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), pos = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
     const same = (x, y, t) => m.at(x, y)?.wall?.type === t;
     for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) {
       const c = m.at(x, y); if (!c.wall) continue;
       const t = c.wall.type;
       const p = this.cellPos(x, y);
       pos.set(p.x, 0, p.z);
-      let rot = 0, scl = 1, colors = null;
+      let v = t, rot = 0, scl = 1, colors = null, tiles = null, mask = 0, B = null;
       if (['tree', 'pine', 'rock', 'bigrock', 'hivewall', 'wreck', 'pod', 'crate'].includes(t)) { rot = rand() * Math.PI * 2; scl = randRange(0.85, 1.2); }
-      if (t === 'crate') { scl = 1; rot = randInt(0, 3) * Math.PI / 2 + randRange(-0.2, 0.2); }
-      if (['fence', 'hedge', 'barrier'].includes(t)) rot = (same(x, y - 1, t) || same(x, y + 1, t)) ? Math.PI / 2 : 0;
-      if (t === 'window') rot = c.wall.vert ? Math.PI / 2 : 0;
-      if (t === 'car') { rot = (randInt(0, 1) * Math.PI / 2) + randRange(-0.15, 0.15); colors = [new THREE.Color().setHSL(rand(), 0.6, 0.4)]; }
+      if (t === 'crate') { scl = 1; rot = randInt(0, 3) * T2 + randRange(-0.2, 0.2); if (c.wall.furn) { v = choice(FURNITURE); rot = (c.wall.rot || 0) + randRange(-0.04, 0.04); } }
+      if (['fence', 'hedge', 'barrier'].includes(t)) rot = (same(x, y - 1, t) || same(x, y + 1, t)) ? T2 : 0;
+      if (t === 'brick' || t === 'wood' || t === 'window') {
+        // Wandmodule: Außenwand (mit Obergeschossen), Fenster, Innenwand
+        B = c.bld != null ? this.bInfo[c.bld] : null;
+        const b = B?.b, f = B?.f || FACADES.brick;
+        const edge = !b || x === b.x0 || y === b.y0 || x === b.x0 + b.w - 1 || y === b.y0 + b.h - 1;
+        mask = B ? B.perm : 3;
+        if (t === 'window') { v = 'window'; rot = c.wall.vert ? T2 : 0; colors = [B?.tint, B?.trim, null, B?.tint, B?.tint]; tiles = [atlasTile(f.tile), null, null, atlasTile(f.up), atlasTile(f.up)]; }
+        else if (edge) { v = 'wallOut'; colors = [B?.tint, B?.trim, B?.tint, B?.tint]; tiles = [atlasTile(f.tile), null, atlasTile(f.up), atlasTile(f.up)]; }
+        else { v = 'wallIn'; colors = [inner, white]; tiles = [atlasTile(2), null]; B = null; mask = 0; }
+      }
+      if (t === 'car') {
+        // Fahrzeugmodell, längs zur Straße; Lack nur auf der Karosserie
+        const variant = c.wall.variant || choice(['sedan', 'sedan', 'kombi', 'suv', 'van', 'pickup']);
+        v = 'car:' + variant;
+        rot = c.wall.vert == null ? randInt(0, 3) * T2 + randRange(-0.15, 0.15) : (c.wall.vert ? 0 : T2) + (rand() < 0.5 ? Math.PI : 0) + randRange(-0.06, 0.06);
+        const paint = new THREE.Color(variant === 'tractor' ? choice(['#3a7a2a', '#b82a1a', '#2a5a9a', '#d0a020']) : choice(CAR_PAINT));
+        colors = parts[v].map((pp) => (pp.paint ? paint : null));
+      }
+      if (t === 'hay' && rand() < 0.4) v = 'hay:stack';
+      if (t === 'log') rot = (c.wall.vert ? T2 : 0) + randRange(-0.25, 0.25);
       if (t === 'tree' || t === 'pine') colors = [null, new THREE.Color().setHSL(0.25 + rand() * 0.08, 0.5, 0.6 + rand() * 0.3), new THREE.Color().setHSL(0.25 + rand() * 0.08, 0.5, 0.6 + rand() * 0.3), new THREE.Color(1, 1, 1)];
       if (t === 'tree' || t === 'pine') pos.x += randRange(-0.3, 0.3), pos.z += randRange(-0.3, 0.3);
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rot);
+      if (!colors && parts[v].some((pp) => pp.tint)) { const tc = new THREE.Color(choice(DECO_TINT.rug)).lerp(white, 0.35); colors = parts[v].map((pp) => (pp.tint ? tc : null)); }
+      q.setFromAxisAngle(Y, rot);
       s.set(scl, t === 'tree' || t === 'pine' ? scl * randRange(0.9, 1.25) : scl, scl);
       mtx.compose(pos, q, s);
-      c.wall.idx = this.props[t].add(mtx, colors);
+      plan.push({ c, t, v, m: mtx.clone(), colors, tiles, mask, B });
+      (counts[t] ||= {})[v] = (counts[t][v] || 0) + 1;
+    }
+    this.props = {};
+    for (const [t, vs] of Object.entries(counts)) {
+      const sets = {};
+      for (const [v, n] of Object.entries(vs)) sets[v] = new PropSet(this.scene, parts[v], n, shadows);
+      this.props[t] = new VariantSet(sets);
+    }
+    for (const e of plan) {
+      e.c.wall.idx = this.props[e.t].add(e.m, e.colors, e.tiles, e.mask, e.v);
+      if (e.B) e.B.inst.push([this.props[e.t], e.c.wall.idx, e.mask]);
+    }
+    // Türrahmen samt Sturz und Obergeschoss über der Türöffnung (Deko ohne Kollision, erscheint mit dem Feld)
+    const doors = [];
+    for (const B of this.bInfo) for (const d of B.b.doors) { const c = m.at(d.x, d.y); if (c && !c.wall && !c.ufo && c.indoor) doors.push([B, d]); }
+    if (doors.length) {
+      this.doorSet = new PropSet(this.scene, parts.door, doors.length, shadows);
+      for (const [B, d] of doors) {
+        const p = this.cellPos(d.x, d.y);
+        q.setFromAxisAngle(Y, { n: 0, s: Math.PI, w: T2, e: -T2 }[d.side]);
+        mtx.compose(pos.set(p.x, 0, p.z), q, s.set(1, 1, 1));
+        const i = this.doorSet.add(mtx, [B.tint, B.trim, B.tint, B.tint], [atlasTile(B.f.tile), null, atlasTile(B.f.up), atlasTile(B.f.up)], B.perm);
+        B.inst.push([this.doorSet, i, B.perm]); B.doors.push({ i, k: d.y * m.W + d.x, on: false });
+      }
+    }
+    // Dächer: je Gebäude ein Objekt, ausgeblendet solange man hineinsehen muss (updateBuildings)
+    for (const B of this.bInfo) {
+      const b = B.b; if (b.ruined) continue;
+      const p0 = this.cellPos(b.x0, b.y0), p1 = this.cellPos(b.x0 + b.w - 1, b.y0 + b.h - 1);
+      const wall = b.style === 'brick' ? new THREE.Color('#a65c42').multiply(B.tint) : B.tint.clone();
+      const roof = makeRoof({ sx: b.w * TILE, sz: b.h * TILE, H: 2.8 * (1 + B.extra), kind: b.roof, roof: choice(B.f.roof), wall, trim: B.trim, tall: B.extra > 0, tank: b.style === 'adobe' }, mats);
+      roof.position.set((p0.x + p1.x) / 2, 0, (p0.z + p1.z) / 2);
+      roof.visible = false;
+      this.scene.add(roof); B.roof = roof;
     }
     // UFO-Kuppel-Deko (abgestürzt: geneigt) – nur Rand, damit das Innere sichtbar bleibt
     if (m.ufo) {
@@ -326,6 +385,92 @@ export class Tactical {
     const tp = this.cellPos(lz.x + 2, m.H - 1);
     tr.position.set(tp.x, 0, tp.z + 10.5);
     this.scene.add(tr);
+  }
+
+  // Nicht blockierende Umgebungsdetails (ein InstancedMesh je Bauteil und Typ)
+  buildDeco() {
+    const m = this.map, parts = this.propParts;
+    const items = {};
+    const add = (t, x, y, ox, oz, rot, s) => (items[t] ||= []).push({ x, y, ox, oz, rot, s });
+    for (const d of m.deco || []) add(d.t, d.x, d.y, d.ox, d.oz, d.rot, d.s);
+    for (const l of m.lights) if (l.lamp) { const d = l.dir || [1, 0]; add('lamp', l.x, l.y, 0, 0, Math.atan2(d[0], d[1]), 1); }
+    for (const B of this.bInfo || []) {
+      const b = B.b; if (b.ruined) continue;
+      for (let k = 0; k < 2; k++) { const x = randInt(b.x0 + 1, b.x0 + b.w - 2), y = randInt(b.y0 + 1, b.y0 + b.h - 2), c = m.at(x, y); if (c && !c.wall && !c.door) add('rug', x, y, randRange(-0.15, 0.15), randRange(-0.15, 0.15), randInt(0, 1) * Math.PI / 2, 1); }
+    }
+    const shadows = this.engine.settings.shadows !== 'off';
+    const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
+    for (const [t, list] of Object.entries(items)) {
+      const pp = parts['deco:' + t]; if (!pp) continue;
+      const meshes = pp.map((p) => { const im = new THREE.InstancedMesh(p.geo, p.mat, list.length); im.castShadow = shadows && p.shadow !== false; im.receiveShadow = true; this.scene.add(im); return im; });
+      list.forEach((d, i) => {
+        const p = this.cellPos(d.x, d.y);
+        mtx.compose(pos.set(p.x + d.ox, 0, p.z + d.oz), q.setFromAxisAngle(Y, d.rot), sc.setScalar(d.s));
+        const tint = DECO_TINT[t] ? new THREE.Color(choice(DECO_TINT[t])) : null;
+        meshes.forEach((im, k) => { im.setMatrixAt(i, mtx); if (tint && pp[k].tint) im.setColorAt(i, tint); });
+      });
+    }
+  }
+
+  // Fahrbahnmarkierungen, Zebrastreifen, Bordsteine, Gullideckel und Ölflecken auf die Bodentextur malen
+  paintMarkings(c, P) {
+    const m = this.map, r = m.roads;
+    if (!r) return;
+    const inRY = (y) => r.ys.some((a) => y >= a && y < a + 3), inRX = (x) => r.xs.some((a) => x >= a && x < a + 3);
+    for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) {
+      if (m.at(x, y).floor !== 'sidewalk') continue;
+      const X = x * P, Y = y * P;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        if (m.at(x + dx, y + dy)?.floor !== 'asphalt') continue;
+        c.fillStyle = '#bdb9b0';
+        if (dx === 1) c.fillRect(X + P - 3, Y, 3, P); if (dx === -1) c.fillRect(X, Y, 3, P); if (dy === 1) c.fillRect(X, Y + P - 3, P, 3); if (dy === -1) c.fillRect(X, Y, P, 3);
+        c.fillStyle = 'rgba(0,0,0,0.35)';
+        if (dx === 1) c.fillRect(X + P, Y, 2, P); if (dx === -1) c.fillRect(X - 2, Y, 2, P); if (dy === 1) c.fillRect(X, Y + P, P, 2); if (dy === -1) c.fillRect(X, Y - 2, P, 2);
+      }
+    }
+    c.fillStyle = 'rgba(235,235,225,0.85)';
+    for (const a of r.xs) {
+      for (let y = 0; y < m.H; y++) if (!inRY(y)) { c.fillRect((a + 1.5) * P - 1.5, y * P + 4, 3, P * 0.5); c.fillRect(a * P + 3, y * P, 1.5, P); c.fillRect((a + 3) * P - 4.5, y * P, 1.5, P); }
+      for (const ry of r.ys) for (const y of [ry - 1, ry + 3]) if (y >= 0 && y < m.H && !inRY(y)) for (let k = 0; k < 7; k++) c.fillRect(a * P + 4 + k * ((3 * P - 8) / 7), y * P + 5, (3 * P - 8) / 14, P - 10);
+    }
+    for (const a of r.ys) {
+      for (let x = 0; x < m.W; x++) if (!inRX(x)) { c.fillRect(x * P + 4, (a + 1.5) * P - 1.5, P * 0.5, 3); c.fillRect(x * P, a * P + 3, P, 1.5); c.fillRect(x * P, (a + 3) * P - 4.5, P, 1.5); }
+      for (const rx of r.xs) for (const x of [rx - 1, rx + 3]) if (x >= 0 && x < m.W && !inRX(x)) for (let k = 0; k < 7; k++) c.fillRect(x * P + 5, a * P + 4 + k * ((3 * P - 8) / 7), P - 10, (3 * P - 8) / 14);
+    }
+    for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) {
+      const cell = m.at(x, y); if (cell.floor !== 'asphalt') continue;
+      const cx = (x + 0.5) * P, cy = (y + 0.5) * P;
+      if (cell.wall?.type === 'car') { c.fillStyle = 'rgba(0,0,0,0.28)'; c.beginPath(); c.ellipse(cx, cy, P * 0.35, P * 0.3, 0, 0, 7); c.fill(); }
+      else if (rand() < 0.035) { // Gullideckel
+        c.fillStyle = '#26282b'; c.beginPath(); c.arc(cx, cy, P * 0.2, 0, 7); c.fill();
+        c.strokeStyle = '#4a4c50'; c.lineWidth = 1; c.beginPath(); c.arc(cx, cy, P * 0.2, 0, 7); c.stroke();
+        for (let k = -2; k <= 2; k++) { c.beginPath(); c.moveTo(cx + k * 2.5, cy - P * 0.15); c.lineTo(cx + k * 2.5, cy + P * 0.15); c.stroke(); }
+      } else if (rand() < 0.08) { c.strokeStyle = 'rgba(15,15,15,0.5)'; c.lineWidth = 1; c.beginPath(); let px = x * P + rand() * P, py = y * P + rand() * P; c.moveTo(px, py); for (let k = 0; k < 5; k++) { px += (rand() - 0.5) * 14; py += (rand() - 0.5) * 14; c.lineTo(px, py); } c.stroke(); }
+    }
+  }
+
+  // Dächer und Obergeschosse ausblenden, wenn ein Soldat, eine sichtbare Einheit oder der Cursor im Gebäude
+  // (bzw. hinter hohen Gebäuden auf der kameraabgewandten Seite) ist; Türrahmen erscheinen mit ihrem Feld
+  updateBuildings() {
+    const list = this.bInfo; if (!list?.length) return;
+    const W = this.W, ex = this.explored, cur = this.cursor;
+    const fx = -Math.sin(this.cam.yaw), fz = -Math.cos(this.cam.yaw);
+    for (const B of list) {
+      const b = B.b;
+      if (!B.revealed) { for (let y = b.y0; y < b.y0 + b.h && !B.revealed; y++) for (let x = b.x0; x < b.x0 + b.w; x++) if (ex[y * W + x]) { B.revealed = true; break; } }
+      for (const d of B.doors) if (!d.on && ex[d.k]) { d.on = true; this.doorSet.show(d.i, true); }
+      let open = false;
+      for (const u of this.units) {
+        if (!u.alive || u.evac || u.x < b.x0 || u.y < b.y0 || u.x >= b.x0 + b.w || u.y >= b.y0 + b.h) continue;
+        if (u.team === 'player' || (u.team === 'alien' ? this.isVisibleAlien(u) : this.vis[u.y * W + u.x])) { open = true; break; }
+      }
+      if (!open && cur) {
+        const mg = 1 + B.extra * 2;
+        open = cur.x >= b.x0 - (fx < -0.3 ? mg : 0) && cur.x < b.x0 + b.w + (fx > 0.3 ? mg : 0) && cur.y >= b.y0 - (fz < -0.3 ? mg : 0) && cur.y < b.y0 + b.h + (fz > 0.3 ? mg : 0);
+      }
+      if (open !== B.open) { B.open = open; for (const [set, i, perm] of B.inst) set.setMask(i, open ? 3 : perm); }
+      if (B.roof) B.roof.visible = B.revealed && !open;
+    }
   }
 
   buildHelpers() {
@@ -2119,7 +2264,13 @@ export class Tactical {
       const sw = walking ? Math.sin(u.anim.walk) * 0.6 : 0;
       if (ud.legL) { ud.legL.rotation.x = sw; ud.legR.rotation.x = -sw; }
       if (ud.legL2) { ud.legL2.rotation.x = -sw; ud.legR2.rotation.x = sw; }
-      if (u.team === 'civ' && ud.armL) { ud.armL.rotation.x = -sw * 0.8; ud.armR.rotation.x = sw * 0.8; }
+      if (u.team === 'civ' && ud.armL) {
+        // verängstigt: Hände über dem Kopf, solange ein sichtbares Alien in der Nähe ist
+        const scared = !walking && this.units.some((a) => a.team === 'alien' && a.alive && Math.abs(a.x - u.x) + Math.abs(a.y - u.y) < 14 && this.isVisibleAlien(a));
+        const k = walking ? 1 : 1 - Math.exp(-10 * dt);
+        ud.armL.rotation.x = lerp(ud.armL.rotation.x, scared ? -2.75 : -sw * 0.8, k); ud.armR.rotation.x = lerp(ud.armR.rotation.x, scared ? -2.75 : sw * 0.8, k);
+        ud.armL.rotation.z = lerp(ud.armL.rotation.z, scared ? -0.35 : 0, k); ud.armR.rotation.z = lerp(ud.armR.rotation.z, scared ? 0.35 : 0, k);
+      }
       if (ud.hover) ud.body.position.y = 0.2 + Math.sin(u.anim.t * 2.5) * 0.12;
       else if (u.alive) {
         const kneelY = u.kneel ? -0.38 : 0;
@@ -2149,6 +2300,7 @@ export class Tactical {
     }
     this.fx = this.fx.filter((f) => f(dt));
     if (this.smokes.length || this.flares.length) this.updateEffects(dt, time);
+    this.updateBuildings();
     this.placePathLabels();
     this.updateFog(dt);
   }
@@ -2179,5 +2331,6 @@ export class Tactical {
     this.scene.traverse((o) => { if (o.isInstancedMesh) o.dispose(); if (o.material && !o.isSprite) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (!m.userData.shared) m.dispose(); }); });
     document.getElementById('hud').innerHTML = '';
     this.engine.renderer.toneMappingExposure = 1.0;
+    releaseTextures();
   }
 }

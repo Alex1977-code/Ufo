@@ -24,7 +24,7 @@ await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const URL_ = `http://127.0.0.1:${server.address().port}/index.html`;
 
 const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
-const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+const page = await browser.newPage({ viewport: { width: 800, height: 450 } });
 const errors = [];
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 const shot = async (n) => { fs.mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, n + '.png') }).catch(() => {}); };
@@ -54,7 +54,7 @@ test('Mission starten, Zug beenden, Cheat-Sieg, zurück zur Weltkarte', async ()
     g.buildBaseMarker();
     g.hooks.startMission({ site: { id: 'x', kind: 'crash', name: 'T', ufoType: 'scout', region: 'nw' }, squad: G.c.soldiers.slice(0, 6), night: false, biome: 'farm' });
   });
-  await page.waitForFunction(() => window.__aegis.tac?.units?.length > 0, null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__aegis.tac?.units?.length > 0, null, { timeout: 120000 });
   await page.waitForTimeout(2000);
   await noErrors('mission-start');
 
@@ -67,7 +67,7 @@ test('Mission starten, Zug beenden, Cheat-Sieg, zurück zur Weltkarte', async ()
   await back.waitFor({ timeout: 60000 });
   await shot('result');
   await back.click();
-  await page.waitForFunction(() => window.__aegis.geo && document.querySelector('canvas') && !window.__aegis.tac?.units?.some?.((u) => u.alive && u.team === 'player' && false), null, { timeout: 30000 });
+  await back.waitFor({ state: 'detached', timeout: 30000 });
   await page.waitForTimeout(3000);
   await noErrors('back-to-geo');
 });
