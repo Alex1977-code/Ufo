@@ -7,6 +7,8 @@ import { Input, padLabel } from './input.js';
 import { openEquipment, beltTotals, itemEffect } from './equip.js';
 import { modal, toast, confirmBox, alertBox, anyModalOpen, el, bar, banner } from './ui.js';
 import { sfx, setMusicMood } from './audio.js';
+import { openBaseView, isBaseViewOpen } from './basescape.js';
+import { runAirCombat } from './aircombat.js';
 import { clamp, rand, randRange, randInt, choice, latLonToVec, vecToLatLon, angleBetween, slerpStep, fmtDate, fmtMoney, smooth, DEG } from './util.js';
 
 // Spielminuten pro Echtzeitsekunde
@@ -855,9 +857,65 @@ export class Geoscape {
     this.setSpeed(0);
     sfx('alert');
     const spec = CRAFTS[cr.type], us = UFOS[u.type];
-    let mode = 'std', timer = null, done = false;
     u.engaged = true;
     const camp = Game.c;
+    // Ergebnislogik (unverändert übernommen) – genutzt von 3D-Szene und Modal-Fallback.
+    // Gibt das endgültige Ergebnis zurück oder null, wenn die Kampagne inzwischen gewechselt wurde.
+    const applyResult = (res, log) => {
+      u.engaged = false;
+      if (Game.c !== camp) return null; // Kampagne wurde inzwischen gewechselt
+      if (res === 'win' && !this.ufos.includes(u)) res = 'flee';
+      u.hp = Math.max(0, u.hp); cr.hp = Math.max(0, cr.hp);
+      const ll = vecToLatLon(u.pos);
+      const region = regionOf(ll.lat, ll.lon);
+      if (res === 'win') {
+        this.removeUfo(u);
+        Game.c.stats.ufosDown++;
+        Game.addScore(us.score, region);
+        if (this.isLand(ll.lat, ll.lon)) {
+          this.addSite({ kind: 'crash', name: `Absturz ${u.name}`, lat: ll.lat, lon: ll.lon, ufoType: u.type, region, crashed: true });
+          log(`<b>${u.name} abgeschossen!</b> Absturzstelle markiert.`, 'good');
+          this.log(`${u.name} abgeschossen – Absturzstelle an Land!`, 'good');
+        } else { log(`<b>${u.name} abgeschossen!</b> Das Wrack versinkt im Ozean.`, 'good'); this.log(`${u.name} ins Meer gestürzt.`, 'good'); }
+        sfx('explosion'); Input.rumble(1, 1, 400);
+      } else if (res === 'lost') {
+        const ci = Game.c.crafts.indexOf(cr); if (ci >= 0) Game.c.crafts.splice(ci, 1);
+        log(`<b>${cr.name} wurde zerstört!</b>`, 'bad'); this.log(`${cr.name} abgeschossen.`, 'bad'); sfx('explosion');
+        Game.addScore(-40, region);
+      } else if (res === 'escaped') {
+        log(`<b>${u.name} ist entkommen.</b> ${cr.name} kehrt zur Basis zurück.`, 'warn'); this.log(`${u.name} ist ${cr.name} entkommen.`, 'warn');
+      } else { log('Gefecht abgebrochen.'); }
+      if (res !== 'lost') cr.status = 'return';
+      return res;
+    };
+
+    // 3D-Abfangsequenz (js/aircombat.js); bei Fehlern Fallback auf das bisherige Modal
+    try {
+      const ll0 = vecToLatLon(u.pos);
+      runAirCombat({
+        engine: this.engine, geo: this, craft: cr, ufo: u, craftSpec: spec, ufoSpec: us, overLand: this.isLand(ll0.lat, ll0.lon),
+        onEnd: ({ result }) => {
+          const lines = [];
+          const res = applyResult(result, (t, cls = '') => lines.push(`<div class="${cls}">${t}</div>`));
+          if (res == null) return;
+          const head = { win: ['✔ Abschuss', 'good'], lost: ['✖ Jäger verloren', 'bad'], flee: ['⮌ Rückzug', 'warn'], escaped: ['⮌ UFO entkommen', 'warn'] }[res];
+          modal({
+            title: `Luftkampf: ${cr.name} vs. ${u.name}`, closable: false,
+            html: `<h3 class="${head[1]}">${head[0]}</h3>
+              <div class="dogfight ac-sum"><div class="df-side"><b>${cr.name}</b><small>${spec.name}</small>${bar(cr.hp, spec.hp, 'good')}</div>
+              <div class="df-side"><b>${u.name}</b><small>${us.name}</small>${bar(u.hp, us.hp, 'bad')}</div></div>
+              <div class="df-log">${lines.join('')}</div>`,
+            buttons: [{ label: 'Weiter', primary: true }],
+          });
+        },
+      });
+      return;
+    } catch (e) {
+      console.error('3D-Luftkampf nicht verfügbar – nutze Modal-Ansicht.', e);
+      u.engaged = true;
+    }
+
+    let mode = 'std', timer = null, done = false;
     const h = modal({
       title: `Luftkampf: ${cr.name} vs. ${u.name}`, closable: false, wide: true,
       html: `<div class="dogfight">
@@ -887,28 +945,8 @@ export class Geoscape {
     const finish = (res) => {
       if (done) return false; done = true;
       clearInterval(timer);
-      u.engaged = false;
-      if (Game.c !== camp) return false; // Kampagne wurde inzwischen gewechselt
-      if (res === 'win' && !this.ufos.includes(u)) res = 'flee';
-      u.hp = Math.max(0, u.hp); cr.hp = Math.max(0, cr.hp); draw();
-      const ll = vecToLatLon(u.pos);
-      const region = regionOf(ll.lat, ll.lon);
-      if (res === 'win') {
-        this.removeUfo(u);
-        Game.c.stats.ufosDown++;
-        Game.addScore(us.score, region);
-        if (this.isLand(ll.lat, ll.lon)) {
-          this.addSite({ kind: 'crash', name: `Absturz ${u.name}`, lat: ll.lat, lon: ll.lon, ufoType: u.type, region, crashed: true });
-          log(`<b>${u.name} abgeschossen!</b> Absturzstelle markiert.`, 'good');
-          this.log(`${u.name} abgeschossen – Absturzstelle an Land!`, 'good');
-        } else { log(`<b>${u.name} abgeschossen!</b> Das Wrack versinkt im Ozean.`, 'good'); this.log(`${u.name} ins Meer gestürzt.`, 'good'); }
-        sfx('explosion'); Input.rumble(1, 1, 400);
-      } else if (res === 'lost') {
-        const ci = Game.c.crafts.indexOf(cr); if (ci >= 0) Game.c.crafts.splice(ci, 1);
-        log(`<b>${cr.name} wurde zerstört!</b>`, 'bad'); this.log(`${cr.name} abgeschossen.`, 'bad'); sfx('explosion');
-        Game.addScore(-40, region);
-      } else { log('Gefecht abgebrochen.'); }
-      if (res !== 'lost') cr.status = 'return';
+      if (applyResult(res, log) == null) return false;
+      draw();
       const foot = h.el.querySelector('.modal-foot');
       foot.innerHTML = '';
       const b = el('button', 'btn primary', 'Weiter'); b.onclick = () => h.close(); foot.appendChild(b);
@@ -1121,7 +1159,7 @@ export class Geoscape {
           <button class="btn wide" data-hire="soldier">Soldat rekrutieren – ${fmtMoney(60000)}</button>
           <button class="btn wide" data-hire="sci" ${c.scientists >= Game.labCapacity ? 'disabled' : ''}>${Math.max(1, Math.min(5, Game.labCapacity - c.scientists))} Wissenschaftler einstellen – ${fmtMoney(Math.max(1, Math.min(5, Game.labCapacity - c.scientists)) * 30000)}</button>
           <h4>Radar</h4><p>Reichweite: ${Math.round(Game.radarRange / DEG * 111)} km</p></div></div>`,
-      buttons: [{ label: 'Schließen', primary: true }],
+      buttons: [...(isBaseViewOpen() ? [] : [{ label: '🏗 3D-Ansicht', action: () => { openBaseView(this.engine, this, { onBuild: () => this.baseMenu() }); } }]), { label: 'Schließen', primary: true }],
     });
     h.el.addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;

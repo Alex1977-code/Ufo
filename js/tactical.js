@@ -564,7 +564,7 @@ export class Tactical {
     // Aliens ein-/ausblenden
     const spotted = [];
     for (const u of this.units) {
-      if (!u.alive) continue;
+      if (!u.alive) { if (!u.dying) this.refreshCorpseVis(u); continue; }
       if (u.team === 'alien') {
         const v = this.isVisibleAlien(u);
         u.obj.visible = v || u.dying;
@@ -843,26 +843,177 @@ export class Tactical {
       this.result.kills[t.spec] = (this.result.kills[t.spec] || 0) + 1;
       this.floatAt(t, '✖ ELIMINIERT', '#ffd080', true);
     } else if (t.team === 'player') {
+      this.floatAt(t, '☠ GEFALLEN', '#ff7a7a', true);
       toast(`☠ ${t.name} ist gefallen.`, 'bad', 3500);
       Input.rumble(1, 1, 500);
     } else {
       this.result.civKilled++;
+      this.floatAt(t, 'Zivilist getötet', '#ff9a6a', true);
     }
-    const obj = t.obj; const startY = obj.rotation.x;
-    let k = 0;
-    const anim = (dt) => {
-      k += dt * 2.2;
-      obj.rotation.x = startY - Math.min(1, k) * (Math.PI / 2) * (t.spec === 'drone' ? 0 : 1);
-      if (t.spec === 'drone') obj.position.y = Math.max(-1.1, -k * 1.2);
-      if (k > 1) { obj.position.y = Math.max(-0.4, obj.position.y - dt * 0.15); }
-      if (k > 2.5) { t.dying = false; if (t.team === 'alien') obj.visible = this.vis[t.y * this.W + t.x] === 1; return false; }
-      return true;
-    };
-    this.fx.push(anim);
+    this.deathEffects(t);
     if (this.target === t) { this.target = null; }
     this.updateAlienBadges();
     this.checkEnd();
     if (t === this.selected && !this.ended) { this.selected = null; if (this.phase === 'player') this.cycleUnit(1); }
+  }
+
+  // ======================= Tod & Leichen =======================
+  // Leiche/Wrack bleibt sichtbar, sobald ihr Feld erkundet ist (auch im Nebel); Soldaten immer
+  refreshCorpseVis(u) {
+    if (!u.obj || u.alive) return;
+    const i = u.y * this.W + u.x;
+    const v = u.team === 'player' ? true : !!(this.explored[i] || this.vis[i] || Game.cheats.revealMap);
+    u.obj.visible = v;
+    if (u.deadGun) u.deadGun.visible = v;
+  }
+  // Materialien klonen, entsättigen/abdunkeln, Leuchtteile aus (Drohne: Teile merken für Flackern)
+  deaden(root, keepGlow, list) {
+    const hsl = { h: 0, s: 0, l: 0 };
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = o.material = o.material.clone();
+      m.color.getHSL(hsl); m.color.setHSL(hsl.h, hsl.s * 0.3, hsl.l * 0.62);
+      if (m.emissive && (m.emissive.getHex() !== 0 || m.emissiveMap)) {
+        if (keepGlow) list.push({ m, i0: m.emissiveIntensity }); else m.emissiveIntensity = 0;
+      }
+    });
+  }
+  // Körper auf den Boden legen: Mitte über das Feld, tiefster Punkt knapp über y=0
+  groundCorpse(obj, cp, minY = 0.04) {
+    this._bb = this._bb || new THREE.Box3();
+    obj.updateMatrixWorld(true); this._bb.setFromObject(obj);
+    obj.position.x += cp.x - (this._bb.min.x + this._bb.max.x) / 2;
+    obj.position.z += cp.z - (this._bb.min.z + this._bb.max.z) / 2;
+    obj.position.y += minY - this._bb.min.y;
+  }
+  stain(x, y, css, r = 0.55, blobs = 7) {
+    const c = this.groundCanvas.getContext('2d');
+    const P = this.groundCanvas.width / this.W;
+    c.fillStyle = css;
+    for (let i = 0; i < blobs; i++) {
+      const a = rand() * 6.283, d = rand() * P * r * 0.7, rr = P * r * (0.25 + rand() * 0.35);
+      c.beginPath(); c.arc((x + 0.5) * P + Math.cos(a) * d, (y + 0.5) * P + Math.sin(a) * d, rr, 0, 7); c.fill();
+    }
+    this.groundTex.needsUpdate = true;
+  }
+  deadRing(x, y) {
+    const c = this.groundCanvas.getContext('2d');
+    const P = this.groundCanvas.width / this.W;
+    c.strokeStyle = 'rgba(150,150,150,0.55)'; c.lineWidth = Math.max(1, P * 0.05);
+    c.beginPath(); c.arc((x + 0.5) * P, (y + 0.5) * P, P * 0.46, 0, 7); c.stroke();
+    this.groundTex.needsUpdate = true;
+  }
+  tossGun(t, cp) {
+    const g = t.obj.userData.gun;
+    if (!g || !g.children.some((c) => c.isMesh)) return;
+    this.scene.attach(g);
+    this.deaden(g, false);
+    t.deadGun = g;
+    const from = g.position.clone(), fq = g.quaternion.clone();
+    const ang = rand() * 6.283, r = 0.75 + rand() * 0.35;
+    const to = new THREE.Vector3(cp.x + Math.cos(ang) * r, 0, cp.z + Math.sin(ang) * r);
+    const tq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, rand() * 6.283, (rand() - 0.5) * 0.3));
+    let k = 0;
+    this.fx.push((dt) => {
+      k = Math.min(1, k + dt / 0.55);
+      g.position.lerpVectors(from, to, k);
+      g.position.y = from.y * (1 - k) + Math.sin(k * Math.PI) * 0.6;
+      g.quaternion.copy(fq).slerp(tq, k);
+      if (k < 1) return true;
+      g.updateMatrixWorld(true); this._bb = this._bb || new THREE.Box3(); this._bb.setFromObject(g);
+      g.position.y += 0.02 - this._bb.min.y;
+      return false;
+    });
+  }
+  deathEffects(t) {
+    const obj = t.obj, ud = obj.userData, cp = this.cellPos(t.x, t.y);
+    const drone = t.spec === 'drone';
+    obj.rotation.order = 'YXZ';
+    // Spritzer + Flash
+    const bp = this.bodyPoint(t);
+    const blood = t.team === 'alien' ? ({ vael: 0x66ff55, krull: 0xa6d03a, drone: 0xffa040, beast: 0xb060ff, hive: 0xc070ff }[t.spec] || 0x80ff60) : 0xc01818;
+    for (let i = 0; i < (drone ? 8 : 22); i++) this.emit(bp, new THREE.Color(blood), 1.6, 2.4, 0.6 + rand() * 0.5, drone);
+    if (drone) this.spark(bp, 0xffa040, 14);
+    this.flash(bp, blood, 3, 0.2);
+    // Bodendecal + grauer Ring
+    if (drone) this.scorch(t.x, t.y, 0.75);
+    else this.stain(t.x, t.y, t.team === 'alien' ? (t.spec === 'vael' || t.spec === 'krull' ? 'rgba(70,170,40,0.75)' : 'rgba(110,50,170,0.75)') : 'rgba(120,10,10,0.85)');
+    this.deadRing(t.x, t.y);
+    t.glow = [];
+    this.deaden(obj, drone, t.glow);
+    if (!drone) this.tossGun(t, cp);
+    const finish = () => { t.dying = false; this.refreshCorpseVis(t); if (drone) this.startWreck(t); };
+    if (drone) {
+      const tx = (rand() - 0.5) * 0.4, tz = (rand() - 0.5) * 0.6;
+      const y0 = obj.position.y, yaw = obj.rotation.y, by0 = ud.body.position.y;
+      ud.body.scale.set(1.08, 0.78, 0.95);
+      obj.rotation.set(tx, yaw, tz); ud.body.position.y = 0.2; obj.position.y = 0;
+      this.groundCorpse(obj, cp);
+      const endY = obj.position.y, endX = obj.position.x, endZ = obj.position.z;
+      obj.rotation.set(0, yaw, 0); obj.position.set(cp.x, y0, cp.z);
+      let k = 0, landed = false, tb = 0;
+      this.fx.push((dt) => {
+        if (this.disposed) return false;
+        if (!landed) {
+          k = Math.min(1, k + dt / 0.75); const e = k * k;
+          obj.rotation.set(tx * e, yaw + e * 2.2, tz * e);
+          obj.position.set(cp.x + (endX - cp.x) * e, y0 + (endY - y0) * e, cp.z + (endZ - cp.z) * e);
+          const p = obj.position.clone(); p.y += 1.5 + (1 - e) * 0.3;
+          this.spark(p, 0xffa040, 2); if (rand() < 0.5) this.emit(p, new THREE.Color(0.25, 0.25, 0.27), 0.3, 0.6, 1, false, true);
+          for (const g of t.glow) g.m.emissiveIntensity = g.i0 * (rand() < 0.5 ? 0 : 1);
+          if (k >= 1) {
+            landed = true;
+            const q = obj.position.clone(); q.y += 0.4;
+            this.flash(q, 0xff8030, 4, 0.25); this.spark(q, 0xffa040, 24);
+            for (let i = 0; i < 6; i++) this.emit(q, new THREE.Color(0.3, 0.3, 0.32), 0.5, 1.2, 1.4, false, true);
+            this.shake = Math.max(this.shake, 0.4);
+          }
+          return true;
+        }
+        tb += dt;
+        obj.position.y = endY + Math.abs(Math.sin(tb * 11)) * 0.28 * Math.max(0, 1 - tb / 0.45);
+        if (tb < 0.45) return true;
+        obj.position.y = endY; finish(); return false;
+      });
+      return;
+    }
+    // Menschen/Aliens: kippen, Gliedmaßen schlaff
+    const side = t.spec === 'beast' ? (rand() < 0.5 ? -1 : 1) : (rand() < 0.4 ? (rand() < 0.5 ? -1 : 1) : 0);
+    const rx = side ? 0 : -Math.PI / 2, rz = side * Math.PI / 2;
+    const sl = rand() < 0.5 ? 1 : -1;
+    const limbT = { armL: [-0.25, 0.75], armR: [0.2, -0.55 * sl], legL: [0.15, -0.3], legR: [-0.25, 0.35 * sl] };
+    const from = {};
+    for (const n in limbT) if (ud[n]) from[n] = [ud[n].rotation.x, ud[n].rotation.z];
+    ud.body.position.y = 0;
+    if (ud.legL2) { ud.legL2.rotation.x = 0.4; ud.legR2.rotation.x = -0.4; }
+    let k = 0;
+    this.fx.push((dt) => {
+      if (this.disposed) return false;
+      k = Math.min(1, k + dt / 0.9); const e = k * k;
+      obj.rotation.x = rx * e; obj.rotation.z = rz * e;
+      for (const n in from) { ud[n].rotation.x = from[n][0] + (limbT[n][0] - from[n][0]) * e; ud[n].rotation.z = from[n][1] + (limbT[n][1] - from[n][1]) * e; }
+      this.groundCorpse(obj, cp);
+      if (k < 1) return true;
+      finish(); return false;
+    });
+  }
+  // Rauchendes, flackerndes Drohnenwrack für einige Runden (max. 4 Rauchquellen gleichzeitig)
+  startWreck(t) {
+    this._smokers = this._smokers || 0;
+    const smoking = this._smokers < 4; if (smoking) this._smokers++;
+    const born = this.turn; let acc = 0, ft = 0;
+    this.fx.push((dt) => {
+      const done = this.disposed || this.turn > born + 3;
+      if (done) { for (const g of t.glow) g.m.emissiveIntensity = 0; if (smoking) this._smokers--; return false; }
+      acc += dt; ft += dt;
+      if (ft > 0.12) { ft = 0; for (const g of t.glow) g.m.emissiveIntensity = rand() < 0.4 ? g.i0 * rand() : 0; }
+      if (smoking && t.obj.visible) {
+        const p = t.obj.position.clone(); p.y += 0.5;
+        if (acc > 0.5) { acc = 0; this.emit(p, new THREE.Color(0.22, 0.22, 0.24), 0.5, 0.6, 1.8, false, true); }
+        if (rand() < dt * 0.7) this.flash(p, 0xff7030, 0.9, 0.1);
+      }
+      return true;
+    });
   }
 
   damageWall(x, y, amount) {
@@ -1943,7 +2094,7 @@ export class Tactical {
     const time = this.engine.time;
     for (const u of this.units) {
       const ud = u.obj.userData; if (!ud.body) continue;
-      if (!u.alive && !u.dying) continue;
+      if (!u.alive) continue; // Sterbende/Tote werden von deathEffects() animiert
       u.anim.t += dt;
       const walking = u.anim.walk > 0;
       const sw = walking ? Math.sin(u.anim.walk) * 0.6 : 0;
