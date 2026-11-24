@@ -454,6 +454,8 @@ class SceneSSRPass extends SSRPass {
   constructor(o) {
     super(o);
     this.ssrMaterial.defines.MAX_STEP = Math.round(clamp(Math.hypot(o.width, o.height) * 0.4, 96, 320));
+    // 24-Bit-Tiefe statt 16 Bit: dient auch der TSR-Reprojektion (16 Bit erzeugt Streifen in der Ferne)
+    this.beautyRenderTarget.depthTexture.type = THREE.UnsignedIntType;
     // Maskenwert (0..1) als Reflexionsstärke statt nur Ja/Nein
     this.ssrMaterial.fragmentShader = this.ssrMaterial.fragmentShader.replace('gl_FragColor.a=op;', '#ifdef SELECTIVE\n op*=metalness;\n #endif\n gl_FragColor.a=op;');
     this.ssrMaterial.needsUpdate = true;
@@ -507,9 +509,15 @@ class SceneSSRPass extends SSRPass {
       renderer.clear();
       scene.background = null; scene.fog = null;
       const swapped = [];
-      scene.traverseVisible((o) => { if (o.isMesh) { swapped.push(o, o.material); o.material = this.maskFor(o.material); } });
+      const tinted = [];
+      scene.traverseVisible((o) => {
+        if (!o.isMesh) return;
+        swapped.push(o, o.material); o.material = this.maskFor(o.material);
+        if (o.instanceColor) { tinted.push(o, o.instanceColor); o.instanceColor = null; } // Maske nicht einfärben
+      });
       try { renderer.render(scene, this.camera); } finally {
         for (let i = 0; i < swapped.length; i += 2) swapped[i].material = swapped[i + 1];
+        for (let i = 0; i < tinted.length; i += 2) tinted[i].instanceColor = tinted[i + 1];
         scene.background = bg; scene.fog = fog;
         renderer.autoClear = ac;
         renderer.setClearColor(this.originalClearColor, ca);
