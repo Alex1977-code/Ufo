@@ -253,7 +253,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
   let ended = false, finished = false;
   let overlay = null;
   let pmremRT = null;
-  const view = { scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(55, 1, 0.1, 6000), update: null, onResize: null };
+  const view = { scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(55, 1, 0.1, 6000), update: null, onResize: null, tsrHistory: 2 }; // schnelle Kamera: kurze Bild-Historie gegen Nachzieh-Effekte
   const { scene, camera } = view;
 
   // Zustand
