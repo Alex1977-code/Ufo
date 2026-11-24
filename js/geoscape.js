@@ -2,8 +2,9 @@
 import * as THREE from 'three';
 import { NOISE_GLSL } from './shaders.js';
 import { Game, newSoldier } from './game.js';
-import { UFOS, CRAFTS, RESEARCH, FACILITIES, WEAPONS, ARMORS, GRENADES, RANKS, REGIONS, regionOf, CITY_NAMES } from './data.js';
+import { UFOS, CRAFTS, RESEARCH, FACILITIES, WEAPONS, ARMORS, GRENADES, ITEMS, RANKS, REGIONS, regionOf, CITY_NAMES } from './data.js';
 import { Input, padLabel } from './input.js';
+import { openEquipment, beltTotals, itemEffect } from './equip.js';
 import { modal, toast, confirmBox, alertBox, anyModalOpen, el, bar, banner } from './ui.js';
 import { sfx, setMusicMood } from './audio.js';
 import { clamp, rand, randRange, randInt, choice, latLonToVec, vecToLatLon, angleBetween, slerpStep, fmtDate, fmtMoney, smooth, DEG } from './util.js';
@@ -976,18 +977,23 @@ export class Geoscape {
     const sold = Game.c.soldiers.filter((s) => s.wound <= 0);
     if (!sold.length) { alertBox('Kein Personal', 'Keine einsatzfähigen Soldaten verfügbar. Rekrutiere neue Soldaten in der Basis.'); return; }
     const chosen = new Set(sold.slice(0, 8).map((s) => s.id));
+    const beltIcons = (s) => (s.items || []).map((i) => (ITEMS[i] ? ITEMS[i].icon : '·')).join(' ');
     const render = () => sold.map((s) => `
       <div class="sq-row ${chosen.has(s.id) ? 'on' : ''}">
         <button class="btn sq-tog" data-tog="${s.id}">${chosen.has(s.id) ? '☑' : '☐'}</button>
-        <div class="sq-name"><b>${s.name}</b><small>${RANKS[s.rank]} · Treff ${s.acc} · ZE ${s.tu} · LP ${s.hp + ARMORS[s.armor].hp}</small></div>
-        <button class="btn sq-eq" data-w="${s.id}">◀ ${WEAPONS[s.weapon].short} ▶</button>
-        <button class="btn sq-eq" data-a="${s.id}">${ARMORS[s.armor].name}</button>
-        <button class="btn sq-eq" data-g="${s.id}">💣×${s.grenades}</button>
+        <div class="sq-name"><b>${s.name}</b><small>${RANKS[s.rank]} · Treff ${s.acc} · ZE ${s.tu} · LP ${s.hp + ARMORS[s.armor].hp}</small>
+          <small class="sq-sum">${WEAPONS[s.weapon].short} · ${ARMORS[s.armor].name} · ${beltIcons(s)}</small></div>
       </div>`).join('');
+    const reopen = () => this.squadSelect(site);
     const h = modal({
       title: `Einsatztrupp – ${site.name}`, wide: true,
-      html: `<p class="muted">Bis zu 8 Soldaten. Tippe auf Waffe/Rüstung/Granaten, um die Ausrüstung zu wechseln.</p><div id="sq-list" class="sq-list">${render()}</div><p id="sq-info" class="muted"></p>`,
-      buttons: [{ label: 'Abbrechen' }, { label: 'Start!', primary: true, action: () => {
+      html: `<p class="muted">Bis zu 8 Soldaten. Ausrüstung über „⚙ Ausrüstung“ anpassen.</p><div id="sq-list" class="sq-list">${render()}</div><p id="sq-info" class="muted"></p>`,
+      buttons: [{ label: 'Abbrechen' }, { label: '⚙ Ausrüstung', close: false, action: (hh) => {
+        if (!chosen.size) { toast('Wähle mindestens einen Soldaten.', 'warn'); return; }
+        const team = sold.filter((s) => chosen.has(s.id));
+        hh.close();
+        openEquipment({ soldiers: team, onDone: reopen });
+      } }, { label: 'Start!', primary: true, action: () => {
         if (!chosen.size) { toast('Wähle mindestens einen Soldaten.', 'warn'); return false; }
         const t = Game.c.transport;
         t.status = 'out'; t.target = site.id; t.pos = { ...this.baseVec }; t.squad = [...chosen];
@@ -995,37 +1001,17 @@ export class Geoscape {
       } }],
     });
     const list = h.el.querySelector('#sq-list');
-    const grenadeStock = () => (Game.c.stock.frag || 0) + (Game.grenadeAvailable('alien') ? Game.c.stock.alien || 0 : 0);
     const info = () => {
-      const g = [...chosen].reduce((a, id) => a + Game.c.soldiers.find((x) => x.id === id).grenades, 0);
-      h.el.querySelector('#sq-info').textContent = `Granaten im Trupp: ${g} / Lager: ${grenadeStock()}${Game.cheats.allGear ? ' (Cheat: unbegrenzt)' : g > grenadeStock() ? ' – nicht genug, wird gekürzt' : ''}`;
+      const tot = beltTotals(sold.filter((s) => chosen.has(s.id)));
+      const parts = Object.keys(ITEMS).filter((k) => tot[k] || Game.c.stock[k]).map((k) => `${ITEMS[k].icon} ${tot[k] || 0}/${Game.c.stock[k] || 0}`);
+      h.el.querySelector('#sq-info').textContent = `Verbrauchsgüter Trupp/Lager: ${parts.join('  ') || '–'}${Game.cheats.allGear ? ' (Cheat: unbegrenzt)' : ''}`;
     };
-    const cycle = (arr, cur) => arr[(arr.indexOf(cur) + 1) % arr.length];
-    const owned = (id, field) => Game.c.soldiers.filter((x) => x[field] === id).length;
     list.addEventListener('click', (e) => {
-      const b = e.target.closest('button'); if (!b) return;
+      const b = e.target.closest('button'); if (!b || !b.dataset.tog) return;
       sfx('click');
-      const focusKey = Object.keys(b.dataset)[0], focusVal = b.dataset[focusKey];
-      const s = (id) => Game.c.soldiers.find((x) => x.id === id);
-      if (b.dataset.tog) { const id = b.dataset.tog; if (chosen.has(id)) chosen.delete(id); else if (chosen.size < 8) chosen.add(id); }
-      if (b.dataset.w) {
-        const so = s(b.dataset.w);
-        const opts = Object.keys(WEAPONS).filter((w) => Game.weaponAvailable(w) && (w === 'rifle' || w === so.weapon || owned(w, 'weapon') < (Game.c.stock[w] || 0) || Game.cheats.allGear));
-        so.weapon = cycle(opts, so.weapon);
-      }
-      if (b.dataset.a) {
-        const so = s(b.dataset.a);
-        const opts = Object.keys(ARMORS).filter((a) => Game.armorAvailable(a) && (a === 'none' || a === so.armor || owned(a, 'armor') < (Game.c.stock[a] || 0) || Game.cheats.allGear));
-        so.armor = cycle(opts, so.armor);
-      }
-      if (b.dataset.g) {
-        const so = s(b.dataset.g);
-        const others = [...chosen].filter((id) => id !== so.id).reduce((a, id) => a + s(id).grenades, 0);
-        const room = Game.cheats.allGear ? 3 : Math.max(0, Math.min(3, grenadeStock() - others));
-        so.grenades = so.grenades >= room ? 0 : so.grenades + 1;
-      }
+      const id = b.dataset.tog; if (chosen.has(id)) chosen.delete(id); else if (chosen.size < 8) chosen.add(id);
       list.innerHTML = render();
-      list.querySelector(`[data-${focusKey}="${focusVal}"]`)?.focus();
+      list.querySelector(`[data-tog="${id}"]`)?.focus();
       info();
     });
     info();
@@ -1178,7 +1164,7 @@ export class Geoscape {
       title: '☗ Soldaten', wide: true,
       html: `<table class="tbl sold"><tr><th>Name</th><th>Rang</th><th>ZE</th><th>LP</th><th>Treff</th><th>Reakt</th><th>Kills</th><th>Status</th></tr>
         ${c.soldiers.map((s) => `<tr><td>${s.name}</td><td>${RANKS[s.rank]}</td><td>${s.tu}</td><td>${s.hp}</td><td>${s.acc}</td><td>${s.react}</td><td>${s.kills}</td><td>${s.wound > 0 ? `<span class="bad">verwundet (${Math.ceil(s.wound)} T)</span>` : '<span class="good">bereit</span>'}</td></tr>`).join('')}</table>`,
-      buttons: [{ label: 'Schließen', primary: true }],
+      buttons: [{ label: '⚙ Ausrüstung', close: false, action: (hh) => { hh.close(); openEquipment({ soldiers: c.soldiers, onDone: () => this.soldierMenu() }); } }, { label: 'Schließen', primary: true }],
     });
   }
 
@@ -1187,12 +1173,13 @@ export class Geoscape {
     const items = [
       ...Object.entries(WEAPONS).filter(([k, w]) => w.cost && Game.weaponAvailable(k)).map(([k, w]) => ({ k, name: w.name, cost: w.cost, info: `Schaden ${w.dmg}` })),
       ...Object.entries(ARMORS).filter(([k, a]) => a.cost && Game.armorAvailable(k)).map(([k, a]) => ({ k, name: a.name, cost: a.cost, info: `Panzerung ${a.armor}` })),
-      ...Object.entries(GRENADES).filter(([k]) => Game.grenadeAvailable(k)).map(([k, g]) => ({ k, name: g.name, cost: g.cost, info: `Schaden ${g.dmg}` })),
     ];
+    const cons = Object.entries(ITEMS).filter(([k]) => Game.itemAvailable(k));
     const crafts = Object.entries(CRAFTS).filter(([, cr]) => !cr.req || Game.has(cr.req));
     const h = modal({
       title: '⚙ Beschaffung', wide: true,
       html: `<p>Budget: <b>${fmtMoney(c.credits)}</b></p><div class="shop">${items.map((i) => `<button class="btn shop-item" data-buy="${i.k}"><b>${i.name}</b><small>${i.info} · Lager: ${c.stock[i.k] || 0}</small><i>${fmtMoney(i.cost)}</i></button>`).join('')}</div>
+        <h4>Verbrauchsgüter</h4><div class="shop">${cons.map(([k, it]) => `<div class="shop-pair"><span><b>${it.icon} ${it.name}</b><br><small class="muted">${itemEffect(it)} · Lager: ${c.stock[k] || 0}</small></span><button class="btn" data-buy="${k}" data-n="1">+1 · ${fmtMoney(it.cost)}</button><button class="btn" data-buy="${k}" data-n="5">+5 · ${fmtMoney(it.cost * 5)}</button></div>`).join('')}</div>
         <h4>Abfangjäger</h4><div class="shop">${crafts.map(([k, cr]) => `<button class="btn shop-item" data-craft="${k}" ${c.crafts.length >= c.facilities.hangar + 1 ? 'disabled' : ''}><b>${cr.name}</b><small>Hülle ${cr.hp} · Schaden ${cr.dmg}</small><i>${fmtMoney(cr.cost)}</i></button>`).join('')}</div>
         <p class="muted">Hangarplätze: ${c.crafts.length}/${c.facilities.hangar + 1}</p>`,
       buttons: [{ label: 'Schließen', primary: true }],
@@ -1200,10 +1187,11 @@ export class Geoscape {
     h.el.addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
       const k = b.dataset.buy || b.dataset.craft; if (!k) return;
-      const cost = b.dataset.buy ? items.find((i) => i.k === k).cost : CRAFTS[k].cost;
+      const n = +(b.dataset.n || 1);
+      const cost = b.dataset.buy ? (ITEMS[k] ? ITEMS[k].cost * n : items.find((i) => i.k === k).cost) : CRAFTS[k].cost;
       if (c.credits < cost) { sfx('deny'); toast('Nicht genug Budget.', 'warn'); return; }
       c.credits -= cost; sfx('select');
-      if (b.dataset.buy) c.stock[k] = (c.stock[k] || 0) + 1;
+      if (b.dataset.buy) c.stock[k] = (c.stock[k] || 0) + n;
       else { const n = c.crafts.filter((x) => x.type === k).length + 1; c.crafts.push({ id: 'c' + Math.floor(rand() * 1e9).toString(36), type: k, name: `${CRAFTS[k].name}-${n}`, hp: CRAFTS[k].hp, status: 'ready' }); }
       h.close(); this.shopMenu(); this.updateHud();
     });

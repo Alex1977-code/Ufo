@@ -3,7 +3,7 @@ const CACHE = 'aegis-v2';
 const ASSETS = [
   './', './index.html', './css/style.css', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
   './js/main.js', './js/engine.js', './js/util.js', './js/data.js', './js/input.js', './js/ui.js', './js/audio.js', './js/game.js',
-  './js/geoscape.js', './js/shaders.js', './js/tacmap.js', './js/tactical.js', './js/models.js', './js/cheats.js', './js/cast.js',
+  './js/geoscape.js', './js/shaders.js', './js/tacmap.js', './js/tactical.js', './js/models.js', './js/cheats.js', './js/equip.js', './js/cast.js',
   './vendor/three/three.module.min.js',
   './vendor/three/addons/postprocessing/EffectComposer.js', './vendor/three/addons/postprocessing/RenderPass.js',
   './vendor/three/addons/postprocessing/ShaderPass.js', './vendor/three/addons/postprocessing/UnrealBloomPass.js',

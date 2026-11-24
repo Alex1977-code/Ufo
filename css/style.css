@@ -265,3 +265,34 @@ body[data-mode="geo"] #fps { top: auto; bottom: calc(90px + var(--safe-b)); }
   .rc-right { grid-template-columns: repeat(3, 18vw); grid-template-rows: repeat(3, 18vw); }
   .rc-mid { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ---- Ausrüstungsdialog (T3) ---- */
+.eq { display: grid; grid-template-columns: minmax(200px, 1fr) 2fr; gap: 10px; min-height: 0; }
+.eq-list { display: flex; flex-direction: column; gap: 4px; max-height: 60vh; overflow-y: auto; }
+.eq-sold { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 0.35em 0.6em; }
+.eq-sold small, .eq-slot small, .eq-head small, .eq-opt small { display: block; color: var(--muted); font-weight: 500; font-size: 0.8em; }
+.eq-sold.on, .eq-opt.on { border-color: var(--accent); background: linear-gradient(180deg, rgba(40, 130, 170, 0.6), rgba(15, 50, 80, 0.7)); }
+.eq-sold.hurt { opacity: 0.45; }
+.eq-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.eq-head > div { text-align: center; font-size: 1.15em; }
+.eq-stats { color: var(--muted); margin: 6px 0 8px; text-align: center; }
+.eq-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.eq-slot { display: flex; flex-direction: column; align-items: flex-start; text-align: left; padding: 0.5em 0.7em; min-height: 64px; }
+.eq-slot em { font-style: normal; font-size: 0.8em; color: var(--accent2); }
+.eq-slot b { font-size: 1.05em; }
+.eq-opts { display: flex; flex-direction: column; gap: 5px; }
+.eq-opt { display: flex; align-items: center; gap: 10px; text-align: left; }
+.eq-opt:disabled { opacity: 0.4; }
+.eq-ico { font-size: 1.5em; width: 1.4em; text-align: center; }
+.eq-txt { flex: 1; } .eq-stk { font-size: 0.85em; color: var(--accent2); white-space: nowrap; }
+.eq-stk.bad { color: var(--bad); }
+.sq-sum { font-size: 0.85em; color: var(--muted); display: block; }
+.shop-item .shop-btns { display: flex; gap: 6px; margin-top: 4px; }
+.shop-pair { display: flex; flex-direction: column; gap: 4px; }
+.shop-pair .btn { text-align: left; }
+@media (max-width: 640px) {
+  .eq { grid-template-columns: 1fr; }
+  .eq-list { flex-direction: row; max-height: none; overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
+  .eq-sold { flex: 0 0 auto; }
+  .eq-slots { grid-template-columns: 1fr; }
+}
