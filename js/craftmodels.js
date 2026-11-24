@@ -507,11 +507,13 @@ function engineGlowGeo(r, len) {
   return merge([ni(disc, true), ni(cone, true), ni(cone2, true)], true);
 }
 function lightsBundle(parent, list, o, sep = o.hi) {
-  // list: [{p:[x,y,z], color, kind, phase, r}]
+  // list: [{p:[x,y,z], color, kind, phase, r}] – Dauerlichter ('nav') teilen sich ein Mesh
   const out = [];
   if (sep) {
-    const geoCache = new Map();
+    const geoCache = new Map(), nav = list.filter((L) => L.kind === 'nav');
+    if (nav.length) { out.push(...lightsBundle(parent, nav, o, false)); out[out.length - 1].kind = 'nav'; }
     for (const L of list) {
+      if (L.kind === 'nav') continue;
       const r = L.r || 0.07; if (!geoCache.has(r)) geoCache.set(r, new THREE.SphereGeometry(r, 10, 8));
       const m = new THREE.Mesh(geoCache.get(r).clone(), lightMat(L.color, L.k || 3)); m.position.set(...L.p); parent.add(m);
       out.push({ object: m, color: new THREE.Color(L.color).multiplyScalar(L.k || 3), kind: L.kind, phase: L.phase || 0 });
@@ -542,8 +544,8 @@ function decalTex(code, ink, low = false) {
     c.clearRect(0, 0, w, h);
     const put = (mask, cx, cy, hh) => { const t = tint(mask, css(ink)); const s = hh / t.height; c.drawImage(t, cx - t.width * s / 2, cy - t.height * s / 2, t.width * s, t.height * s); };
     put(textMask(code, 150, R, 0.4), 256, 128, 200); // obere Hälfte: Kennung
-    put(textMask('AEGIS', 90, R, 0.5), 300, 384, 110); // unten: Schriftzug + Abzeichen
-    const cx = 92, cy = 384, r = 62;
+    put(textMask('AEGIS', 90, R, 0.5), 335, 384, 105); // unten: Schriftzug + Abzeichen
+    const cx = 74, cy = 384, r = 58;
     c.fillStyle = low ? 'rgba(70,78,88,0.9)' : 'rgba(26,40,66,0.95)'; c.beginPath(); c.arc(cx, cy, r, 0, TAU); c.fill();
     c.strokeStyle = low ? 'rgba(130,136,142,0.9)' : 'rgba(210,212,215,0.95)'; c.lineWidth = 7; c.beginPath(); c.arc(cx, cy, r - 6, 0, TAU); c.stroke();
     c.fillStyle = low ? 'rgba(100,106,112,0.95)' : 'rgba(178,184,190,0.95)'; c.beginPath();
@@ -798,11 +800,11 @@ export function makeInterceptor(type = 'falcon', opts = {}) {
     const pts = []; for (let z = J.canopy[1][0]; z <= J.canopy[J.canopy.length - 1][0]; z += 0.2) pts.push(V3(sx * cAt(z)[1] * 1.01, cAt(z)[4] + 0.01, z));
     kit.add('hull', new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.04, 6));
   }
-  const cs = stationAt(J.fus, J.seat), sy = cs[4] + cs[2] - 0.2;
-  kit.add('trim', box(0.5, 0.75, 0.45), M4(0, sy + 0.3, J.seat + 0.35, 0.18));
-  kit.add('trim', box(0.36, 0.3, 0.2), M4(0, sy + 0.78, J.seat + 0.5, 0.1));
-  kit.add('trim', box(0.7, 0.18, 0.4), M4(0, sy + 0.22, J.seat - 0.75));
-  kit.add('trim', box(0.2, 0.2, 0.02), M4(0, sy + 0.42, J.seat - 0.85, -0.5));
+  const cs = stationAt(J.fus, J.seat), sy = cs[4] + cs[2];
+  kit.add('trim', box(0.46, 0.62, 0.4), M4(0, sy - 0.2, J.seat + 0.35, 0.18));
+  kit.add('trim', box(0.3, 0.22, 0.18), M4(0, sy + 0.18, J.seat + 0.47, 0.12));
+  kit.add('trim', box(0.62, 0.14, 0.36), M4(0, sy - 0.02, J.seat - 0.78));
+  kit.add('trim', box(0.18, 0.16, 0.02), M4(0, sy + 0.1, J.seat - 0.88, -0.5));
   // Düsen (Konvergent-Divergent, Stellklappen) + Glühen
   const engines = [];
   const nozProf = [[0.72, 0], [1.0, 0], [0.98, 0.35], [0.9, 1.0], [0.83, 1.02], [0.76, 0.62], [0.72, 0.3]];
@@ -836,12 +838,12 @@ export function makeInterceptor(type = 'falcon', opts = {}) {
     kit.add('trim', box(0.06, 0.4, 0.06), M4(0, nyw + 0.35, G.nose.z + 0.12, 0.4));
     for (const dx of [-0.11, 0.11]) wheel(dx, nyw, G.nose.z, G.nose.r, 0.14);
     for (const sx of [-1, 1]) {
-      kit.add('hull', box(0.03, 0.5, 1.2), M4(sx * 0.26, ny0 - 0.22, G.nose.z - 0.05));
+      kit.add('hull', box(0.025, 0.3, 0.85), M4(sx * 0.2, ny0 - 0.14, G.nose.z - 0.05));
       const mx = sx * G.main.x, m0 = stationAt(J.fus, G.main.z), my0 = m0[4] - m0[3] * 0.7, myw = gY + G.main.r;
       kit.add('trim', new THREE.CylinderGeometry(0.07, 0.08, my0 - myw, 8), M4(mx, (my0 + myw) / 2, G.main.z, 0, 0, -sx * 0.08));
       kit.add('trim', box(0.06, 0.6, 0.06), M4(mx - sx * 0.12, my0 - 0.4, G.main.z - 0.3, 0.5, 0, sx * 0.4));
       wheel(mx + sx * 0.05, myw, G.main.z, G.main.r, 0.24);
-      kit.add('hull', box(0.03, 0.62, 1.5), M4(sx * (G.main.x + 0.32), my0 - 0.22, G.main.z, 0, 0, sx * 0.25));
+      kit.add('hull', box(0.025, 0.42, 1.1), M4(sx * (G.main.x + 0.28), my0 - 0.16, G.main.z, 0, 0, sx * 0.25));
     }
     groundY = gY;
   }
@@ -1076,7 +1078,7 @@ export function makeTransport(opts = {}) {
   const trim = surfMat(tex, o, { color: 0x2f3330 });
   mk(g, kit.geo('hull'), hull, o, L);
   mk(g, kit.geo('trim'), trim, o, L);
-  mk(g, kit.geo('glass'), glassMat(o, 0x758a8c, 0x9ab0a0), o, null, null, false);
+  mk(g, kit.geo('glass'), glassMat({ ...o, transmission: false }), o, null, null, false); // keine Innenausstattung → ohne Transmission
   // Rampe
   const ramp = new THREE.Group(); ramp.position.set(0, y0, rz0); ramp.rotation.x = -ra; g.add(ramp);
   const rampUV = new THREE.Matrix4().compose(V3(0, y0, rz0), new THREE.Quaternion().setFromEuler(new THREE.Euler(-ra, 0, 0)), V3(1, 1, 1));
@@ -1244,11 +1246,11 @@ function paintUfo(P, U, L) {
     const n = r === bot ? 600 : 1600, pits = [], rims = [];
     for (let i = 0; i < n; i++) {
       let a, b; if (r === band) { a = R() * C; b = rr(band.bl, band.bh); } else { const ang = R() * TAU, d = Math.sqrt(R()) * Rad; a = Math.cos(ang) * d; b = Math.sin(ang) * d; }
-      const rad = (R() ** 3 * 0.05 + 0.008) * s;
-      pits.push([a, b, rad]); if (rad > 0.025 * s) rims.push([a, b, rad * 1.6]);
+      const rad = (R() ** 6 * 0.05 + 0.006) * s;
+      pits.push([a, b, rad]); if (rad > 0.03 * s) rims.push([a, b, rad * 1.5]);
     }
-    P.dots(rims, { H: [170, 1], A: [190, 196, 205, 0.25] });
-    P.dots(pits, { H: [70, 1], A: [30, 30, 34, 0.55], R: [170, 0.6], O: [150, 0.6] });
+    P.dots(rims, { H: [150, 1], A: [190, 196, 205, 0.18] });
+    P.dots(pits, { H: [96, 1], A: [30, 30, 34, 0.45], R: [170, 0.5], O: [170, 0.5] });
   }
   // 5) Eingebrannte Plasmaspuren
   for (const r of [top, band, bot]) {
@@ -1336,7 +1338,7 @@ export function makeUfo(type = 'scout', opts = {}) {
   if (!hi) for (const gg of wk.parts.get('t') || []) kit.add('trim', gg);
   mk(g, kit.geo('hull'), hull, o, L);
   mk(g, kit.geo('trim'), trim, o, L);
-  const domeM = new (hi ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial)({ color: 0x0a1418, metalness: 0.3, roughness: 0.05, emissive: accent.clone().multiplyScalar(0.22), ...(hi ? { clearcoat: 1, clearcoatRoughness: 0.03, iridescence: 0.5, iridescenceIOR: 1.4 } : {}) });
+  const domeM = new (hi ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial)({ color: 0x070b0e, metalness: 0.5, roughness: 0.06, emissive: accent.clone().multiplyScalar(0.05), ...(hi ? { clearcoat: 1, clearcoatRoughness: 0.03, iridescence: 0.5, iridescenceIOR: 1.4 } : {}) });
   mk(g, kit.geo('dome'), domeM, o, null, null, false);
   // Leuchtring im Randfalz (segmentiert → Rotation sichtbar)
   const rk = new Kit(), nSeg = hi ? 36 : 18;

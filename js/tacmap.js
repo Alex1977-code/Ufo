@@ -230,7 +230,7 @@ function genRural(map, at, setWall, biome) {
   // umgestürzte Baumstämme im Wald (halbe Deckung)
   if (biome === 'forest') for (let k = 0; k < 9; k++) { const x = randInt(0, W - 1), y = randInt(0, H - 7); if (freeOut(at, x, y)) { setWall(x, y, 'log'); at(x, y).wall.vert = rand() < 0.5; } }
   // Deko je Biom (ohne Kollision)
-  const decoN = { farm: { flowers: 26, mailbox: 2, bush: 10 }, forest: { bush: 45, fern: 60, mushroom: 30, stump: 10 }, desert: { cactus: 20, drybush: 30, bones: 4 }, arctic: { drift: 30, ice: 18 } }[biome] || {};
+  const decoN = { farm: { flowers: 26, mailbox: 2, bush: 10 }, forest: { bush: 45, fern: 60, mushroom: 30, stump: 10 }, desert: { cactus: 20, drybush: 30, pebbles: 14 }, arctic: { drift: 30, ice: 18 } }[biome] || {};
   for (const [t, n] of Object.entries(decoN)) for (let k = 0; k < n; k++) {
     const x = randInt(0, W - 1), y = randInt(0, H - 1);
     if (!freeOut(at, x, y)) continue;
