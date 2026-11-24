@@ -22,14 +22,22 @@ export const WALLS = {
   console: { full: false, move: true, hp: 100, h: 1.2, cover: 1 },
   reactor: { full: false, move: true, hp: 250, h: 1.6, cover: 1 },
   pod: { full: false, move: true, hp: 60, h: 1.5, cover: 1 },
+  log: { full: false, move: true, hp: 60, h: 0.9, cover: 1 },
 };
+
+// Nicht blockierende Deko (nur Optik): Typ, Feld, Versatz im Feld (Welteinheiten), Drehung, Skalierung
+function deco(map, t, x, y, o = {}) {
+  map.deco.push({ t, x, y, ox: o.ox ?? (rand() - 0.5) * 1.2, oz: o.oz ?? (rand() - 0.5) * 1.2, rot: o.rot ?? rand() * Math.PI * 2, s: o.s ?? 0.8 + rand() * 0.45 });
+}
+// Freies Außenfeld für Deko
+const freeOut = (at, x, y) => { const c = at(x, y); return c && !c.wall && !c.indoor && !c.reserved; };
 
 export function generateMap({ biome, ufoType, kind, night }) {
   const sizes = { scout: 30, fighter: 34, freighter: 38, battleship: 42 };
   let W = kind === 'terror' ? 36 : kind === 'hive' ? 36 : sizes[ufoType] || 32;
   const H = W;
   const cells = Array.from({ length: W * H }, () => ({ floor: 'grass', wall: null }));
-  const map = { W, H, biome, night, kind, cells, lz: [], playerSpawns: [], alienSpawns: [], civSpawns: [], ufo: null, props: [], lights: [] };
+  const map = { W, H, biome, night, kind, cells, lz: [], playerSpawns: [], alienSpawns: [], civSpawns: [], ufo: null, props: [], lights: [], buildings: [], deco: [], roads: null };
   const at = (x, y) => (x >= 0 && y >= 0 && x < W && y < H ? cells[y * W + x] : null);
   const setWall = (x, y, type) => { const c = at(x, y); if (c && !c.reserved) c.wall = { type, hp: WALLS[type].hp }; };
   map.at = at;
@@ -84,6 +92,11 @@ export function generateMap({ biome, ufoType, kind, night }) {
     shuffle(free); map.alienSpawns.push(...free.slice(0, 18 - map.alienSpawns.length));
   }
   if (map.boss) map.alienSpawns = map.alienSpawns.filter((s) => s.x !== map.boss.x || s.y !== map.boss.y);
+  // Gebäude, die vom UFO-Landeplatz angeschnitten wurden, bekommen kein Dach/Obergeschoss
+  for (const b of map.buildings) {
+    for (let y = b.y0; y < b.y0 + b.h && !b.ruined; y++) for (let x = b.x0; x < b.x0 + b.w; x++) { const c = at(x, y); if (c.ufo || !c.indoor) { b.ruined = true; break; } }
+  }
+  map.deco = map.deco.filter((d) => { const c = at(d.x, d.y); return c && !c.wall && !c.ufo && !c.indoor && c.floor !== 'burnt'; });
   for (const c of cells) delete c.reserved;
   return map;
 }
@@ -108,35 +121,56 @@ function floodReach(map) {
   return seen;
 }
 
+// Gebäude: Außenwände mit Fenstern, Türen, optionale Innenwand, Möbel an den Wänden.
+// Die Bounding-Box landet in map.buildings (Stil, Dachform, Stockwerke, Türen) für Optik/Dächer.
 function building(map, at, setWall, x0, y0, w, h, opts = {}) {
   const mat = opts.mat || 'brick';
   for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
-    const c = at(x, y); if (!c || c.reserved) return false;
+    const c = at(x, y); if (!c || c.reserved || c.indoor) return false;
   }
+  const bi = map.buildings.length;
+  const b = { x0, y0, w, h, style: opts.style || mat, roof: opts.roof || 'gable', storeys: opts.storeys || 1, doors: [] };
   for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
     const c = at(x, y);
     c.floor = opts.floor || 'wood';
     c.wall = null;
     c.indoor = true;
+    c.bld = bi;
     const edge = x === x0 || y === y0 || x === x0 + w - 1 || y === y0 + h - 1;
     if (edge) { setWall(x, y, rand() < (opts.windows ?? 0.18) && !(x === x0 || x === x0 + w - 1) !== !(y === y0 || y === y0 + h - 1) ? 'window' : mat); if (c.wall) c.wall.vert = x === x0 || x === x0 + w - 1; }
   }
-  // Türen
+  // Türen (Lage wird für Türrahmen gemerkt)
   const sides = shuffle(['n', 's', 'e', 'w']).slice(0, randInt(1, 3));
+  const door = (x, y, side) => { at(x, y).wall = null; at(x, y).door = true; b.doors.push({ x, y, side }); };
   for (const s of sides) {
-    if (s === 'n' || s === 's') { const dx = randInt(x0 + 1, x0 + w - 2); const y = s === 'n' ? y0 : y0 + h - 1; at(dx, y).wall = null; if (w > 5 && rand() < 0.5) at(Math.min(dx + 1, x0 + w - 2), y).wall = null; }
-    else { const dy = randInt(y0 + 1, y0 + h - 2); const x = s === 'w' ? x0 : x0 + w - 1; at(x, dy).wall = null; }
+    if (s === 'n' || s === 's') { const dx = randInt(x0 + 1, x0 + w - 2); const y = s === 'n' ? y0 : y0 + h - 1; door(dx, y, s); if (w > 5 && rand() < 0.5) { const dx2 = Math.min(dx + 1, x0 + w - 2); if (dx2 !== dx) door(dx2, y, s); } }
+    else { const dy = randInt(y0 + 1, y0 + h - 2); const x = s === 'w' ? x0 : x0 + w - 1; door(x, dy, s); }
   }
   // Innenwand
+  const keep = new Set();
+  for (const d of b.doors) { const n = { n: [0, 1], s: [0, -1], w: [1, 0], e: [-1, 0] }[d.side]; keep.add((d.y + n[1]) * map.W + d.x + n[0]); }
   if (w >= 7 && rand() < 0.7) {
-    const ix = randInt(x0 + 3, x0 + w - 4); const door = randInt(y0 + 1, y0 + h - 2);
-    for (let y = y0 + 1; y < y0 + h - 1; y++) if (y !== door) setWall(ix, y, mat);
+    const ix = randInt(x0 + 3, x0 + w - 4); const dy = randInt(y0 + 1, y0 + h - 2);
+    for (let y = y0 + 1; y < y0 + h - 1; y++) if (y !== dy) setWall(ix, y, mat);
+    keep.add(dy * map.W + ix - 1); keep.add(dy * map.W + ix + 1);
   }
-  // Möbel/Kisten
-  for (let k = 0; k < Math.floor(w * h / 14); k++) {
-    const x = randInt(x0 + 1, x0 + w - 2), y = randInt(y0 + 1, y0 + h - 2);
-    if (!at(x, y).wall && rand() < 0.6) setWall(x, y, 'crate');
+  // Möbel (Deckung wie Kisten) bevorzugt an den Wänden, Türbereiche bleiben frei
+  const cand = [];
+  for (let y = y0 + 1; y < y0 + h - 1; y++) for (let x = x0 + 1; x < x0 + w - 1; x++) {
+    if (at(x, y).wall || keep.has(y * map.W + x)) continue;
+    const nb = [[0, -1, 0], [0, 1, Math.PI], [-1, 0, Math.PI / 2], [1, 0, -Math.PI / 2]].filter(([dx, dy]) => { const t = at(x + dx, y + dy)?.wall?.type; return t && t !== 'crate'; });
+    if (nb.length) cand.push({ x, y, rot: choice(nb)[2] });
   }
+  shuffle(cand);
+  let nf = Math.max(1, Math.floor(w * h / 13));
+  for (const p of cand) {
+    if (nf <= 0) break;
+    let near = false;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (at(p.x + dx, p.y + dy)?.wall?.type === 'crate') near = true;
+    if (near || rand() < 0.25) continue;
+    setWall(p.x, p.y, 'crate'); at(p.x, p.y).wall.furn = true; at(p.x, p.y).wall.rot = p.rot; nf--;
+  }
+  map.buildings.push(b);
   return true;
 }
 
@@ -157,7 +191,10 @@ function genRural(map, at, setWall, biome) {
   const mat = { farm: choice(['brick', 'wood']), forest: 'wood', desert: 'brick', arctic: 'metal' }[biome];
   for (let k = 0, tries = 0; k < nb && tries < 60; tries++) {
     const w = randInt(5, 9), h = randInt(5, 8);
-    if (building(map, at, setWall, randInt(1, W - w - 1), randInt(1, H - h - 6), w, h, { mat: mat === 'metal' ? 'brick' : mat, floor: biome === 'desert' ? 'tile' : 'wood' })) k++;
+    // Fassadenstil je Biom: Bauernhof Ziegel/Putz bzw. Holzscheune, Wald Blockhaus, Wüste Lehm (Flachdach), Arktis Fertigbau
+    const m2 = biome === 'farm' && k > 0 ? choice(['brick', 'wood']) : mat;
+    const style = { farm: m2 === 'wood' ? 'wood' : choice(['brick', 'plaster']), forest: 'log', desert: 'adobe', arctic: 'prefab' }[biome];
+    if (building(map, at, setWall, randInt(1, W - w - 1), randInt(1, H - h - 6), w, h, { mat: m2 === 'metal' ? 'brick' : m2, style, roof: biome === 'desert' ? 'flat' : 'gable', floor: biome === 'desert' ? 'tile' : 'wood' })) k++;
   }
   // Zäune / Hecken
   const fenceN = biome === 'farm' ? randInt(4, 7) : biome === 'forest' ? 2 : 1;
@@ -183,6 +220,27 @@ function genRural(map, at, setWall, biome) {
     if (!c.wall && !c.indoor && !c.reserved) setWall(x, y, rand() < 0.25 ? 'bigrock' : 'rock');
   }
   if (biome === 'farm') for (let k = 0; k < 10; k++) { const x = randInt(0, W - 1), y = randInt(0, H - 1), c = at(x, y); if (!c.wall && !c.indoor && !c.reserved) setWall(x, y, 'hay'); }
+  // Fahrzeuge (Deckung wie Autos): Traktor auf dem Feld, Pick-up am Haus
+  const vehicles = biome === 'farm' ? ['tractor', 'pickup'] : biome === 'forest' ? ['pickup'] : biome === 'desert' ? ['pickup', 'burnt'] : ['suv'];
+  for (const v of vehicles) for (let t = 0; t < 40; t++) {
+    const x = randInt(1, W - 2), y = randInt(1, H - 7), c = at(x, y);
+    if (!freeOut(at, x, y) || [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => at(x + dx, y + dy)?.wall)) continue;
+    setWall(x, y, 'car'); c.wall.variant = v; c.wall.vert = rand() < 0.5; break;
+  }
+  // umgestürzte Baumstämme im Wald (halbe Deckung)
+  if (biome === 'forest') for (let k = 0; k < 9; k++) { const x = randInt(0, W - 1), y = randInt(0, H - 7); if (freeOut(at, x, y)) { setWall(x, y, 'log'); at(x, y).wall.vert = rand() < 0.5; } }
+  // Deko je Biom (ohne Kollision)
+  const decoN = { farm: { flowers: 26, mailbox: 2, bush: 10 }, forest: { bush: 45, fern: 60, mushroom: 30, stump: 10 }, desert: { cactus: 20, drybush: 30, bones: 4 }, arctic: { drift: 30, ice: 18 } }[biome] || {};
+  for (const [t, n] of Object.entries(decoN)) for (let k = 0; k < n; k++) {
+    const x = randInt(0, W - 1), y = randInt(0, H - 1);
+    if (!freeOut(at, x, y)) continue;
+    if (t === 'flowers') { // Blumen bevorzugt an Hauswänden
+      const b = map.buildings.length ? choice(map.buildings) : null;
+      if (b) { const side = randInt(0, 3); const fx = side < 2 ? randInt(b.x0, b.x0 + b.w - 1) : side === 2 ? b.x0 - 1 : b.x0 + b.w; const fy = side >= 2 ? randInt(b.y0, b.y0 + b.h - 1) : side === 0 ? b.y0 - 1 : b.y0 + b.h; if (freeOut(at, fx, fy)) deco(map, t, fx, fy); continue; }
+    }
+    if (t === 'mailbox') { const b = map.buildings[k % Math.max(1, map.buildings.length)]; if (b) { const d = b.doors[0]; if (d) { const n = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] }[d.side]; const mx = d.x + n[0] * 2 + n[1], my = d.y + n[1] * 2 + n[0]; if (freeOut(at, mx, my)) deco(map, t, mx, my, { s: 1, rot: Math.atan2(-n[0], -n[1]) }); } } continue; }
+    deco(map, t, x, y, t === 'cactus' ? { ox: (rand() < 0.5 ? -1 : 1) * 0.6, oz: (rand() < 0.5 ? -1 : 1) * 0.6 } : {});
+  }
   // Alien-Spawns verstreut im Norden
   for (let k = 0; k < 30; k++) map.alienSpawns.push({ x: randInt(0, W - 1), y: randInt(0, Math.floor(H * 0.55)) });
 }
@@ -277,29 +335,78 @@ function genUrban(map, at, setWall) {
   const roadsX = [], roadsY = [];
   for (let x = 4; x < W - 3; x += randInt(11, 14)) roadsX.push(x);
   for (let y = 3; y < H - 6; y += randInt(10, 13)) roadsY.push(y);
-  const isRoad = (x, y) => roadsX.some((r) => x >= r && x < r + 3) || roadsY.some((r) => y >= r && y < r + 3);
-  const isWalk = (x, y) => !isRoad(x, y) && (roadsX.some((r) => x === r - 1 || x === r + 3) || roadsY.some((r) => y === r - 1 || y === r + 3));
+  map.roads = { xs: roadsX, ys: roadsY };
+  const inRX = (x) => roadsX.some((r) => x >= r && x < r + 3), inRY = (y) => roadsY.some((r) => y >= r && y < r + 3);
+  const walkX = (x) => roadsX.some((r) => x === r - 1 || x === r + 3), walkY = (y) => roadsY.some((r) => y === r - 1 || y === r + 3);
+  const isRoad = (x, y) => inRX(x) || inRY(y);
+  const isWalk = (x, y) => !isRoad(x, y) && (walkX(x) || walkY(y));
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const c = at(x, y);
     if (c.reserved) { c.floor = 'asphalt'; continue; }
     c.floor = isRoad(x, y) ? 'asphalt' : isWalk(x, y) ? 'sidewalk' : 'tile';
   }
-  // Gebäude in Blocks
-  for (let k = 0, t = 0; k < 9 && t < 120; t++) {
-    const w = randInt(5, 10), h = randInt(5, 9);
-    const x0 = randInt(0, W - w), y0 = randInt(0, H - h - 5);
-    let ok = true;
-    for (let y = y0 - 1; y <= y0 + h && ok; y++) for (let x = x0 - 1; x <= x0 + w && ok; x++) { if (isRoad(x, y) || isWalk(x, y) || at(x, y)?.indoor) ok = false; }
-    if (ok && building(map, at, setWall, x0, y0, w, h, { mat: 'brick', floor: 'tile', windows: 0.35 })) k++;
+  // Gebäude füllen die Häuserblöcke zwischen den Gehwegen (große Blöcke: zwei Häuser mit Gasse)
+  const runs = (n, bad) => { const out = []; let s0 = -1; for (let i = 0; i <= n; i++) { const b = i === n || bad(i); if (!b && s0 < 0) s0 = i; if (b && s0 >= 0) { out.push([s0, i - 1]); s0 = -1; } } return out; };
+  const cols = runs(W, (x) => inRX(x) || walkX(x)), rows = runs(H, (y) => inRY(y) || walkY(y));
+  const blocks = [];
+  for (const [bx0, bx1] of cols) for (const [by0, by1] of rows) {
+    const lx = bx1 - bx0 + 1, ly = by1 - by0 + 1;
+    if (lx >= 12) { const sp = randInt(5, lx - 6); blocks.push([bx0, by0, bx0 + sp - 1, by1], [bx0 + sp + 1, by0, bx1, by1]); }
+    else if (ly >= 12) { const sp = randInt(5, ly - 6); blocks.push([bx0, by0, bx1, by0 + sp - 1], [bx0, by0 + sp + 1, bx1, by1]); }
+    else blocks.push([bx0, by0, bx1, by1]);
   }
-  // Autos & Barrieren
-  for (let k = 0; k < 16; k++) {
-    const x = randInt(0, W - 1), y = randInt(0, H - 1), c = at(x, y);
-    if (c && !c.wall && !c.reserved && c.floor === 'asphalt') setWall(x, y, rand() < 0.7 ? 'car' : 'barrier');
+  shuffle(blocks);
+  let nb = 0;
+  for (const [bx0, by0, bx1, by1] of blocks) {
+    const lx = bx1 - bx0 + 1, ly = by1 - by0 + 1;
+    if (lx < 5 || ly < 5 || nb >= 11) continue;
+    for (let t = 0; t < 10; t++) {
+      const w = randInt(5, Math.min(lx, 10)), h = randInt(5, Math.min(ly, 9));
+      const x0 = randInt(bx0, bx1 - w + 1), y0 = randInt(by0, by1 - h + 1);
+      const style = choice(['brick', 'brick', 'concrete', 'plaster']);
+      if (building(map, at, setWall, x0, y0, w, h, { mat: 'brick', style, roof: 'flat', storeys: randInt(1, 3), floor: 'tile', windows: style === 'concrete' ? 0.5 : 0.35 })) { nb++; break; }
+    }
+  }
+  // Geparkte Autos auf den Außenspuren (längs zur Straße), Mittelspur bleibt frei; einige ausgebrannt
+  const lanes = [];
+  for (const r of roadsX) for (const x of [r, r + 2]) for (let y = 0; y < H; y++) if (!inRY(y)) lanes.push({ x, y, vert: true });
+  for (const r of roadsY) for (const y of [r, r + 2]) for (let x = 0; x < W; x++) if (!inRX(x)) lanes.push({ x, y, vert: false });
+  shuffle(lanes);
+  let nCar = 0, nBar = 0;
+  for (const l of lanes) {
+    if (nCar >= 13 && nBar >= 4) break;
+    const c = at(l.x, l.y); if (!c || c.wall || c.reserved) continue;
+    const [dx, dy] = l.vert ? [0, 1] : [1, 0];
+    if (at(l.x + dx, l.y + dy)?.wall || at(l.x - dx, l.y - dy)?.wall) continue;
+    if (nCar < 13) { setWall(l.x, l.y, 'car'); c.wall.vert = l.vert; c.wall.variant = rand() < 0.2 ? 'burnt' : choice(['sedan', 'sedan', 'kombi', 'suv', 'van', 'pickup']); nCar++; }
+    else { setWall(l.x, l.y, 'barrier'); nBar++; }
   }
   for (let k = 0; k < 8; k++) { const x = randInt(0, W - 1), y = randInt(0, H - 1), c = at(x, y); if (c && !c.wall && !c.reserved && c.floor === 'tile' && !c.indoor) setWall(x, y, 'tree'); }
-  // Straßenlaternen
-  for (let i = 0; i < 4; i++) { const r = roadsX[i % roadsX.length]; if (r != null) map.lights.push({ x: r - 1, y: randInt(2, H - 10), color: 0xffc27a, intensity: 18, h: 4, lamp: true }); }
+  // Straßenlaternen auf dem Gehweg, Mast zur Fahrbahn hin
+  for (let i = 0, t = 0; i < 4 && t < 40; t++) {
+    const r = choice(roadsX); if (r == null) break;
+    const left = rand() < 0.5, x = left ? r - 1 : r + 3, y = randInt(2, H - 10);
+    if (!freeOut(at, x, y) || inRY(y)) continue;
+    map.lights.push({ x, y, color: 0xffc27a, intensity: 18, h: 4, lamp: true, dir: [left ? 1 : -1, 0] }); i++;
+  }
+  // Stadtmobiliar auf den Gehwegen, zur Fahrbahn hin versetzt
+  const roadDir = (x, y) => [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([dx, dy]) => { const c = at(x + dx, y + dy); return c && isRoad(x + dx, y + dy); });
+  const walks = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (isWalk(x, y) && freeOut(at, x, y) && roadDir(x, y)) walks.push({ x, y });
+  shuffle(walks);
+  const want = { bench: 6, bin: 8, hydrant: 5, sign: 6 };
+  for (const w of walks) {
+    const t = Object.keys(want).find((k) => want[k] > 0 && rand() < 0.5); if (!t) continue;
+    if (map.deco.some((d) => d.x === w.x && d.y === w.y)) continue;
+    const [dx, dy] = roadDir(w.x, w.y);
+    const edge = t === 'bench' ? 0.45 : 0.75;
+    deco(map, t, w.x, w.y, { ox: dx * edge + (dy ? (rand() - 0.5) * 1.2 : 0), oz: dy * edge + (dx ? (rand() - 0.5) * 1.2 : 0), rot: Math.atan2(dx, dy), s: 1 });
+    want[t]--;
+  }
+  // Ampeln an den Kreuzungsecken
+  for (const rx of roadsX) for (const ry of roadsY) {
+    for (const [cx, cy, ax, ay] of [[rx - 1, ry - 1, 1, 1], [rx + 3, ry + 3, -1, -1]]) if (freeOut(at, cx, cy)) deco(map, 'tlight', cx, cy, { ox: ax * 0.75, oz: ay * 0.75, rot: Math.atan2(ax, ay), s: 1 });
+  }
   for (let k = 0; k < 40; k++) map.alienSpawns.push({ x: randInt(0, W - 1), y: randInt(0, Math.floor(H * 0.6)) });
   for (let k = 0; k < 30; k++) map.civSpawns.push({ x: randInt(0, W - 1), y: randInt(2, H - 7) });
 }

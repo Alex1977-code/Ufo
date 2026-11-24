@@ -1018,7 +1018,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
       explosion(jet.position.clone(), 1.6, true);
       jet.visible = false;
       S.camCut = 'wreck';
-      S.camFixed = jet.position.clone().add(new THREE.Vector3(9, 4, -6));
+      S.camFixed = jet.position.clone().add(new THREE.Vector3(20, 7, -12));
       sfx('defeat');
     } else if (result === 'flee') {
       S.camCut = 'flee';
@@ -1121,7 +1121,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     // Jäger
     const ud = jet.userData;
     if (jet.visible) {
-      if (S.result === 'flee' || S.result === 'escaped') {
+      if (S.result === 'flee') {
         // abdrehen und wegfliegen
         const k = S.endT;
         jet.position.x += dt * (14 + k * 30);
@@ -1298,7 +1298,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     else tip = tipText(S.maneuver);
     if (tip !== S.lastHint) { $.tip.innerHTML = tip; S.lastHint = tip; }
     // Zielmarkierung am UFO
-    if (ended && S.result !== 'escaped' && S.result !== 'flee') { $.bracket.style.display = 'none'; return; }
+    if (ended) { $.bracket.style.display = 'none'; return; }
     const v = _v.copy(ufoObj.position).project(camera);
     if (v.z > 1) { $.bracket.style.display = 'none'; return; }
     const sx = (v.x * 0.5 + 0.5) * innerWidth, sy = (-v.y * 0.5 + 0.5) * innerHeight;

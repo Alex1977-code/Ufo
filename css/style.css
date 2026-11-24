@@ -497,3 +497,5 @@ body[data-mode="geo"] #fps { top: auto; bottom: calc(90px + var(--safe-b)); }
   .bs-info { top: auto; bottom: calc(62px + var(--safe-b)); left: calc(10px + var(--safe-l)); right: calc(10px + var(--safe-r)); width: auto; max-height: 42vh; }
   .bs-hint { display: none; }
 }
+.ac-root.paused .ac-intro { visibility: hidden; }
+.ac-sum + .df-log { height: auto; max-height: 30vh; }
