@@ -356,6 +356,7 @@ export class Tactical {
     this.buildHud();
     this.bindInput();
     this.updateVisibility(true);
+    if (this.csm) { this.csm.setupAll(this.scene); this.csm.updateFrustums(); }
     const s = this.units.find((u) => u.team === 'player' && u.alive);
     this.select(s, true);
     const p = this.cellPos(s.x, s.y - 4);
@@ -379,12 +380,13 @@ export class Tactical {
   }
 
   buildEnvironment() {
+    if (!this.realModels) return this.buildEnvironmentLegacy();
     const night = this.map.night, hive = this.opts.biome === 'hive';
     const sky = this.sky = this.pickSky();
     // Voreinstellungen: Nebel-/Horizontfarbe (passend zum HDRI-Horizont), Sonne, Hemisphäre, Umgebungsintensität
     const P = {
       day: { fog: this.opts.biome === 'desert' ? 0xd8c8a8 : 0xb4c6d8, dens: 0.0065, sun: 0xfff0d8, si: 3.0, sunPos: [0.6, 1.1, 0.35], hemi: [0xbdd8ff, 0x4a3a28, 0.35], env: 0.85, bg: 0.9 },
-      overcast: { fog: 0xa9b0b6, dens: 0.0085, sun: 0xe8ecf0, si: 1.1, sunPos: [0.3, 1.2, 0.2], hemi: [0xc8d0d8, 0x3e3a34, 0.45], env: 1.15, bg: 0.85 },
+      overcast: { fog: 0x8e969e, dens: 0.0052, sun: 0xe8ecf0, si: 1.3, sunPos: [0.3, 1.2, 0.2], hemi: [0xc8d0d8, 0x3e3a34, 0.35], env: 0.9, bg: 0.8 },
       dusk: { fog: 0x8a6a62, dens: 0.0075, sun: 0xffb27a, si: 2.4, sunPos: [0.95, 0.38, -0.25], hemi: [0x8a90b8, 0x3a2a22, 0.4], env: 0.9, bg: 0.8 },
       night: { fog: 0x0d1730, dens: 0.012, sun: 0x8fa8ff, si: 0.6, sunPos: [0.6, 1.1, 0.35], hemi: [0x223355, 0x080808, 0.35], env: 0.28 },
       hive: { fog: 0x2a0d30, dens: 0.0065, sun: 0xc080ff, si: 0.7, sunPos: [0.6, 1.1, 0.35], hemi: [0xbdd8ff, 0x4a3a28, 0.5], env: 0.22 },
@@ -448,6 +450,59 @@ export class Tactical {
     this.unitLight = new THREE.PointLight(0xcfe6ff, night ? 22 : 0, 16, 1.6);
     this.scene.add(this.unitLight);
     this.engine.renderer.toneMappingExposure = night ? 1.25 : sky === 'dusk' ? 1.1 : 1.0;
+  }
+
+  // Bisherige prozedurale Umgebung (Einstellung „Figuren: einfach“ = Aussehen wie vor G6)
+  buildEnvironmentLegacy() {
+    const night = this.map.night, hive = this.opts.biome === 'hive';
+    const top = hive ? new THREE.Color(0x0a0410) : night ? new THREE.Color(0x02040b) : new THREE.Color(0x3f78c8);
+    const hor = hive ? new THREE.Color(0x2a0d30) : night ? new THREE.Color(0x0d1730) : new THREE.Color(this.opts.biome === 'desert' ? 0xe8d2a8 : 0xbcd4ea);
+    const skyMat = new THREE.ShaderMaterial({
+      uniforms: { top: { value: top }, hor: { value: hor }, night: { value: night || hive ? 1 : 0 } },
+      vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: `uniform vec3 top; uniform vec3 hor; uniform float night; varying vec3 vP;
+        float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,45.164))) * 43758.5453); }
+        void main(){ float t = smoothstep(-0.05, 0.6, vP.y); vec3 c = mix(hor, top, t);
+          if (night > 0.5) { vec3 q = floor(vP * 300.0); float s = step(0.997, h(q)) * t; c += vec3(s); }
+          gl_FragColor = vec4(c, 1.0); }`,
+      side: THREE.BackSide, depthWrite: false,
+    });
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), skyMat);
+    this.scene.add(sky);
+    // Umgebungsbeleuchtung (IBL) aus dem Himmel erzeugen
+    const pmrem = new THREE.PMREMGenerator(this.engine.renderer);
+    const envScene = new THREE.Scene(); envScene.add(sky.clone());
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(300, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: hor.clone().multiplyScalar(0.3) }));
+    ground.position.y = -5; envScene.add(ground);
+    this.envRT = pmrem.fromScene(envScene, 0.04);
+    this.scene.environment = this.envRT.texture;
+    this.scene.environmentIntensity = night ? 0.25 : hive ? 0.35 : 0.8;
+    pmrem.dispose();
+    this.scene.fog = new THREE.FogExp2(hor, night ? 0.012 : 0.0065);
+
+    const S = this.engine.shadowSize;
+    const sun = new THREE.DirectionalLight(night ? 0x8fa8ff : hive ? 0xc080ff : 0xfff0d8, night ? 0.6 : hive ? 0.7 : 3.2);
+    const ext = this.W * TILE * 0.75;
+    sun.position.set(ext * 0.6, ext * 1.1, ext * 0.35);
+    sun.castShadow = this.engine.settings.shadows !== 'off';
+    sun.shadow.mapSize.set(S, S);
+    Object.assign(sun.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 1, far: ext * 4 });
+    sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.04;
+    this.scene.add(sun, sun.target);
+    this.sun = sun;
+    this.scene.add(new THREE.HemisphereLight(night ? 0x223355 : 0xbdd8ff, night ? 0x080808 : 0x4a3a28, night ? 0.35 : 0.9));
+    for (const l of this.map.lights) {
+      const p = this.cellPos(l.x, l.y);
+      const pl = new THREE.PointLight(l.color, l.intensity, 18, 1.6);
+      pl.position.set(p.x, l.h, p.z);
+      this.scene.add(pl);
+      if (l.lamp) { const d = l.dir || [1, 0]; pl.position.x += d[0] * 0.9; pl.position.z += d[1] * 0.9; } // Mast als instanzierte Deko (buildDeco)
+    }
+    // Lichtpool für Mündungsfeuer/Explosionen
+    for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffaa55, 0, 14, 2); this.scene.add(l); this.lightPool.push(l); }
+    this.unitLight = new THREE.PointLight(0xcfe6ff, night ? 22 : 0, 16, 1.6);
+    this.scene.add(this.unitLight);
+    this.engine.renderer.toneMappingExposure = night ? 1.25 : 1.0;
   }
 
   buildGround() {
@@ -576,8 +631,8 @@ export class Tactical {
     const outer = new THREE.Mesh(new THREE.PlaneGeometry(800, 800).rotateX(-Math.PI / 2), patchFog(groundPBRMaterial(new THREE.MeshStandardMaterial({ map: outerTex, roughness: 1 }), gUni)));
     outer.position.y = -0.02; outer.receiveShadow = true;
     this.scene.add(outer);
-    this.groundPBR = 'loading';
-    loadGroundPBR(this.engine.mobile ? 256 : 512).then((P) => {
+    this.groundPBR = this.realModels ? 'loading' : 'off';
+    if (this.realModels) loadGroundPBR(this.engine.mobile ? 256 : 512).then((P) => {
       if (this.disposed) return;
       if (!P) { this.groundPBR = 'fallback'; return; }
       gUni.gAlb.value = P.alb; gUni.gNrm.value = P.nrm;
@@ -885,23 +940,29 @@ export class Tactical {
   // G6: Instanz-Satz für eine Hero-Auto-Variante (geteilte Geometrie/Materialien aus dem Cache von herocar.js)
   makeHeroSet(variant, n, shadows) {
     const hv = HERO_VARIANT[variant], mobile = !!this.engine.mobile;
-    const kit = getHeroCarKit(hv.type, { damage: hv.damage, paintColor: hv.paint, seed: hv.seed, levels: mobile ? [1, 2] : [0, 1, 2] });
+    const kit = this.heroKit(hv);
+    const set = new HeroCarSet(this.scene, kit, n, shadows, { scale: Math.min(1, 4.6 / kit.dims.length), mobile, burnt: hv.burnt });
+    (this.heroSets ||= []).push(set);
+    return set;
+  }
+  heroKit(hv) {
+    const kit = getHeroCarKit(hv.type, { damage: hv.damage, paintColor: hv.paint, seed: hv.seed, levels: this.engine.mobile ? [1, 2] : [0, 1, 2] });
     for (const m of Object.values(kit.mats)) patchFog(m);
     if (hv.burnt && !kit.burntTuned) { // ausgebrannt: matter, rußiger Lack, Leuchten aus
       kit.burntTuned = true;
       Object.assign(kit.mats.paint, { clearcoat: 0, roughness: 0.92, metalness: 0.2 }); kit.mats.paint.color.setRGB(0.55, 0.5, 0.46);
       kit.mats.headlight.emissiveIntensity = 0; kit.mats.taillight.emissiveIntensity = 0;
+      // Innenraum/Reifen/Chrom verkohlt (eigene Materialien statt der geteilten aus herocar.js)
+      const soot = (c, r, m = 0) => { const mm = patchFog(new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m })); kit.own.push(mm); return mm; };
+      kit.mats.interior = soot(0x0c0b0a, 1); kit.mats.tyre = soot(0x080808, 0.95); kit.mats.chrome = soot(0x2a2522, 0.7, 0.6);
     }
-    const set = new HeroCarSet(this.scene, kit, n, shadows, { scale: Math.min(1, 4.6 / kit.dims.length), mobile, burnt: hv.burnt });
-    (this.heroSets ||= []).push(set);
-    return set;
+    return kit;
   }
   // Zerstörtes Hero-Auto: erst ausgebranntes Wrack mit Feuer/Rauch zeigen, danach wie bisher entfernen
   wreckHeroCar(t, idx, x, y) {
     const vs = this.props[t]; const ref = vs?.ref?.[idx]; if (!ref) return;
     const [set, li] = ref; if (!(set instanceof HeroCarSet)) return;
-    const burnt = getHeroCarKit(set.kit.type, { damage: 1, paintColor: 0x1a1a1a, seed: 11, levels: this.engine.mobile ? [1, 2] : [0, 1, 2] });
-    for (const m of Object.values(burnt.mats)) patchFog(m);
+    const burnt = this.heroKit({ ...HERO_VARIANT.burnt, type: set.kit.type });
     if (this.csm) Object.values(burnt.mats).forEach((m) => this.csm.setupMaterial(m));
     const lv = this.engine.mobile ? 2 : 1;
     const g = HeroCarSet.single(burnt, lv, set.base[li], true);
@@ -3737,6 +3798,8 @@ export class Tactical {
     this.placePathLabels();
     this.updateFog(dt);
   }
+
+  onResize() { if (this.csm) { this.camera.updateProjectionMatrix(); this.csm.updateFrustums(); } }
 
   // ======================= Lebenszyklus =======================
   activate() {

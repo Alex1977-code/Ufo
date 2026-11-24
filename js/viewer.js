@@ -1,5 +1,5 @@
 // AEGIS – Asset-Viewer (G3): eigenständige Seite viewer.html
-// Zeigt Hero-Autos (herocar.js), Figuren (characters.js), Fluggeräte/UFOs (craftmodels.js), alle GLBs aus
+// Zeigt Hero-Autos (herocar.js), Nutzfahrzeuge (heavyvehicles.js, G7), Figuren (characters.js), Fluggeräte/UFOs (craftmodels.js), alle GLBs aus
 // assets/manifest.json, Textur-Sets und eine Auswahl prozeduraler Props (models.js) mit Statistik, LOD-Umschaltung,
 // Animationen und Prüfungen (✓/⚠/✗). Renderpfad: eigener WebGLRenderer + environment.js (HDRI/PMREM),
 // Tonemapping AgX/ACES/Neutral (Belichtungsabgleich aus engine.js), Sonne passend zum HDRI-Preset, PBR-Boden.
@@ -20,6 +20,7 @@ import { initEnvironment, applyEnvironment, ENVIRONMENTS } from './environment.j
 import { TONEMAPS } from './engine.js';
 import { validateVehicle, applyVehicleMaterials, classifyMaterialName } from './vehiclematerials.js';
 import { makeHeroCar, HERO_TYPES, disposeHeroCar, setHeroCarLights } from './herocar.js';
+import { makeHeavyVehicle, HEAVY_TYPES, HEAVY_VARIANTS, disposeHeavyVehicle, setHeavyVehicleLights } from './heavyvehicles.js';
 import { loadCharacterLibrary, makeCharacter, CHARACTER_STATES, CHARACTER_BASES } from './characters.js';
 import { makeInterceptor, makeTransport, makeUfo, autoLod, animateCraft, setHatch, disposeCraft } from './craftmodels.js';
 
@@ -316,7 +317,7 @@ const VIEW_LABELS = { shaded: 'Schattiert', normals: 'Normalen', uv: 'UV-Checker
 // Asset-Register
 // =====================================================================================================
 const CATS = {
-  hero: 'Hero-Autos', char: 'Figuren', craft: 'Fluggeräte & UFOs', glb: 'GLB-Assets', tex: 'Texturen', prop: 'Props (models.js)',
+  hero: 'Hero-Autos', heavy: 'Nutzfahrzeuge', char: 'Figuren', craft: 'Fluggeräte & UFOs', glb: 'GLB-Assets', tex: 'Texturen', prop: 'Props (models.js)',
 };
 const entries = [];
 const byId = new Map();
@@ -345,6 +346,40 @@ for (const t of HERO_TYPES) {
       const root = makeHeroCar({ type: t, paintColor: o.color, damage: +o.damage, seed: o.seed | 0, lod: 'auto' });
       setHeroCarLights(root, { head: o.head, brake: o.brake });
       return { root, dispose: () => disposeHeroCar(root), live: (n) => setHeroCarLights(root, { head: n.head, brake: n.brake }) };
+    },
+  });
+}
+
+// --- Nutzfahrzeuge (heavyvehicles.js, G7): Traktor, Mähdrescher, Bus, LKW, Stapler, Panzerwrack
+const HEAVY_INFO = {
+  tractor: { label: 'AGRION Traktor „Terra 165“', color: '#2f6b2a', len: [3.8, 6.5], swatches: ['#2f6b2a', '#a3201b', '#1f4f8f', '#c9861a'] },
+  combine: { label: 'AGRION Mähdrescher „Messor 7“', color: '#2f6b2a', len: [7, 11], swatches: ['#2f6b2a', '#a3201b', '#c9a21a'] },
+  bus: { label: 'VARENNE Bus „Urbis“ / „Orbis“', color: '#e9e7e1', len: [8, 15], swatches: ['#e9e7e1', '#d8a91c', '#b3261e', '#2b5fa0'] },
+  truck: { label: 'VARENNE LKW „Carrus“', color: '#e9e7e1', len: [6.5, 18.75], swatches: ['#e9e7e1', '#1c3f73', '#a3201b', '#2a2c2f'] },
+  forklift: { label: 'VARENNE Gabelstapler „Lyft 25“', color: '#e0a312', len: [2.8, 4.2], swatches: ['#e0a312', '#d8621a', '#b3261e', '#2e6e3a'] },
+  milwreck: { label: 'Schützenpanzer (ausgebrannt)', color: '#4f5236', len: [5.5, 10], swatches: ['#4f5236', '#6b6a4a', '#8a7a5a'] },
+};
+const VARIANT_LABEL = { standard: 'Standard', loader: 'mit Frontlader', city: 'Stadtbus 12 m', coach: 'Reisebus 12,2 m', box: 'Koffer-LKW 8,5 m', semi: 'Sattelzug 16 m' };
+for (const t of HEAVY_TYPES) {
+  const hi = HEAVY_INFO[t], vars = HEAVY_VARIANTS[t];
+  addEntry({
+    id: 'heavy:' + t, cat: 'heavy', grp: 'Nutzfahrzeuge (heavyvehicles.js)', label: hi.label, sub: `makeHeavyVehicle · ${t}`, kind: 'vehicle', front: 1, lenRange: hi.len,
+    opts: [
+      ...(vars.length > 1 ? [{ k: 'variant', type: 'select', label: 'Typ', def: vars[0], options: vars.map((v) => [v, VARIANT_LABEL[v] || v]) }] : []),
+      { k: 'color', type: 'color', label: 'Farbe', def: hi.color, swatches: hi.swatches },
+      { k: 'damage', type: 'range', label: t === 'milwreck' ? 'Rost/Alter' : 'Schaden/Schmutz', min: 0, max: 1, step: 0.05, def: t === 'milwreck' ? 1 : 0 },
+      { k: 'lod', type: 'select', label: 'LOD', def: 'auto', options: [['auto', 'Automatisch (THREE.LOD)'], ['0', 'LOD0'], ['1', 'LOD1'], ['2', 'LOD2']] },
+      { k: 'seed', type: 'number', label: 'Seed', def: 1 },
+      ...(t === 'milwreck' ? [] : [
+        { k: 'head', type: 'bool', label: 'Scheinwerfer', def: false, live: true },
+        { k: 'beacon', type: 'bool', label: 'Rundumleuchte/Blinker', def: false, live: true },
+      ]),
+    ],
+    build(o) {
+      const root = makeHeavyVehicle({ type: t, variant: o.variant, color: o.color, damage: +o.damage, seed: o.seed | 0, lod: o.lod === 'auto' ? 'auto' : +o.lod });
+      const lights = (n) => setHeavyVehicleLights(root, { head: n.head, brake: n.head, beacon: n.beacon });
+      lights(o);
+      return { root, dispose: () => disposeHeavyVehicle(root), live: lights };
     },
   });
 }
@@ -765,7 +800,7 @@ function runChecks(entry, built, st) {
     add(big.length ? 'warn' : 'ok', big.length ? `${big.length} Texturen > ${RULES.texMax}: ${list(big.map((t) => `${t.name || t.uses[0]} ${t.w}×${t.h}`), 3)}` : `max. ${st.maxTex ? `${st.maxTex.w}×${st.maxTex.h}` : '–'} (≤ ${RULES.texMax})`, 'Texturen');
   }
   // Maßstab
-  if (kind === 'vehicle' || kind === 'vehicle-prop') scaleCheck(add, 'Fahrzeuglänge', Math.max(st.size.x, st.size.z), RULES.carLen);
+  if (kind === 'vehicle' || kind === 'vehicle-prop') scaleCheck(add, 'Fahrzeuglänge', Math.max(st.size.x, st.size.z), entry.lenRange || RULES.carLen);
   else if (kind === 'character') scaleCheck(add, 'Figurhöhe', st.size.y, RULES.figH);
   return R;
 }
