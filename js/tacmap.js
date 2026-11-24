@@ -338,7 +338,7 @@ function genRural(map, at, setWall, biome) {
     const horiz = rand() < 0.5; let x = randInt(2, W - 3), y = randInt(2, H - 6); const len = randInt(4, 11);
     const t = choice(fenceT);
     for (let i = 0; i < len; i++) {
-      const c = at(x, y); if (!c) break;
+      const c = at(x, y); if (!c || c.wall?.type === 'water') break;
       if (freeCell(c) && rand() > 0.12) c.wall = mkWall(t, { rot: horiz ? 1 : 0 });
       if (horiz) x++; else y++;
     }
@@ -1151,19 +1151,19 @@ function modMilpost(M) {
 function modCanyon(M) {
   const { lw, lh } = M;
   const open = new Uint8Array(lw * lh);
-  const carve = (u, v) => { for (let dv = -1; dv <= 1; dv++) for (let du = -1; du <= 1; du++) { const a = u + du, b = v + dv; if (a >= 0 && b >= 0 && a < lw && b < lh) open[b * lw + a] = 1; } };
-  let u = lw >> 1;
-  for (let v = lh - 1; v >= 0; v--) { carve(u, v); if (rand() < 0.45) u = clamp(u + choice([-1, 1]), 1, lw - 2); carve(u, v); }
+  const op = (a, b) => { if (a >= 0 && b >= 0 && a < lw && b < lh) open[b * lw + a] = 1; };
+  // Hauptschlucht (2 breit) von vorne nach hinten, Seitenarm quer (2 breit), optional ein Felskessel
+  let u = (lw >> 1) - 1;
+  for (let v = lh - 1; v >= 0; v--) { op(u, v); op(u + 1, v); if (rand() < 0.45) u = clamp(u + choice([-1, 1]), 1, lw - 3); op(u, v); op(u + 1, v); }
   let v2 = randInt(2, lh - 4);
-  for (let uu = 0; uu < lw; uu++) { carve(uu, v2); if (rand() < 0.3) v2 = clamp(v2 + choice([-1, 1]), 1, lh - 3); carve(uu, v2); }
-  if (rand() < 0.5) { const ku = randInt(2, lw - 3), kv = randInt(2, lh - 3); carve(ku, kv); carve(ku + 1, kv); carve(ku, kv + 1); } // Kessel
-  M.entry = [M.lw >> 1, lh - 1];
+  for (let uu = 0; uu < lw; uu++) { op(uu, v2); op(uu, v2 + 1); if (rand() < 0.3) v2 = clamp(v2 + choice([-1, 1]), 1, lh - 3); op(uu, v2); op(uu, v2 + 1); }
+  if (rand() < 0.6) { const ku = randInt(2, lw - 3), kv = randInt(2, lh - 3); for (let dv = -1; dv <= 1; dv++) for (let du = -1; du <= 1; du++) op(ku + du, kv + dv); }
   for (let v = 0; v < lh; v++) for (let uu = 0; uu < lw; uu++) {
-    if (!open[v * lw + uu]) { if (rand() < 0.9) M.put(uu, v, rand() < 0.8 ? 'bigrock' : 'rockpile'); }
+    if (!open[v * lw + uu]) { if (rand() < 0.95) M.put(uu, v, rand() < 0.8 ? 'bigrock' : 'rockpile'); }
     else M.floor(uu, v, rand() < 0.6 ? 'gravel' : 'sand');
   }
   for (let v = 0; v < lh; v++) for (let uu = 0; uu < lw; uu++) {
-    if (!open[v * lw + uu] || rand() > 0.08) continue;
+    if (!open[v * lw + uu] || rand() > 0.06) continue;
     const walls = DIR4.filter(([du, dv]) => M.cell(uu + du, v + dv)?.wall).length;
     if (walls >= 2) M.put(uu, v, 'rockpile');
   }
