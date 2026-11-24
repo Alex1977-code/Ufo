@@ -318,8 +318,7 @@ function makeHairMaterial(src) {
 function makeFabricMaterial({ color = 0x5b6345, camo = null, molle = false, roughness = 0.9, normalRepeat = 7, name = 'fabric', side = THREE.FrontSide }) {
   const T = textures();
   const m = new THREE.MeshStandardMaterial({ name, color: camo ? 0xffffff : color, roughness, metalness: 0, normalMap: T.fabric, normalScale: new THREE.Vector2(0.55, 0.55), side });
-  m.normalMap = T.fabric.clone(); m.normalMap.repeat.set(normalRepeat, normalRepeat); m.normalMap.needsUpdate = true;
-  m.userData.ownTex = [m.normalMap];
+  m.normalMap = shared('tex:fabric:' + normalRepeat, () => { const t = T.fabric.clone(); t.repeat.set(normalRepeat, normalRepeat); t.needsUpdate = true; return t; });
   const defines = {}; if (camo) defines.USE_CAMO = ''; if (molle) defines.USE_MOLLE = '';
   const cc = camo || [color, color, color, color];
   return patchMaterial(m, {
@@ -626,7 +625,7 @@ function buildFootwear(base, side, kind, clearance) {
   {
     const m = 0.009, pts = [], K = 26;
     for (let k = 0; k <= K; k++) { const z = heelZ - m + (L + 2 * m) * k / K; const [cx, hw] = outline(z, m); pts.push([cx - hw, z]); }
-    for (let k = K; k >= 0; k--) { const z = heelZ - m + (L + 2 * m) * k / K; const [cx, hw] = outline(z, m); pts.push([cx + hw, z]); }
+    for (let k = K - 1; k >= 1; k--) { const z = heelZ - m + (L + 2 * m) * k / K; const [cx, hw] = outline(z, m); pts.push([cx + hw, z]); }
     const shape = new THREE.Shape(pts.map(([x, z]) => new THREE.Vector2(x, -z)));
     const bev = 0.003, geo = new THREE.ExtrudeGeometry(shape, { depth: soleT - 2 * bev, bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelSegments: 2, curveSegments: 4 });
     geo.rotateX(-Math.PI / 2); geo.translate(0, soleBottom + bev, 0);
@@ -1061,11 +1060,11 @@ function upperBoneSet(base) {
     return set;
   });
 }
-function maskedClip(base, name, part) {
-  const key = 'clip:' + name + '|' + part;
-  return cached(base, key, () => {
-    const c = base.clips.get(name); if (!c) return null;
-    const up = upperBoneSet(base);
+function maskedClip(base, name, part) { return maskClipObj(base, base.clips.get(name), part); }
+function maskClipObj(base, c, part) {
+  if (!c) return null;
+  return cached(base, 'clip:' + c.name + '|' + part, () => {
+    const name = c.name, up = upperBoneSet(base);
     const tracks = c.tracks.filter((t) => { const bn = t.name.slice(0, t.name.lastIndexOf('.')); return part === 'upper' ? up.has(bn) : !up.has(bn); });
     return new THREE.AnimationClip(name + '|' + part, c.duration, tracks);
   });
@@ -1223,7 +1222,7 @@ export function makeCharacter(opts = {}) {
         return armed ? [{ clip: maskedClip(base, L, 'lower'), ts, loco: true }, ...upperArmed('Pistol_Idle_Loop')] : [{ clip: clipN(L), ts, loco: true }];
       }
       case 'crouch': return armed ? [{ clip: maskedClip(base, 'Crouch_Idle_Loop', 'lower') }, ...upperArmed('Pistol_Idle_Loop')] : [{ clip: clipN('Crouch_Idle_Loop') }];
-      case 'kneel': { const k = kneelClip(base); return armed ? [{ clip: k, once: true, clamp: true, part: 'lower' }, ...upperArmed('Pistol_Idle_Loop')] : [{ clip: k, once: true, clamp: true }]; }
+      case 'kneel': { const k = kneelClip(base); return armed ? [{ clip: maskClipObj(base, k, 'lower'), once: true, clamp: true }, ...upperArmed('Pistol_Idle_Loop')] : [{ clip: k, once: true, clamp: true }]; }
       case 'aim': return [{ clip: clipN('Pistol_Aim_Neutral'), aim: 0 }, { clip: clipN('Pistol_Aim_Up'), aim: 1 }, { clip: clipN('Pistol_Aim_Down'), aim: -1 }];
       case 'shoot': return [{ clip: clipN('Pistol_Shoot'), once: true, next: 'aim' }];
       case 'reload': return [{ clip: clipN('Pistol_Reload'), once: true, next: 'aimIdle' }];
@@ -1326,7 +1325,7 @@ export function makeCharacter(opts = {}) {
       const saved = chainSave(arms.L);
       const hf = an.hand.L;
       const supportW = gun.support.clone().applyMatrix4(gunWorld);
-      const palmTarget = supportW.addScaledVector(yg, -0.046);
+      const palmTarget = supportW.addScaledVector(yg, -0.012);
       const dWant = dir.clone().multiplyScalar(0.45).addScaledVector(right, 0.9).normalize(), nWant = yg.clone();
       const bH = new THREE.Matrix4().makeBasis(hf.d.clone(), hf.n.clone(), new THREE.Vector3().crossVectors(hf.d, hf.n).normalize());
       const nOrtho = nWant.clone().addScaledVector(dWant, -nWant.dot(dWant)).normalize();

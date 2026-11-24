@@ -15,6 +15,7 @@ const LOD_DIST = [0, 14, 45];
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
+const smax = (a, b, k) => (a + b + Math.sqrt((a - b) * (a - b) + k * k)) / 2;
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const YAX = V3(0, 1, 0);
 function rng(seed) {
@@ -83,33 +84,33 @@ const SPEC_DATA = {
   suv: {
     L: 4.75, H: 1.72,
     W: [[-2.375, 0.91], [-2.0, 0.955], [-1.4, 0.965], [1.4, 0.965], [2.0, 0.95], [2.375, 0.9]],
-    yTop: [[-2.375, 1.6], [-2.22, 1.69], [-1.9, 1.715], [-0.5, 1.72], [0.35, 1.715], [0.55, 1.68], [1.15, 1.17], [1.7, 1.09], [2.2, 1.02], [2.375, 0.98]],
-    yBelt: [[-2.375, 1.14], [-1.8, 1.175], [0, 1.15], [1.15, 1.125], [1.7, 1.04], [2.2, 0.97], [2.375, 0.94]],
-    yShoulder: [[-2.375, 1.0], [0, 1.0], [1.1, 0.965], [1.9, 0.86], [2.375, 0.81]],
-    yBase: [[-2.375, 0.43], [-1.9, 0.36], [-1.4, 0.33], [1.4, 0.33], [1.9, 0.36], [2.375, 0.39]],
-    yFloor: [[-2.375, 0.4], [-2.0, 0.26], [-1.5, 0.21], [1.5, 0.21], [2.0, 0.26], [2.375, 0.36]],
-    ySill: 0.52, yRail: 1.635, crown: 0.085, k8f: 0.82, wellDepth: 0.32,
+    yTop: [[-2.375, 1.62], [-2.22, 1.71], [-1.9, 1.735], [-0.5, 1.74], [0.35, 1.735], [0.55, 1.7], [1.15, 1.22], [1.7, 1.15], [2.2, 1.09], [2.375, 1.05]],
+    yBelt: [[-2.375, 1.17], [-1.8, 1.2], [0, 1.17], [1.15, 1.16], [1.7, 1.1], [2.2, 1.04], [2.375, 1.0]],
+    yShoulder: [[-2.375, 1.02], [0, 1.02], [1.1, 1.0], [1.9, 0.93], [2.375, 0.87]],
+    yBase: [[-2.375, 0.46], [-1.9, 0.39], [-1.4, 0.36], [1.4, 0.36], [1.9, 0.39], [2.375, 0.42]],
+    yFloor: [[-2.375, 0.43], [-2.0, 0.28], [-1.5, 0.235], [1.5, 0.235], [2.0, 0.28], [2.375, 0.38]],
+    ySill: 0.55, yRail: 1.635, crown: 0.085, k8f: 0.82, wellDepth: 0.32,
     wRail: [[-2.2, 0.73], [-1.0, 0.765], [0.5, 0.765], [1.0, 0.745]],
-    front: { zs: 2.1, p: 2.8, ext: [[0.2, 2.25], [0.38, 2.35], [0.55, 2.375], [0.75, 2.37], [0.88, 2.32], [0.97, 2.25], [1.02, 2.19]] },
+    front: { zs: 2.1, p: 3.0, ext: [[0.25, 2.26], [0.42, 2.35], [0.6, 2.375], [0.85, 2.37], [0.97, 2.33], [1.04, 2.27], [1.09, 2.21]] },
     rear: { zs: -2.15, p: 3.6, ext: [[0.3, -2.27], [0.45, -2.36], [0.7, -2.375], [1.1, -2.37], [1.25, -2.34], [1.6, -2.25], [1.72, -2.21]] },
-    wheel: { r: 0.37, w: 0.255, rim: 0.254, zF: 1.455, zR: -1.395, x: 0.81 }, archR: 0.51,
-    ws: [0.55, 1.15], cowlW: 0.07, side: [[-2.05, 1.15]], pillars: [[-0.12, -0.04], [-1.13, -1.04]],
+    wheel: { r: 0.385, w: 0.265, rim: 0.254, zF: 1.455, zR: -1.395, x: 0.81 }, archR: 0.53,
+    ws: [0.55, 1.15], cowlW: 0.07, side: [[-1.97, 1.15]], pillars: [[-0.12, -0.04], [-1.13, -1.04]],
     rw: [], rearFace: { te0: 0.45, y: [1.22, 1.62] }, beltMat: 'trim', bed: null, dense: [],
     seams: [1.0, -0.08, -1.05], seamK: [4, 5, 6],
     regions: [
       { zone: 'F', k: [5], te: [0.28, 0.78], role: 'hl' },
-      { zone: 'F', k: [4], te: [0.78, 1.01], y: [0.62, 9], mat: 'trim', inset: 0.04 },
+      { zone: 'F', k: [4], te: [0.74, 1.01], y: [0.65, 9], mat: 'trim', inset: 0.04 },
       { zone: 'F', k: [3], te: [0.45, 1.01], mat: 'trim', inset: 0.02 },
       { zone: 'R', k: [5], te: [0.12, 0.62], mat: 'taillight', inset: 0.004 },
-      { zone: 'R', k: [4], te: [0.82, 1.01], y: [0.66, 0.84], mat: 'paint', inset: 0.014 },
+      { zone: 'R', k: [4], te: [0.82, 1.01], y: [0.7, 0.88], mat: 'paint', inset: 0.014 },
       { zone: '*', k: [3], mat: 'trim' },
     ],
-    shell: [-2.4, 1.15], floorY: 0.47,
-    seats: { front: { z: 0.0, y: 0.72, x: 0.39 }, rear: { z: -0.92, y: 0.74, w: 1.35 } },
-    steer: { z: 0.62, y: 1.1 }, dashZ: [0.75, 1.13], parcel: null, bulkhead: null,
+    shell: [-2.4, 1.15], floorY: 0.5,
+    seats: { front: { z: 0.0, y: 0.75, x: 0.39 }, rear: { z: -0.92, y: 0.77, w: 1.35 } },
+    steer: { z: 0.62, y: 1.13 }, dashZ: [0.75, 1.13], parcel: null, bulkhead: null,
     mirrorZ: 0.95, handles: [0.18, -0.72],
-    slats: { mat: 'chrome', ys: [0.65, 0.685, 0.72] }, emblemF: 0.775, plateF: 0.45, plateR: 0.75, emblemR: 1.07, wordR: [-0.45, 0.93, 1],
-    exhaust: { x: [0.55, -0.55], y: 0.4 }, roofRails: true, wiperZ: 1.07,
+    slats: { mat: 'chrome', ys: [0.69, 0.73, 0.77] }, emblemF: 0.825, plateF: 0.48, plateR: 0.79, emblemR: 1.1, wordR: [-0.45, 0.96, 1],
+    exhaust: { x: [0.55, -0.55], y: 0.43 }, roofRails: true, wiperZ: 1.07,
   },
   pickup: {
     L: 5.35, H: 1.86,
@@ -204,8 +205,8 @@ function archY(sp, z) {
 function sectionKeys(sp, z, mid) {
   const w = sp.W(z), yF = sp.yFloor(z);
   const yA = mid ? archY(sp, z) : sp.yBase(z);
-  const yR = Math.max(sp.ySill, yA + 0.045);
-  const yS = Math.max(sp.yShoulder(z), yR + 0.05);
+  const yR = smax(sp.ySill, yA + 0.05, 0.09);
+  const yS = smax(sp.yShoulder(z), yR + 0.05, 0.05);
   const yB = Math.max(sp.yBelt(z), yS + 0.04);
   const yT = sp.yTop(z);
   const wF = w - sp.wellDepth;
@@ -687,10 +688,10 @@ function addMirrorsHandlesWipers(G, parts, lod) {
   const hs = new THREE.SphereGeometry(1, lod === 0 ? 22 : 10, lod === 0 ? 12 : 6);
   const p = hs.attributes.position; for (let i = 0; i < p.count; i++) if (p.getZ(i) < 0) p.setZ(i, p.getZ(i) * 0.28);
   hs.computeVertexNormals();
-  const cx = w + 0.1, cy = yb + 0.11, cz = z - 0.06;
+  const cx = w + 0.085, cy = yb + 0.075, cz = z - 0.08;
   parts.addSym('paint', hs, M4(cx, cy, cz, 0, 0.12, 0, 0.105, 0.062, 0.06));
   parts.addSym('chrome', new THREE.CircleGeometry(1, 20), new THREE.Matrix4().compose(V3(cx - 0.002, cy, cz - 0.0175), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI + 0.12, 0)), V3(0.094, 0.052, 1)));
-  parts.addSym('trim', roundedBox(0.12, 0.03, 0.06, 0.01, 1), M4(w + 0.02, yb + 0.07, z - 0.04, 0, 0, 0.35));
+  parts.addSym('trim', roundedBox(0.1, 0.028, 0.07, 0.01, 1), M4(w + 0.01, yb + 0.04, z - 0.05, 0, 0, 0.3));
   if (lod > 0) return;
   // Türgriffe
   for (const hz of sp.handles) {
