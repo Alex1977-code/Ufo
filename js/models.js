@@ -54,7 +54,123 @@ export function textures() {
   tex.rock = canvasTexture(128, 128, (c, w, h) => { c.fillStyle = '#7a7670'; c.fillRect(0, 0, w, h); speckle(c, w, h, 3000, ['#5f5b56', '#8f8a83', '#4b4844', '#a29d95'], 3); });
   tex.hay = canvasTexture(128, 128, (c, w, h) => { c.fillStyle = '#c9a54a'; c.fillRect(0, 0, w, h); for (let i = 0; i < 400; i++) { c.strokeStyle = Math.random() < 0.5 ? '#e0c46a' : '#9b7a2c'; c.beginPath(); const x = Math.random() * w, y = Math.random() * h; c.moveTo(x, y); c.lineTo(x + (Math.random() - 0.5) * 20, y + (Math.random() - 0.5) * 6); c.stroke(); } });
   tex.concrete = canvasTexture(128, 128, (c, w, h) => { c.fillStyle = '#8d8b86'; c.fillRect(0, 0, w, h); speckle(c, w, h, 2500, ['#7b7974', '#a09e98', '#6e6c68'], 2); });
+  // Fassaden-Atlas 4×2 Kacheln (je Kachel = eine Wandseite 2 m × 2,8 m), helle Grundtöne werden per Instanzfarbe getönt
+  const glass = [];
+  tex.facade = canvasTexture(1024, 512, (c) => {
+    for (let i = 0; i < 8; i++) { c.save(); c.translate((i % 4) * 256, (i >> 2) * 256); c.beginPath(); c.rect(0, 0, 256, 256); c.clip(); drawFacade(c, i, glass, (i % 4) * 256, (i >> 2) * 256); c.restore(); }
+  });
+  tex.facadeD = dataTex(tex.facade, 0.55, 1, glass);
+  tex.plain = canvasTexture(128, 128, (c, w, h) => { c.fillStyle = '#e6e2da'; c.fillRect(0, 0, w, h); speckle(c, w, h, 2200, ['rgba(0,0,0,0.06)', 'rgba(255,255,255,0.08)', 'rgba(90,80,70,0.08)'], 2); });
+  tex.roofTiles = canvasTexture(256, 256, (c, w, h) => {
+    c.fillStyle = '#6d6a66'; c.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 21) for (let x = -32; x < w; x += 32) {
+      const off = (y / 21) % 2 ? 16 : 0, v = 190 + Math.random() * 50;
+      const g = c.createLinearGradient(0, y, 0, y + 21); g.addColorStop(0, `rgb(${v},${v},${v})`); g.addColorStop(1, `rgb(${v * 0.62},${v * 0.62},${v * 0.62})`);
+      c.fillStyle = g; c.beginPath(); if (c.roundRect) c.roundRect(x + off + 1, y, 30, 20, [0, 0, 9, 9]); else c.rect(x + off + 1, y, 30, 20); c.fill();
+    }
+    speckle(c, w, h, 2500, ['rgba(0,0,0,0.12)', 'rgba(255,255,255,0.07)'], 2);
+  });
+  tex.roofTilesD = dataTex(tex.roofTiles, 0.6, 1);
+  tex.roofFlat = canvasTexture(256, 256, (c, w, h) => {
+    c.fillStyle = '#8a8884'; c.fillRect(0, 0, w, h);
+    speckle(c, w, h, 9000, ['#77746f', '#9b9893', '#6a6762', '#aaa69f'], 2);
+    c.strokeStyle = 'rgba(30,30,30,0.35)'; c.lineWidth = 2; for (let x = 0; x <= w; x += 128) { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, h); c.stroke(); }
+    for (let i = 0; i < 6; i++) { c.fillStyle = 'rgba(40,40,40,0.12)'; c.beginPath(); c.ellipse(Math.random() * w, Math.random() * h, 20 + Math.random() * 40, 10 + Math.random() * 20, Math.random() * 3, 0, 7); c.fill(); }
+  });
+  tex.roofFlatD = dataTex(tex.roofFlat, 0.75, 1);
+  tex.fabric = canvasTexture(64, 64, (c, w, h) => { c.fillStyle = '#d8d8d8'; c.fillRect(0, 0, w, h); for (let i = 0; i < w; i += 2) { c.fillStyle = 'rgba(0,0,0,0.07)'; c.fillRect(i, 0, 1, h); c.fillRect(0, i, w, 1); } speckle(c, w, h, 300, ['rgba(255,255,255,0.15)', 'rgba(0,0,0,0.08)'], 1); });
+  // Höhen-/Rauheitsdaten für vorhandene Materialtexturen (R = Relief, G = Rauheit)
+  for (const k of ['brick', 'wood', 'metal', 'rock', 'bark', 'concrete', 'hay', 'leaf', 'hive']) tex[k + 'D'] = dataTex(tex[k], k === 'metal' ? 0.4 : 0.7, 1);
   return tex;
+}
+// Alle zwischengespeicherten Texturen von der GPU nehmen (werden bei erneuter Nutzung automatisch neu hochgeladen)
+export function releaseTextures() { for (const t of Object.values(tex)) t?.dispose?.(); }
+
+// Relief-/Rauheitskarte aus der Helligkeit einer Farbtextur; Glasflächen glatt und eben
+function dataTex(src, r0, r1, flat = []) {
+  const s = src.image, w = s.width, h = s.height;
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d'); ctx.drawImage(s, 0, 0);
+  const img = ctx.getImageData(0, 0, w, h), d = img.data;
+  let mn = 255, mx = 0;
+  for (let i = 0; i < d.length; i += 4) { const l = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11; if (l < mn) mn = l; if (l > mx) mx = l; }
+  const k = 1 / Math.max(1, mx - mn);
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11 - mn) * k;
+    d[i] = n * 255; d[i + 1] = (r0 + (r1 - r0) * (1 - n * 0.6)) * 255; d[i + 2] = 0; d[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  ctx.fillStyle = 'rgb(128,30,0)';
+  for (const [x, y, rw, rh] of flat) ctx.fillRect(x, y, rw, rh);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.NoColorSpace; t.wrapS = src.wrapS; t.wrapT = src.wrapT; t.anisotropy = 4;
+  return t;
+}
+
+// Eine Fassadenkachel (256×256) zeichnen; Glasflächen in glass (Atlas-Pixelkoordinaten) eintragen
+function drawFacade(c, i, glass, ox, oy) {
+  const S = 256;
+  const bricks = (base = '#9c958c') => {
+    c.fillStyle = base; c.fillRect(0, 0, S, S);
+    for (let y = 0, r = 0; y < S; y += 16, r++) for (let x = -32; x < S; x += 48) {
+      const v = 150 + Math.random() * 55, off = r % 2 ? 24 : 0;
+      c.fillStyle = `rgb(${v},${v * 0.55},${v * 0.42})`; c.fillRect(x + off + 1.5, y + 1.5, 45, 13);
+    }
+    speckle(c, S, S, 2500, ['rgba(0,0,0,0.12)', 'rgba(255,255,255,0.06)'], 2);
+  };
+  const plaster = () => {
+    c.fillStyle = '#ebe6dc'; c.fillRect(0, 0, S, S);
+    for (let k = 0; k < 40; k++) { c.fillStyle = `rgba(${Math.random() < 0.5 ? '120,110,95' : '255,255,255'},0.05)`; c.beginPath(); c.arc(Math.random() * S, Math.random() * S, 8 + Math.random() * 30, 0, 7); c.fill(); }
+    speckle(c, S, S, 3000, ['rgba(0,0,0,0.06)', 'rgba(255,255,255,0.1)'], 2);
+    c.strokeStyle = 'rgba(70,60,50,0.25)'; c.lineWidth = 1;
+    for (let k = 0; k < 3; k++) { c.beginPath(); let x = Math.random() * S, y = Math.random() * S; c.moveTo(x, y); for (let j = 0; j < 6; j++) { x += (Math.random() - 0.5) * 30; y += Math.random() * 20; c.lineTo(x, y); } c.stroke(); }
+    const g = c.createLinearGradient(0, S * 0.75, 0, S); g.addColorStop(0, 'rgba(60,50,40,0)'); g.addColorStop(1, 'rgba(60,50,40,0.25)'); c.fillStyle = g; c.fillRect(0, 0, S, S);
+  };
+  const concrete = () => {
+    c.fillStyle = '#c2c1bd'; c.fillRect(0, 0, S, S);
+    speckle(c, S, S, 5000, ['rgba(0,0,0,0.07)', 'rgba(255,255,255,0.08)'], 2);
+    for (let k = 0; k < 14; k++) { const x = Math.random() * S; const g = c.createLinearGradient(0, 0, 0, S); g.addColorStop(0, 'rgba(50,50,50,0.12)'); g.addColorStop(1, 'rgba(50,50,50,0)'); c.fillStyle = g; c.fillRect(x, 0, 2 + Math.random() * 5, S * (0.3 + Math.random() * 0.6)); }
+    c.fillStyle = 'rgba(40,40,40,0.5)'; c.fillRect(0, 126, S, 3); c.fillRect(126, 0, 3, S);
+    c.fillStyle = 'rgba(30,30,30,0.35)'; for (const [x, y] of [[20, 20], [236, 20], [20, 236], [236, 236], [20, 108], [236, 148]]) { c.beginPath(); c.arc(x, y, 3, 0, 7); c.fill(); }
+  };
+  const win = (x, y, w, h, frame = '#f2f0ea', shutters = false) => {
+    c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(x - 6, y - 6, w + 12, h + 14);
+    c.fillStyle = frame; c.fillRect(x - 5, y - 5, w + 10, h + 10);
+    const g = c.createLinearGradient(x, y, x + w, y + h); g.addColorStop(0, '#5f7f98'); g.addColorStop(0.45, '#22313f'); g.addColorStop(0.55, '#38506a'); g.addColorStop(1, '#16202b');
+    c.fillStyle = g; c.fillRect(x, y, w, h);
+    glass.push([ox + x, oy + y, w, h]);
+    c.fillStyle = frame; c.fillRect(x + w / 2 - 3, y, 6, h); c.fillRect(x, y + h * 0.35 - 3, w, 5);
+    c.fillStyle = '#d8d2c6'; c.fillRect(x - 10, y + h + 4, w + 20, 8); c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(x - 10, y + h + 12, w + 20, 3);
+    if (shutters) { c.fillStyle = '#6d7a72'; for (const sx of [x - 5 - w / 2, x + w + 5]) { c.fillRect(sx, y - 5, w / 2, h + 10); c.fillStyle = 'rgba(0,0,0,0.25)'; for (let yy = y; yy < y + h; yy += 8) c.fillRect(sx + 3, yy, w / 2 - 6, 2); c.fillStyle = '#6d7a72'; } }
+  };
+  const band = (col = '#d6d0c4') => { c.fillStyle = col; c.fillRect(0, S - 14, S, 14); c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(0, S - 15, S, 2); };
+  if (i === 0) bricks();
+  else if (i === 1) { // Holzverschalung (Stülpschalung), hell zum Tönen
+    c.fillStyle = '#d9d4ca'; c.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += 18) {
+      const g = c.createLinearGradient(0, y, 0, y + 18); g.addColorStop(0, '#f1ede6'); g.addColorStop(1, '#bdb7ad'); c.fillStyle = g; c.fillRect(0, y, S, 17);
+      c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(0, y + 17, S, 1.5);
+      for (let k = 0; k < 6; k++) { c.fillStyle = 'rgba(90,70,50,0.12)'; c.fillRect(Math.random() * S, y + 2 + Math.random() * 12, 20 + Math.random() * 60, 1); }
+    }
+    c.fillStyle = 'rgba(0,0,0,0.25)'; c.fillRect(Math.random() * 200 + 20, 0, 2, S);
+  } else if (i === 2) plaster();
+  else if (i === 3) concrete();
+  else if (i === 4) { bricks(); win(78, 40, 100, 150); band(); }
+  else if (i === 5) { // Beton-Glas-Fensterband
+    concrete();
+    const y = 46, h = 150; c.fillStyle = '#2a2f35'; c.fillRect(0, y - 6, S, h + 12);
+    const g = c.createLinearGradient(0, y, S, y + h); g.addColorStop(0, '#6c8aa3'); g.addColorStop(0.5, '#253645'); g.addColorStop(1, '#4b6680');
+    c.fillStyle = g; c.fillRect(0, y, S, h); glass.push([ox, oy + y, S, h]);
+    c.fillStyle = '#3a4048'; for (let x = 0; x <= S; x += 64) c.fillRect(x - 3, y, 6, h); c.fillRect(0, y + h * 0.7, S, 4);
+    c.fillStyle = 'rgba(255,255,255,0.12)'; c.beginPath(); c.moveTo(20, y); c.lineTo(80, y); c.lineTo(30, y + h); c.lineTo(-30, y + h); c.fill();
+    band('#a9a9a6');
+  } else if (i === 6) { plaster(); win(88, 46, 80, 140, '#f6f4ee', true); band('#e6e0d4'); }
+  else if (i === 7) { // Trapezblech
+    c.fillStyle = '#cfd2d4'; c.fillRect(0, 0, S, S);
+    for (let x = 0; x < S; x += 16) { const g = c.createLinearGradient(x, 0, x + 16, 0); g.addColorStop(0, '#9da2a6'); g.addColorStop(0.3, '#eef0f1'); g.addColorStop(0.6, '#c3c7ca'); g.addColorStop(1, '#8c9196'); c.fillStyle = g; c.fillRect(x, 0, 16, S); }
+    for (let k = 0; k < 10; k++) { c.fillStyle = 'rgba(120,70,40,0.12)'; c.fillRect(Math.random() * S, Math.random() * S, 3 + Math.random() * 10, 20 + Math.random() * 60); }
+    c.fillStyle = 'rgba(0,0,0,0.3)'; c.fillRect(0, 127, S, 2);
+  }
 }
 
 // ---------- Nebel-des-Krieges-Shaderpatch für statische Geometrie ----------
