@@ -89,7 +89,10 @@ test('monthlyReport', () => {
   assert.equal(c.credits, before + r.net);
   assert.equal(c.monthScore, 0);
   assert.equal(r.gameOver, false);
-  c.credits = -1e9; Game.monthlyReport();
+  // Game Over erst nach 3 schlechten Monaten in Folge (E3); Monat 0 zählt nicht
+  c.lastMonth = 3;
+  c.credits = -1e9; assert.equal(Game.monthlyReport().gameOver, false);
+  c.credits = -1e9; assert.equal(Game.monthlyReport().gameOver, false);
   c.credits = -1e9; const r2 = Game.monthlyReport();
   assert(r2.gameOver);
 });

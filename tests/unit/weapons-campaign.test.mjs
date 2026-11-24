@@ -11,7 +11,7 @@ const mk = (over = {}) => ({ id: 'x' + Math.random(), weapon: 'rifle', load: 'ma
 
 test('Neue Kampagne: Gewehr + 2 Ersatzmagazine + Granate', () => {
   const c = createCampaign();
-  assert.equal(c.v, 3);
+  assert.equal(c.v, 4);
   for (const s of c.soldiers) {
     assert.equal(s.weapon, 'rifle'); assert.equal(s.load, 'mag');
     assert.equal(s.items.length, BELT_SLOTS);
@@ -24,7 +24,7 @@ test('Neue Kampagne: Gewehr + 2 Ersatzmagazine + Granate', () => {
 test('Migration v1: Ladung, Ersatzmagazine, Startvorrat', () => {
   const c = { soldiers: [{ weapon: 'laser', items: ['frag', 'smoke', null] }, { weapon: 'plasma', items: ['frag', null, null] }, { weapon: 'rifle', grenades: 2 }, { weapon: 'gibtsnicht', items: ['frag', 'xxx', null] }], researched: ['plasma'], stock: { plasma: 2, frag: 3 } };
   migrateCampaign(c);
-  assert.equal(c.v, 3);
+  assert.equal(c.v, 4);
   const [laser, plasma, rifle, odd] = c.soldiers;
   assert.equal(laser.load, null);                               // Laser braucht keine Munition
   assert.deepEqual(laser.items, ['frag', 'smoke', null]);       // und bekommt keine Magazine
@@ -52,7 +52,7 @@ test('Migration v2: Magazine werden nachgerüstet, falsche Ladung korrigiert', (
   assert.equal(c.soldiers[1].load, 'mag');
   assert(!c.soldiers[1].items.includes('rk_light'));            // passt nicht zur Kanone
   assert.equal(c.stock.altlast, undefined); assert.equal(c.stock.frag, undefined);
-  assert.equal(c.v, 3);
+  assert.equal(c.v, 4);
 });
 
 test('Gürtel: Standardmagazin ist unbegrenzt und wird nie entfernt', () => {
@@ -169,7 +169,7 @@ test('Forschungsbaum: eindeutig, ohne Zyklen, alles erreichbar', () => {
   };
   ids.forEach((id) => visit(id, []));
   // Erreichbarkeit: Artefakte, die Missionen liefern (Leichname, Gefangene, UFO-Beute – siehe Tactical.finish)
-  const have = new Set(['Plasmawaffe', 'Alien-Legierung', 'Zerium', 'UFO-Navigationsmodul']);
+  const have = new Set(['Plasmawaffe', 'Alien-Legierung', 'Zerium', 'UFO-Navigationsmodul', 'Hyperwellen-Relais']); // Relais: Frachter/Schlachtschiff (RELAY_FROM)
   for (const a of Object.values(ALIENS)) { have.add(a.corpse); if (a.captive) have.add(a.captive); }
   const done = new Set();
   for (let changed = true; changed;) {

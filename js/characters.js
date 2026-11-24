@@ -20,7 +20,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const CHARACTER_BASES = ['human_m_01', 'human_m_02', 'human_m_03', 'human_f_01', 'human_f_02', 'human_f_03'];
-export const CHARACTER_STATES = ['idle', 'aimIdle', 'walk', 'run', 'crouch', 'crouchWalk', 'kneel', 'aim', 'shoot', 'reload', 'hit', 'die', 'dead'];
+export const CHARACTER_STATES = ['idle', 'aimIdle', 'walk', 'run', 'crouch', 'crouchWalk', 'kneel', 'kneelAim', 'kneelShoot', 'aim', 'shoot', 'reload', 'hit', 'die', 'dead'];
 const DEFAULT_URL = new URL('../assets/characters/', import.meta.url).href;
 
 // ---------------------------------------------------------------------------------------------
@@ -369,8 +369,9 @@ function blendMatrix(out, Mj, idx4, w4) {
 // Athletische Statur (einmal je Basis, auf Haut UND Kleidung, entlang der Normalen, in Metern):
 // Werte = PHYSIQUE[sex]; Muskelregionen per weicher Gewichtung, danach Laplace-geglättet → keine Kanten.
 export const PHYSIQUE = {
-  m: { deltoid: 0.013, arm: 0.011, forearm: 0.007, chest: 0.013, lats: 0.014, traps: 0.007, neck: 0.005, quads: 0.011, calves: 0.009, waistFront: -0.016, waistSide: -0.008 },
-  f: { deltoid: 0.006, arm: 0.005, forearm: 0.003, chest: 0.002, lats: 0.006, traps: 0.003, neck: 0.0, quads: 0.007, calves: 0.006, waistFront: -0.022, waistSide: -0.011 },
+  // G6: Nutzervorgabe „schön und/oder kräftig“ – Männer kräftiger, Frauen athletisch mit flacherer Taille
+  m: { deltoid: 0.016, arm: 0.013, forearm: 0.008, chest: 0.015, lats: 0.017, traps: 0.009, neck: 0.006, quads: 0.013, calves: 0.010, waistFront: -0.018, waistSide: -0.009 },
+  f: { deltoid: 0.008, arm: 0.006, forearm: 0.004, chest: 0.002, lats: 0.008, traps: 0.004, neck: 0.0, quads: 0.009, calves: 0.007, waistFront: -0.028, waistSide: -0.014 },
 };
 function applyPhysique(sex, { P, N, reg, side, n, index, key, lscale, meshOf }) {
   const c = PHYSIQUE[sex] || PHYSIQUE.m, d = new Float32Array(n);
@@ -1217,7 +1218,7 @@ function kneelClip(base) {
 // ---------------------------------------------------------------------------------------------
 // makeCharacter
 // ---------------------------------------------------------------------------------------------
-const STATIONARY = new Set(['idle', 'aimIdle', 'aim', 'shoot', 'reload', 'crouch', 'kneel']);
+const STATIONARY = new Set(['idle', 'aimIdle', 'aim', 'shoot', 'reload', 'crouch', 'kneel', 'kneelAim', 'kneelShoot']);
 const UNIFORM_COLORS = [0x5b6345, 0x4e5a3c, 0x6b6450, 0x585c4a];
 const CIV_TOPS = [0x8a2f2f, 0x2f4f7a, 0xd8d4c8, 0x3d6b4f, 0x6a4a7a, 0xc9a227, 0x333338, 0x9a6a4a];
 const CIV_BOTTOMS = [0x2c3e5c, 0x34302c, 0x5c5240, 0x1f2226, 0x6b6b6b];
@@ -1363,6 +1364,9 @@ export function makeCharacter(opts = {}) {
       case 'crouch': return armed ? [{ clip: maskedClip(base, 'Crouch_Idle_Loop', 'lower') }, ...upperArmed('Pistol_Idle_Loop')] : [{ clip: clipN('Crouch_Idle_Loop') }];
       case 'kneel': { const k = kneelClip(base); return armed ? [{ clip: maskClipObj(base, k, 'lower'), once: true, clamp: true }, ...upperArmed('Pistol_Idle_Loop')] : [{ clip: k, once: true, clamp: true }]; }
       case 'aim': return [{ clip: clipN('Pistol_Aim_Neutral'), aim: 0 }, { clip: clipN('Pistol_Aim_Up'), aim: 1 }, { clip: clipN('Pistol_Aim_Down'), aim: -1 }];
+      // G6: kniend zielen/schießen – Knie-Pose unten (gehalten), Ziel-/Schuss-Clips nur Oberkörper
+      case 'kneelAim': { const k = kneelClip(base); return [{ clip: maskClipObj(base, k, 'lower'), once: true, clamp: true, keep: true }, { clip: maskedClip(base, 'Pistol_Aim_Neutral', 'upper'), aim: 0 }, { clip: maskedClip(base, 'Pistol_Aim_Up', 'upper'), aim: 1 }, { clip: maskedClip(base, 'Pistol_Aim_Down', 'upper'), aim: -1 }]; }
+      case 'kneelShoot': { const k = kneelClip(base); return [{ clip: maskClipObj(base, k, 'lower'), once: true, clamp: true, keep: true }, { clip: maskedClip(base, 'Pistol_Shoot', 'upper'), once: true, next: 'kneelAim' }]; }
       case 'shoot': return [{ clip: clipN('Pistol_Shoot'), once: true, next: 'aim' }];
       case 'reload': return [{ clip: clipN('Pistol_Reload'), once: true, next: 'aimIdle' }];
       case 'hit': return [{ clip: clipN(rnd() < 0.5 ? 'Hit_Chest' : 'Hit_Head'), once: true, next: '@prev' }];
@@ -1377,7 +1381,7 @@ export function makeCharacter(opts = {}) {
     if (state === ch.state && !sopts.force) { ch.setSpeed(ch.speedMps); return ch; }
     if (ch.state === 'dead' && state !== 'dead' && !sopts.force) return ch;
     const fade = sopts.fade ?? (state === 'die' || state === 'hit' ? 0.12 : state === 'shoot' ? 0.08 : 0.25);
-    if (ch.state && !['hit', 'shoot', 'reload'].includes(ch.state)) ch.prevState = ch.state;
+    if (ch.state && !['hit', 'shoot', 'kneelShoot', 'reload'].includes(ch.state)) ch.prevState = ch.state;
     const prevLoco = cur.find((c) => c.spec.loco);
     const spec = specFor(state).filter((s) => s.clip);
     const next = [];
@@ -1387,7 +1391,7 @@ export function makeCharacter(opts = {}) {
       a.setLoop(s.once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity); a.clampWhenFinished = !!s.clamp;
       a.setEffectiveTimeScale(s.ts ?? 1);
       const w = s.aim !== undefined ? aimWeights(s.aim) : 1;
-      if (again && !s.once) { a.stopFading(); a.enabled = true; a.setEffectiveWeight(w); }
+      if (again && (!s.once || s.keep)) { a.stopFading(); a.enabled = true; a.setEffectiveWeight(w); }
       else {
         a.reset(); a.setEffectiveWeight(w);
         if (s.loco && prevLoco && prevLoco.a !== a) a.time = (prevLoco.a.time / prevLoco.a.getClip().duration) * a.getClip().duration;
@@ -1398,7 +1402,7 @@ export function makeCharacter(opts = {}) {
     }
     for (const c of cur) if (!next.find((x) => x.a === c.a)) c.a.fadeOut(fade);
     cur = next; ch.state = state; stateTime = 0; oneShot = spec.find((s) => s.next) || null;
-    if (state === 'shoot') recoil = 1;
+    if (state === 'shoot' || state === 'kneelShoot') recoil = 1;
     // IK-Ziele für das Gewehr
     const rifleIK = rifle && !['die', 'dead', 'hit'].includes(state);
     ikTarget.R = rifleIK ? 1 : state === 'hit' && rifle ? 0.5 : 0;
@@ -1435,7 +1439,7 @@ export function makeCharacter(opts = {}) {
     const spine = ch.bones.spine01; if (!spine || !arms.R.a || !arms.L.a) return;
     const fwd = _v[0].copy(an.spineFwdLocal).applyQuaternion(wquat(spine, _q[1])); fwd.y = 0; fwd.normalize();
     let pitch = -0.32, yaw = 0.18;
-    if (['aim', 'shoot'].includes(ch.state)) { pitch = ch.aimPitch; yaw = 0; }
+    if (['aim', 'shoot', 'kneelAim', 'kneelShoot'].includes(ch.state)) { pitch = ch.aimPitch; yaw = 0; }
     else if (['walk', 'run', 'crouchWalk'].includes(ch.state)) { pitch = -0.62; yaw = 0.38; }
     else if (ch.state === 'reload') { pitch = -0.45; yaw = 0.3; }
     recoil = Math.max(0, recoil - dt * 6);

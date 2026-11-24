@@ -6,6 +6,7 @@ import { Input, padLabel } from './input.js';
 import { sfx, setMusicMood } from './audio.js';
 import { clamp, lerp, rand, randRange, smooth } from './util.js';
 import { makeInterceptor, makeUfo as makeUfoModel, animateCraft, disposeCraft } from './craftmodels.js';
+import { applyEnvironment } from './environment.js';
 
 // ---------- Kampfregeln ----------
 const ESCAPE_KM = 22; // ab dieser Entfernung entkommt das UFO
@@ -312,17 +313,12 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     sky = new THREE.Mesh(new THREE.SphereGeometry(4000, 32, 16), skyMat);
     sky.renderOrder = -10; sky.frustumCulled = false;
     scene.add(sky);
-    // Umgebungsreflexionen für Metallflächen
+    // Umgebungsreflexionen für Metallflächen: Himmels-HDRI über environment.js (G6), passend zum Himmels-Preset;
+    // Hintergrund bleibt der prozedurale Himmel. Offline/Fehler → prozedurale Ersatz-PMREM aus environment.js.
     try {
-      const envScene = new THREE.Scene();
-      envScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 24, 12), skyMat));
-      const low = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshBasicMaterial({ color: overLand ? 0x1c2a14 : 0x0a1e2c }));
-      low.rotation.x = -Math.PI / 2; low.position.y = -30; envScene.add(low);
-      const pm = new THREE.PMREMGenerator(engine.renderer);
-      pmremRT = pm.fromScene(envScene, 0.04, 0.1, 500);
-      pm.dispose();
-      low.geometry.dispose(); low.material.dispose(); envScene.children[0].geometry.dispose();
-      scene.environment = pmremRT.texture;
+      const envName = preset === SKIES[1] ? 'dusk' : 'day';
+      const rot = Math.atan2(sunDir.x, sunDir.z);
+      applyEnvironment(scene, envName, { background: 'none', intensity: 0.9, rotation: rot }).catch(() => {});
       scene.environmentIntensity = 0.9;
     } catch (e) { console.warn('Env-Map nicht verfügbar', e); }
 

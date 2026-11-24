@@ -1154,3 +1154,86 @@ export function disposeHeroCar(root) {
 export function heroCarTriangles(root) {
   let n = 0; root.traverse((o) => { if (o.isMesh && o.visible) n += triCount(o.geometry); }); return n;
 }
+
+// =====================================================================
+// G6: Farbe nachträglich setzen + Instanz-Bausätze für viele gleiche Autos
+// =====================================================================
+/**
+ * Lackfarbe ändern. Bei Schaden (Lack-Map enthält die Farbe) wird die Lack-Map neu gebacken statt die Farbe
+ * zu multiplizieren (behebt den Doppelfarb-Fehler aus G4).
+ */
+export function recolorHeroCar(root, paintColor) {
+  const u = root?.userData; if (!u?.materials?.paint) return root;
+  const paint = u.materials.paint, color = new THREE.Color(paintColor);
+  if (paint.map && paint.userData.paintColor) {
+    const old = paint.map;
+    paint.map = damageTexture(color, u.seed || 1, u.damage || 0, getSpec(u.type));
+    paint.color.set(0xffffff);
+    if (old.userData.own) old.dispose();
+  } else paint.color.copy(color);
+  paint.userData.paintColor = color.clone(); u.paintColor = color.getHex();
+  paint.needsUpdate = true;
+  return root;
+}
+/**
+ * Sicherer Weg zu vehiclematerials.applyVehicleMaterials für Hero-Autos: paintColor wird über recolorHeroCar
+ * eingebacken und nicht an applyVehicleMaterials weitergereicht (sonst Farbe × Lack-Map = doppelte Farbe).
+ * apply = die Funktion aus vehiclematerials.js (kein harter Import, damit herocar.js eigenständig bleibt).
+ */
+export function applyHeroCarMaterials(root, apply, opts = {}) {
+  const { paintColor, ...rest } = opts;
+  if (paintColor != null) recolorHeroCar(root, paintColor);
+  const damaged = !!root.userData?.materials?.paint?.map;
+  return apply(root, damaged || paintColor != null ? rest : opts);
+}
+
+const KIT_CACHE = new Map();
+/**
+ * Statischer Bausatz eines geparkten Autos für InstancedMesh: je LOD-Stufe eine Geometrie je Material-Slot,
+ * Räder eingebacken (LOD0/1 aus dem Rad-Cache, gespiegelt mit korrekter Wicklung). Geometrien/Materialien werden
+ * je (Typ, Schaden, Farbe) geteilt; Lack-Material ist weiß, Farbe kommt aus instanceColor (ungeschädigt) bzw.
+ * aus der eingebackenen Lack-Map (Schaden, dann Instanzfarbe weiß).
+ * @returns {{type, levels:Object<number,Object<string,THREE.BufferGeometry>>, mats:Object<string,THREE.Material>, dims, damaged:boolean}}
+ */
+export function getHeroCarKit(type, { damage = 0, paintColor = 0x16181b, seed = 7, plateText = 'AEG 1994', levels = [0, 1, 2] } = {}) {
+  type = HERO_TYPES.includes(type) ? type : 'sedan';
+  damage = clamp(+damage || 0, 0, 1);
+  const damaged = damage > 0.02;
+  const key = `${type}|${damaged ? damage.toFixed(2) + '|' + new THREE.Color(paintColor).getHexString() : 'clean'}|${levels.join(',')}`;
+  if (KIT_CACHE.has(key)) return KIT_CACHE.get(key);
+  const sp = getSpec(type);
+  const { mats, own } = carMaterials(new THREE.Color(damaged ? paintColor : 0xffffff), seed, damage, sp, plateText);
+  if (!damaged) mats.paint.color.set(0xffffff);
+  const dents = damage > 0.05 ? makeDents(sp, seed, damage) : null;
+  const out = {};
+  for (const lod of levels) {
+    const entry = bodyLevel(type, lod), slots = {};
+    for (const slot of HERO_SLOTS) {
+      const list = [];
+      const g = entry.geos[slot];
+      if (g) list.push(dents && slot !== 'interior' ? applyDents(g.clone(), dents) : g.clone());
+      if (lod < 2) {
+        const wg = wheelGeos(type, lod, seed % 2);
+        const src = slot === 'tyre' ? wg.tyre : slot === 'chrome' ? wg.chrome : slot === 'trim' ? wg.brake : null;
+        if (src) for (const w of wheelPositions(sp)) list.push(prep(src.clone(), M4(w.x, w.y, w.z).multiply(new THREE.Matrix4().makeScale(w.side, 1, 1))));
+      }
+      if (!list.length) continue;
+      for (const x of list) prep(x);
+      slots[slot] = list.length === 1 ? list[0] : mergeGeometries(list, false);
+      if (list.length > 1) list.forEach((x) => x.dispose());
+      slots[slot].computeBoundingSphere();
+    }
+    out[lod] = slots;
+  }
+  const kit = { type, levels: out, mats, own, damaged, dims: { length: sp.L, width: sp.W(0) * 2, height: sp.H } };
+  KIT_CACHE.set(key, kit);
+  return kit;
+}
+/** Alle Instanz-Bausätze freigeben (Geometrien + eigene Materialien). */
+export function clearHeroCarKits() {
+  for (const k of KIT_CACHE.values()) {
+    for (const lv of Object.values(k.levels)) for (const g of Object.values(lv)) g.dispose();
+    for (const m of k.own) { for (const t of ['map']) if (m[t]?.userData?.own) m[t].dispose(); m.dispose(); }
+  }
+  KIT_CACHE.clear();
+}

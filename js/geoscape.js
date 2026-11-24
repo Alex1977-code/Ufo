@@ -1,7 +1,7 @@
 // Geoscape: 3D-Erdkugel in Echtzeit – Radar, UFO-Abfang, Einsätze, Basis, Forschung, Finanzen
 import * as THREE from 'three';
 import { NOISE_GLSL } from './shaders.js';
-import { Game, newSoldier } from './game.js';
+import { Game, newSoldier, HIRE_SOLDIER, GAME_OVER_MONTHS, hiveCrew, hiveAttrition } from './game.js';
 import { ARTIFACT_PRICES, ALIENS, UFOS, CRAFTS, RESEARCH, FACILITIES, WEAPONS, ARMORS, ITEMS, RANKS, REGIONS, regionOf, CITY_NAMES } from './data.js';
 import { Input, padLabel } from './input.js';
 import { openEquipment, beltTotals, itemEffect, weaponDesc } from './equip.js';
@@ -682,12 +682,12 @@ export class Geoscape {
     // UFO-Erzeugung
     this.nextUfo -= min;
     if (this.nextUfo <= 0) {
-      const diff = 1 + monthIdx * 0.35;
-      this.nextUfo = randRange(360, 1500) / Math.min(diff, 3);
+      const diff = 1 + monthIdx * 0.25; // E10: 38…95 UFOs je Monat statt 46…139
+      this.nextUfo = randRange(480, 1800) / Math.min(diff, 2.5);
       this.spawnUfo(diff);
     }
     this.nextTerror -= min;
-    if (this.nextTerror <= 0) { this.nextTerror = randRange(9000, 16000); this.spawnUfo(2 + monthIdx * 0.35, 'terror'); }
+    if (this.nextTerror <= 0) { this.nextTerror = randRange(9000, 16000); this.spawnUfo(2 + monthIdx * 0.25, 'terror'); }
     c.geo = { nextUfo: this.nextUfo, nextTerror: this.nextTerror };
 
     // UFOs bewegen
@@ -702,7 +702,7 @@ export class Geoscape {
         s.expires -= min;
         if (s.expires <= 0) {
           this.sites.splice(this.sites.indexOf(s), 1);
-          if (s.kind === 'terror') { Game.addScore(-120, s.region); this.log(`Terrorangriff auf ${s.name} nicht abgewehrt!`, 'bad'); toast(`Terrorangriff auf ${s.name} – keine Reaktion. Die Region ist empört.`, 'bad'); }
+          if (s.kind === 'terror') { Game.addScore(-200, s.region); this.log(`Terrorangriff auf ${s.name} nicht abgewehrt!`, 'bad'); toast(`Terrorangriff auf ${s.name} – keine Reaktion. Die Region ist empört.`, 'bad'); }
           else this.log(`Einsatzort ${s.name} aufgegeben.`, 'warn');
         }
       }
@@ -743,7 +743,7 @@ export class Geoscape {
       u.pos = { x: r.x, y: r.y, z: r.z };
       ll = vecToLatLon(u.pos);
       if (r.arrived) {
-        if (u.state === 'leave') { this.removeUfo(u); if (u.detected) this.log(`${u.name} hat die Atmosphäre verlassen.`); else Game.addScore(-15, regionOf(ll.lat, ll.lon)); return; }
+        if (u.state === 'leave') { this.removeUfo(u); if (u.detected) this.log(`${u.name} hat die Atmosphäre verlassen.`); else if (Game.c.lastMonth >= 2) Game.addScore(-4, regionOf(ll.lat, ll.lon)); return; } // E1: ab Monat 2, −4 statt −15
         if (u.mission === 'terror') {
           const city = Game.c.cities.find((x) => x.name === u.city);
           this.addSite({ kind: 'terror', name: city.name, lat: city.lat, lon: city.lon, ufoType: u.type, expires: 18 * 60, region: city.region });
@@ -1021,7 +1021,7 @@ export class Geoscape {
     const desc = { crash: 'Ein abgeschossenes UFO. Überlebende Aliens verteidigen das Wrack.', landed: 'Ein intaktes, gelandetes UFO. Die volle Besatzung ist anwesend.', terror: 'Aliens terrorisieren die Zivilbevölkerung. Schnelles Handeln rettet Leben!', hive: 'Das Hive-Nest der Invasoren. Vernichte den Hive-Kommandanten, um den Krieg zu beenden.' };
     modal({
       title: s.name,
-      html: `<p>${desc[s.kind]}</p>${s.ufoType ? `<p class="muted">UFO-Klasse: ${UFOS[s.ufoType].name}</p>` : ''}${s.expires ? `<p class="muted">Verbleibende Zeit: ${Math.ceil(s.expires / 60)} h</p>` : ''}
+      html: `<p>${desc[s.kind]}</p>${s.ufoType ? `<p class="muted">UFO-Klasse: ${UFOS[s.ufoType].name}</p>` : ''}${s.expires ? `<p class="muted">Verbleibende Zeit: ${Math.ceil(s.expires / 60)} h</p>` : ''}${s.kind === 'hive' ? `<p class="muted">Geschätzte Besatzung: ${hiveCrew(s, Game.c.lastMonth || 0)} + Kommandant</p>` : ''}
         <p>Transporter Kondor: <b>${t.status === 'ready' ? 'Einsatzbereit' : 'Im Einsatz'}</b></p>`,
       buttons: [{ label: 'Schließen' }, { label: 'Einsatztrupp entsenden', primary: true, disabled: t.status !== 'ready', action: () => { this.squadSelect(s); } }],
     });
@@ -1101,6 +1101,8 @@ export class Geoscape {
     const i = this.sites.findIndex((s) => s.id === site.id);
     if (i >= 0 && (result.won || site.kind === 'terror')) this.sites.splice(i, 1);
     if (result.won && site.ufoId) { const u = this.ufos.find((x) => x.id === site.ufoId); if (u) this.removeUfo(u); }
+    // E15: Hive-Nest wird zermürbt – gefallene Wachen kehren nur langsam zurück
+    if (site.kind === 'hive' && !result.won) { const a = hiveAttrition(site, result.hiveKills || 0, Game.c.lastMonth || 0); site.hiveKilled = a.hiveKilled; site.hiveMonth = a.hiveMonth; }
     const t = Game.c.transport;
     t.status = 'return';
     this.log(result.won ? `Mission ${site.name}: Erfolg!` : `Mission ${site.name}: Fehlschlag.`, result.won ? 'good' : 'bad');
@@ -1137,7 +1139,8 @@ export class Geoscape {
         ${rep.lines.map((l) => `<tr><td>${l.name}</td><td class="${l.score >= 0 ? 'good' : 'bad'}">${l.score}</td><td>${fmtMoney(l.funding)}</td><td class="${l.delta >= 0 ? 'good' : 'bad'}">${l.delta >= 0 ? '+' : ''}${fmtMoney(l.delta)}</td></tr>`).join('')}</table>
         <p>Einnahmen: <b class="good">${fmtMoney(rep.fundingTotal)}</b> · Gehälter: <b class="bad">−${fmtMoney(rep.salaries)}</b> · Unterhalt: <b class="bad">−${fmtMoney(rep.upkeep)}</b></p>
         <p>Bilanz: <b class="${rep.net >= 0 ? 'good' : 'bad'}">${fmtMoney(rep.net)}</b> · Monatswertung: <b>${rep.monthScore}</b></p>
-        ${Game.c.negMonths ? '<p class="bad">⚠ Der Rat ist unzufrieden. Ein weiterer schlechter Monat beendet das Projekt AEGIS!</p>' : ''}`,
+        <p class="muted">Schlechter Monat bei Wertung unter <b>${rep.threshold}</b> oder negativem Kontostand. ${GAME_OVER_MONTHS} schlechte Monate in Folge beenden das Projekt.</p>
+        ${Game.c.negMonths ? `<p class="bad">⚠ Der Rat ist unzufrieden. Noch ${rep.monthsLeft} schlechte${rep.monthsLeft === 1 ? 'r' : ''} Monat${rep.monthsLeft === 1 ? '' : 'e'} in Folge, dann wird das Projekt AEGIS eingestellt!</p>` : ''}`,
       buttons: [{ label: 'Weiter', primary: true, action: () => { if (over) this.hooks.gameOver('Der Rat hat das Projekt AEGIS wegen anhaltender Misserfolge eingestellt.'); } }],
     });
     if (!over) Game.save();
@@ -1178,7 +1181,7 @@ export class Geoscape {
           ${c.building.length ? `<h4>Im Bau</h4>${c.building.map((b) => `<div>${FACILITIES[b.type].name}: noch ${Math.ceil(b.daysLeft)} Tage</div>`).join('')}` : ''}</div>
         <div><h4>Personal</h4><p>Soldaten: <b>${c.soldiers.length}</b> (${c.soldiers.filter((s) => s.wound > 0).length} verwundet)</p>
           <p>Wissenschaftler: <b>${c.scientists}</b> / ${Game.labCapacity}</p>
-          <button class="btn wide" data-hire="soldier">Soldat rekrutieren – ${fmtMoney(60000)}</button>
+          <button class="btn wide" data-hire="soldier">Soldat rekrutieren – ${fmtMoney(HIRE_SOLDIER)}</button>
           <button class="btn wide" data-hire="sci" ${c.scientists >= Game.labCapacity ? 'disabled' : ''}>${Math.max(1, Math.min(5, Game.labCapacity - c.scientists))} Wissenschaftler einstellen – ${fmtMoney(Math.max(1, Math.min(5, Game.labCapacity - c.scientists)) * 30000)}</button>
           <h4>Radar</h4><p>Reichweite: ${Math.round(Game.radarRange / DEG * 111)} km</p></div></div>`,
       buttons: [...(isBaseViewOpen() ? [] : [{ label: '🏗 3D-Ansicht', action: () => { openBaseView(this.engine, this, { onBuild: () => this.baseMenu() }); } }]), { label: 'Schließen', primary: true }],
@@ -1191,7 +1194,7 @@ export class Geoscape {
         c.credits -= f.cost; c.building.push({ type: b.dataset.build, daysLeft: f.days }); sfx('select');
         toast(`${f.name} wird gebaut.`); h.close(); this.baseMenu();
       }
-      if (b.dataset.hire === 'soldier') { if (c.credits < 60000) { sfx('deny'); return; } c.credits -= 60000; const s = newSoldier(); c.soldiers.push(s); toast(`${s.name} rekrutiert.`); h.close(); this.baseMenu(); }
+      if (b.dataset.hire === 'soldier') { if (c.credits < HIRE_SOLDIER) { sfx('deny'); return; } c.credits -= HIRE_SOLDIER; const s = newSoldier(); c.soldiers.push(s); toast(`${s.name} rekrutiert.`); h.close(); this.baseMenu(); }
       if (b.dataset.hire === 'sci') { const n = Math.min(5, Game.labCapacity - c.scientists); const cost = n * 30000; if (n <= 0 || c.credits < cost) { sfx('deny'); return; } c.credits -= cost; c.scientists += n; h.close(); this.baseMenu(); }
       this.updateHud();
     });
@@ -1212,13 +1215,17 @@ export class Geoscape {
       const ns = Game.researchNeeds(r);
       if (!ns.length) return 'Keine Artefakte nötig';
       if (Game.researchPaid(r.id)) return 'Artefakte bereits verbraucht';
-      return 'Verbraucht beim Start: ' + ns.map((a) => `${a.n}× ${a.name} (vorhanden: ${c.artifacts[a.name] || 0})`).join(', ');
+      const fmt = (list) => list.map((a) => `${a.n}× ${a.name} (vorhanden: ${c.artifacts[a.name] || 0})`).join(' + ');
+      const alt = Game.researchNeeds(r, true);
+      if (Game.researchWaived(r)) return `Artefakte entfallen (${RESEARCH.find((x) => x.id === r.waivedBy)?.name} erforscht)`;
+      const waive = r.waivedBy ? ` · oder Projekt „${RESEARCH.find((x) => x.id === r.waivedBy)?.name}“ erforschen (−${r.waivedCut || 0} WT)` : '';
+      return 'Verbraucht beim Start: ' + fmt(ns) + (alt.length ? ' · oder: ' + fmt(alt) : '') + waive;
     };
     const h = modal({
       title: '⚗ Forschung', wide: true,
-      html: `${cur ? `<div class="cur-research"><b>${cur.name}</b>${bar(c.research.progress, cur.cost, 'good')}<small>ca. ${Math.ceil((cur.cost - c.research.progress) / c.scientists)} Tage · ${c.scientists} Wissenschaftler</small></div>` : '<p class="warn">Kein laufendes Projekt!</p>'}
-        <h4>Verfügbare Projekte</h4>${avail.filter((r) => r.id !== cur?.id).map((r) => `<button class="btn wide research-item" data-r="${r.id}"><b>${r.name}</b><small>${r.desc}</small><small class="res-needs">${needsText(r)}</small>${unlocks(r) ? `<small class="res-unlock">${unlocks(r)}</small>` : ''}<i>${r.cost} WT</i></button>`).join('') || '<p class="muted">Keine – birg Alien-Artefakte, um neue Projekte freizuschalten.</p>'}
-        ${locked.length ? `<h4>Noch nicht verfügbar</h4><div class="res-locked">${locked.map((r) => `<div class="research-lock"><b>${r.name}</b> <small>${[afterText(r), Game.researchPaid(r.id) ? '' : Game.researchNeeds(r).filter((a) => (c.artifacts[a.name] || 0) < a.n).map((a) => `${a.n}× ${a.name} fehlt`).join(', ')].filter(Boolean).join(' · ')}</small></div>`).join('')}</div>` : ''}
+      html: `${cur ? `<div class="cur-research"><b>${cur.name}</b>${bar(c.research.progress, Game.researchCost(cur), 'good')}<small>ca. ${Math.ceil((Game.researchCost(cur) - c.research.progress) / c.scientists)} Tage · ${c.scientists} Wissenschaftler</small></div>` : '<p class="warn">Kein laufendes Projekt!</p>'}
+        <h4>Verfügbare Projekte</h4>${avail.filter((r) => r.id !== cur?.id).map((r) => `<button class="btn wide research-item" data-r="${r.id}"><b>${r.name}</b><small>${r.desc}</small><small class="res-needs">${needsText(r)}</small>${unlocks(r) ? `<small class="res-unlock">${unlocks(r)}</small>` : ''}<i>${Game.researchCost(r)} WT</i></button>`).join('') || '<p class="muted">Keine – birg Alien-Artefakte, um neue Projekte freizuschalten.</p>'}
+        ${locked.length ? `<h4>Noch nicht verfügbar</h4><div class="res-locked">${locked.map((r) => `<div class="research-lock"><b>${r.name}</b> <small>${[afterText(r), Game.researchPaid(r.id) || Game.researchWaived(r) ? '' : [Game.researchNeeds(r).filter((a) => (c.artifacts[a.name] || 0) < a.n).map((a) => `${a.n}× ${a.name} fehlt`).join(', '), Game.researchNeeds(r, true).length ? 'oder ' + Game.researchNeeds(r, true).map((a) => `${a.n}× ${a.name}`).join(' + ') : '', r.waivedBy ? `oder „${RESEARCH.find((x) => x.id === r.waivedBy)?.name}“ erforschen` : ''].filter(Boolean).join(' · ')].filter(Boolean).join(' · ')}</small></div>`).join('')}</div>` : ''}
         <h4>Artefakte im Lager</h4><p class="muted">${Object.entries(c.artifacts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ×${n}`).join(' · ') || 'Keine'}</p>
         <h4>Abgeschlossen</h4><p class="muted">${c.researched.map((id) => RESEARCH.find((r) => r.id === id).name).join(' · ') || '—'}</p>`,
       buttons: [{ label: 'Schließen', primary: true }],

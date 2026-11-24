@@ -108,33 +108,48 @@ export const CRAFTS = {
   phantom: { name: 'Phantom', hp: 450, dmg: 140, acc: 0.75, speed: 0.012, cost: 650000, req: 'propulsion' },
 };
 
-// Verkaufspreise für gelagerte Alien-Artefakte (Credits pro Stück)
+// Verkaufspreise für gelagerte Alien-Artefakte (Credits pro Stück) – E1 E5/E13: Leichen billig, Technik und Gefangene teuer
 export const ARTIFACT_PRICES = {
-  'Vael-Leichnam': 15000, 'Krull-Leichnam': 15000, 'Plasmawaffe': 40000, 'Alien-Legierung': 8000,
-  'Zerium': 30000, 'UFO-Navigationsmodul': 60000, 'Drohnen-Wrack': 25000, 'Hive-Gewebe': 100000,
-  'Gefangener Vael': 30000, 'Gefangener Krull': 45000, 'Gefangene Klauenbestie': 40000,
+  'Vael-Leichnam': 10000, 'Krull-Leichnam': 20000, 'Bestien-Kadaver': 15000, 'Plasmawaffe': 20000, 'Alien-Legierung': 5000,
+  'Zerium': 18000, 'UFO-Navigationsmodul': 50000, 'Drohnen-Wrack': 35000, 'Hyperwellen-Relais': 150000, 'Hive-Gewebe': 250000,
+  'Gefangener Vael': 60000, 'Gefangener Krull': 90000, 'Gefangene Klauenbestie': 50000,
 };
 
+// Bergungsprämien (E1 E4): je erlegtem Alien nach Art, je UFO nach Klasse (nur bei Sieg an einem UFO), Terror pauschal.
+// Gefangene zählen ×BOUNTY_CAPTURE_MUL, Rückzug/Niederlage zahlt BOUNTY_LOSS_SHARE der Alien-Summe.
+export const BOUNTY_ALIEN = { vael: 8000, vael_s: 12000, krull: 20000, drone: 20000, beast: 15000, hive: 0 };
+export const BOUNTY_UFO = { scout: 50000, fighter: 90000, freighter: 160000, battleship: 250000 };
+export const BOUNTY_TERROR = 120000;
+export const BOUNTY_CAPTURE_MUL = 1.5;
+export const BOUNTY_LOSS_SHARE = 0.5;
+// Hyperwellen-Relais (E1 E7): Stückzahl je geborgenem UFO-Typ (Absturz: nur mit RELAY_CRASH_CHANCE)
+export const RELAY_FROM = { freighter: 1, battleship: 1 };
+export const RELAY_CRASH_CHANCE = 0.6;
+// Teilbeute beim Rückzug (E1 E6): Leichen bis zu dieser Entfernung (Chebyshev) von der Landezone werden geborgen
+export const RETREAT_LOOT_RADIUS = 6;
+
 // Forschungsbaum. 'needs' = Artefakte, 'after' = vorher erforschte Projekte
+// 'needsAlt' (E9) = Alternativ-Artefaktsatz, 'waivedBy' (E13) = ist dieses Projekt erforscht, entfallen die Artefakte
+// und die Kosten sinken um 'waivedCut' WT.
 export const RESEARCH = [
-  { id: 'laser', name: 'Laserwaffen', cost: 160, desc: 'Gebündelte Lichtenergie – präziser und stärker als Projektilwaffen. Schaltet Laser-Gewehre und Laser-Pistolen frei.' },
-  { id: 'autopsy_vael', name: 'Autopsie: Vael', cost: 80, needs: ['Vael-Leichnam'], desc: 'Die schmächtigen Vael sind Klone mit verkümmertem Verdauungstrakt. Ihre Gehirne zeigen Spuren eines kollektiven Bewusstseins. +5 % Trefferchance gegen Aliens.' },
-  { id: 'alloys', name: 'Alien-Legierungen', cost: 140, needs: ['Alien-Legierung'], desc: 'Ultraleichte, extrem belastbare Hüllenmetalle. Schaltet Legierungs-Panzerung frei.' },
-  { id: 'plasma', name: 'Plasmawaffen', cost: 260, needs: ['Plasmawaffe'], after: ['laser'], desc: 'Durch Zerium betriebene Plasmabeschleuniger. Schaltet Plasmagewehre, Plasmapistolen, Plasma-Zellen und Alien-Granaten frei.' },
-  { id: 'autopsy_krull', name: 'Autopsie: Krull', cost: 120, needs: ['Krull-Leichnam'], desc: 'Gezüchtete Kriegerkaste mit gepanzerter Haut. +5 % Trefferchance gegen Aliens.' },
-  { id: 'navigation', name: 'UFO-Navigation', cost: 220, needs: ['UFO-Navigationsmodul'], desc: 'Gravimetrische Ortung: Radarreichweite +60 %, UFOs werden zuverlässiger erkannt.' },
-  { id: 'propulsion', name: 'Zerium-Antrieb', cost: 280, needs: ['Zerium'], after: ['alloys'], desc: 'Antigravitationsantrieb. Schaltet den Abfangjäger „Phantom“ frei.' },
-  { id: 'hplasma', name: 'Schwerer Plasmawerfer', cost: 300, after: ['plasma'], desc: 'Großkalibrige Plasmawaffe für Trupp-Unterstützung.' },
-  { id: 'powerarmor', name: 'Exo-Rüstung', cost: 380, after: ['alloys', 'propulsion'], desc: 'Motorisierte Vollpanzerung mit integrierten Schilden.' },
-  { id: 'drone_tech', name: 'Analyse: Wächterdrohne', cost: 160, needs: ['Drohnen-Wrack'], desc: 'Die Drohnen empfangen Befehle über eine Hyperwellen-Trägerfrequenz …' },
-  { id: 'proxmine', name: 'Sensorminen', cost: 80, desc: 'Bewegungssensor-Zünder für Wurfminen. Schaltet die Sensormine SM-4 frei.' },
-  { id: 'scanner', name: 'Bewegungsortung', cost: 100, desc: 'Tragbarer Doppler-Scanner. Schaltet den Bewegungsscanner BS-2 frei.' },
-  { id: 'hlaser', name: 'Schwerer Laser', cost: 220, after: ['laser'], desc: 'Gekoppelte Laserkammern brennen sich durch Panzerung. Schaltet den Schweren Laser L9 frei.' },
-  { id: 'verhoer_vael', name: 'Verhör: Vael', cost: 120, needs: ['Gefangener Vael'], desc: 'Der Gefangene verrät Lagerorte von Zerium in den UFOs: +1 Zerium je geborgenem UFO. Voraussetzung für Schockwerfer.' },
-  { id: 'verhoer_krull', name: 'Verhör: Krull', cost: 180, needs: ['Gefangener Krull'], desc: 'Die Kriegerkaste kennt die Sprengköpfe der Hive-Flotte: Bergungsprämien +20 %. Voraussetzung für Lenkwaffen.' },
-  { id: 'stuntech', name: 'Schockwerfer', cost: 240, needs: ['Plasmawaffe'], after: ['plasma', 'verhoer_vael'], desc: 'Kompakter Werfer für Betäubungsbomben. Schaltet Schockwerfer SW-4 und Schockbomben frei.' },
-  { id: 'guidance', name: 'Lenkwaffen', cost: 380, needs: ['Zerium'], after: ['navigation', 'verhoer_krull'], desc: 'Zerium-Sprengkopf mit Wegpunktsteuerung. Schaltet den Leitwerfer LW-9 und Lenkraketen frei.' },
-  { id: 'hyperwave', name: 'Hyperwellen-Dekodierung', cost: 480, after: ['navigation', 'drone_tech'], desc: 'Wir können den Ursprung der Befehlssignale triangulieren: das Hive-Nest der Invasoren. Schaltet die finale Mission frei.' },
+  { id: 'laser', name: 'Laserwaffen', cost: 300, desc: 'Gebündelte Lichtenergie – präziser und stärker als Projektilwaffen. Schaltet Laser-Gewehre und Laser-Pistolen frei.' },
+  { id: 'autopsy_vael', name: 'Autopsie: Vael', cost: 160, needs: ['Vael-Leichnam'], desc: 'Die schmächtigen Vael sind Klone mit verkümmertem Verdauungstrakt. Ihre Gehirne zeigen Spuren eines kollektiven Bewusstseins. +5 % Trefferchance gegen Aliens.' },
+  { id: 'alloys', name: 'Alien-Legierungen', cost: 450, needs: ['Alien-Legierung'], desc: 'Ultraleichte, extrem belastbare Hüllenmetalle. Schaltet Legierungs-Panzerung frei.' },
+  { id: 'plasma', name: 'Plasmawaffen', cost: 800, needs: ['Plasmawaffe'], after: ['laser'], desc: 'Durch Zerium betriebene Plasmabeschleuniger. Schaltet Plasmagewehre, Plasmapistolen, Plasma-Zellen und Alien-Granaten frei.' },
+  { id: 'autopsy_krull', name: 'Autopsie: Krull', cost: 350, needs: ['Krull-Leichnam'], desc: 'Gezüchtete Kriegerkaste mit gepanzerter Haut. +5 % Trefferchance gegen Aliens.' },
+  { id: 'navigation', name: 'UFO-Navigation', cost: 700, needs: ['UFO-Navigationsmodul'], needsAlt: [{ name: 'Alien-Legierung', n: 8 }, { name: 'Zerium', n: 2 }], desc: 'Gravimetrische Ortung: Radarreichweite +60 %, UFOs werden zuverlässiger erkannt.' },
+  { id: 'propulsion', name: 'Zerium-Antrieb', cost: 800, needs: ['Zerium'], after: ['alloys'], desc: 'Antigravitationsantrieb. Schaltet den Abfangjäger „Phantom“ frei.' },
+  { id: 'hplasma', name: 'Schwerer Plasmawerfer', cost: 900, after: ['plasma'], desc: 'Großkalibrige Plasmawaffe für Trupp-Unterstützung.' },
+  { id: 'powerarmor', name: 'Exo-Rüstung', cost: 1100, after: ['alloys', 'propulsion'], desc: 'Motorisierte Vollpanzerung mit integrierten Schilden.' },
+  { id: 'drone_tech', name: 'Analyse: Wächterdrohne', cost: 550, needs: ['Drohnen-Wrack'], needsAlt: [{ name: 'Plasmawaffe', n: 3 }, { name: 'Zerium', n: 1 }], desc: 'Die Drohnen empfangen Befehle über eine Hyperwellen-Trägerfrequenz …' },
+  { id: 'proxmine', name: 'Sensorminen', cost: 130, desc: 'Bewegungssensor-Zünder für Wurfminen. Schaltet die Sensormine SM-4 frei.' },
+  { id: 'scanner', name: 'Bewegungsortung', cost: 160, desc: 'Tragbarer Doppler-Scanner. Schaltet den Bewegungsscanner BS-2 frei.' },
+  { id: 'hlaser', name: 'Schwerer Laser', cost: 350, after: ['laser'], desc: 'Gekoppelte Laserkammern brennen sich durch Panzerung. Schaltet den Schweren Laser L9 frei.' },
+  { id: 'verhoer_vael', name: 'Verhör: Vael', cost: 200, needs: ['Gefangener Vael'], desc: 'Der Gefangene verrät Lagerorte von Zerium in den UFOs: +1 Zerium je geborgenem UFO. Voraussetzung für Schockwerfer.' },
+  { id: 'verhoer_krull', name: 'Verhör: Krull', cost: 300, needs: ['Gefangener Krull'], desc: 'Die Kriegerkaste kennt die Sprengköpfe der Hive-Flotte: Bergungsprämien +20 %, das Hyperwellen-Relais für die Dekodierung entfällt (−200 WT). Voraussetzung für Lenkwaffen.' },
+  { id: 'stuntech', name: 'Schockwerfer', cost: 400, needs: ['Plasmawaffe'], after: ['plasma', 'verhoer_vael'], desc: 'Kompakter Werfer für Betäubungsbomben. Schaltet Schockwerfer SW-4 und Schockbomben frei.' },
+  { id: 'guidance', name: 'Lenkwaffen', cost: 600, needs: ['Zerium'], after: ['navigation', 'verhoer_krull'], desc: 'Zerium-Sprengkopf mit Wegpunktsteuerung. Schaltet den Leitwerfer LW-9 und Lenkraketen frei.' },
+  { id: 'hyperwave', name: 'Hyperwellen-Dekodierung', cost: 2400, needs: ['Hyperwellen-Relais'], waivedBy: 'verhoer_krull', waivedCut: 200, after: ['navigation', 'drone_tech'], desc: 'Wir können den Ursprung der Befehlssignale triangulieren: das Hive-Nest der Invasoren. Schaltet die finale Mission frei. Benötigt ein Hyperwellen-Relais aus einem Frachter oder Schlachtschiff.' },
 ];
 
 export const FACILITIES = {

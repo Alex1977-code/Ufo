@@ -2,6 +2,7 @@
 // Statische Geometrie wird pro Material zu wenigen Meshes zusammengeführt („Baking“) → wenige Draw-Calls, auch auf dem Handy.
 import * as THREE from 'three';
 import { canvasTexture } from './engine.js';
+import { applyEnvironment } from './environment.js';
 import { makeInterceptor, makeTransport, disposeCraft, animateCraft } from './craftmodels.js';
 import { Game } from './game.js';
 import { FACILITIES, CRAFTS } from './data.js';
@@ -331,17 +332,11 @@ class BaseView {
     this.mtSet = new Set(Object.values(this.mt));
     sc.background = new THREE.Color(0x0b1520);
     sc.fog = new THREE.FogExp2(0x15202b, 0.0042);
-    // Umgebungsreflexionen für PBR aus einer kleinen Lichtkulisse
-    const pm = new THREE.PMREMGenerator(this.engine.renderer);
-    const env = new THREE.Scene();
-    const envMats = [new THREE.MeshBasicMaterial({ color: 0x18222c, side: THREE.BackSide }), new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 3.2, 3.4) }), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.6, 2.4, 3) })];
-    const envGeo = new THREE.BoxGeometry(1, 1, 1);
-    const room = new THREE.Mesh(envGeo, envMats[0]); room.scale.set(30, 14, 30); env.add(room);
-    [[0, 6.5, 0, 10, 0.2, 4, 1], [-12, 3, 0, 0.2, 3, 10, 2], [12, 3, 4, 0.2, 2, 8, 1], [0, 3, -14, 8, 2, 0.2, 2]].forEach(([x, y, z, w, h, d, k]) => { const p = new THREE.Mesh(envGeo, envMats[k]); p.position.set(x, y, z); p.scale.set(w, h, d); env.add(p); });
-    this.envRT = pm.fromScene(env, 0.035);
-    pm.dispose(); envGeo.dispose(); envMats.forEach((m) => m.dispose());
-    sc.environment = this.envRT.texture;
-    sc.environmentIntensity = 0.55;
+    // Umgebungsreflexionen für PBR: Hangar-HDRI über environment.js (G6); bis zum Laden/offline prozedurale Ersatz-PMREM
+    this.envRT = null;
+    try { applyEnvironment(sc, 'hangar', { background: 'none', intensity: 0.5, rotation: 0.6 }).catch(() => {}); }
+    catch (e) { console.warn('AEGIS: Hangar-HDRI nicht verfügbar', e); }
+    sc.environmentIntensity = 0.5;
 
     // Licht
     sc.add(new THREE.HemisphereLight(0x9cbfe8, 0x2b2219, 0.75));

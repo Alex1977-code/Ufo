@@ -4,6 +4,10 @@ import * as THREE from 'three';
 import { generateMap, WALLS } from './tacmap.js';
 import { TILE, propParts, patchFog, fogUniforms, makeSoldier, makeAlien, makeCivilian, makeTransport, textures, FACADES, atlasTile, makeRoof, releaseTextures, makeWater } from './models.js';
 import { canvasTexture } from './engine.js';
+import { applyEnvironment, createSunWithCSM } from './environment.js';
+import { getHeroCarKit } from './herocar.js';
+import { loadCharacterLibrary, makeCharacter } from './characters.js';
+import { makeTransport as makeKondor, animateCraft, setHatch } from './craftmodels.js';
 import { WEAPONS, ARMORS, ALIENS, ITEMS, BELT_SLOTS, RANKS, UFOS, effWeapon, ammoFits, ammoList, defaultLoad, isInstantItem, guidedMode } from './data.js';
 import { Game } from './game.js';
 import { Input, padLabel } from './input.js';
@@ -85,9 +89,98 @@ class VariantSet {
   show(i, on) { const [s, li] = this.ref[i]; s.show(li, on && this.base[i] !== this.zero); }
   setMask(i, bits) { const [s, li] = this.ref[i]; s.setMask(li, bits); }
 }
+// G6: geparkte Hero-Autos (herocar.js) als InstancedMeshes je (LOD-Stufe, Material-Slot); gleiche Schnittstelle wie PropSet.
+// LOD je Instanz nach Kameraabstand; sichtbare Instanzen werden je Stufe dicht gepackt (count = Anzahl → keine leeren Draws).
+const HERO_VARIANT = {
+  sedan: { type: 'sedan' }, kombi: { type: 'sedan' }, suv: { type: 'suv' }, pickup: { type: 'pickup' }, van: { type: 'van' },
+  burnt: { type: 'sedan', damage: 1, paint: 0x141414, seed: 5, burnt: true },
+};
+const HERO_LOD_DIST = { desktop: [16, 40], mobile: [0, 24] };
+class HeroCarSet {
+  constructor(scene, kit, count, shadows, { scale = 1, mobile = false, burnt = false } = {}) {
+    this.kit = kit; this.scale = scale; this.mobile = mobile;
+    this.levels = Object.keys(kit.levels).map(Number).sort();
+    this.meshes = {};
+    for (const lv of this.levels) {
+      this.meshes[lv] = Object.entries(kit.levels[lv]).filter(([slot]) => !(burnt && slot === 'glass')).map(([slot, geo]) => {
+        const m = new THREE.InstancedMesh(geo, kit.mats[slot], count);
+        m.count = 0; m.frustumCulled = false; m.visible = false;
+        m.castShadow = shadows && slot !== 'glass' && slot !== 'interior' && slot !== 'plate'; m.receiveShadow = true;
+        m.userData.slot = slot; m.userData.heroCar = true;
+        if (slot === 'paint') m.setColorAt(0, new THREE.Color(1, 1, 1));
+        scene.add(m);
+        return m;
+      });
+    }
+    this.base = []; this.color = []; this.shown = []; this.lod = []; this.dirty = true;
+    this._p = new THREE.Vector3(); this._S = new THREE.Matrix4().makeScale(scale, scale, scale);
+  }
+  add(mtx, colors) {
+    const i = this.base.length;
+    this.base.push(mtx.clone().multiply(this._S));
+    this.color.push(colors?.[0] ? new THREE.Color(colors[0]) : new THREE.Color(1, 1, 1));
+    this.shown.push(false); this.lod.push(this.levels[this.levels.length - 1]);
+    return i;
+  }
+  show(i, on) { if (this.shown[i] !== on) { this.shown[i] = on; this.dirty = true; } }
+  setMask() {}
+  posOf(i) { return this._p.setFromMatrixPosition(this.base[i]); }
+  // LOD nach Kameraabstand; packt nur bei Änderungen neu
+  update(cam) {
+    const D = this.mobile ? HERO_LOD_DIST.mobile : HERO_LOD_DIST.desktop, L = this.levels;
+    for (let i = 0; i < this.base.length; i++) {
+      if (!this.shown[i]) continue;
+      const d = cam.distanceTo(this.posOf(i));
+      let want = d < D[0] ? 0 : d < D[1] ? 1 : 2;
+      if (!L.includes(want)) want = L.find((l) => l >= want) ?? L[L.length - 1];
+      if (want !== this.lod[i]) { this.lod[i] = want; this.dirty = true; }
+    }
+    if (!this.dirty) return;
+    this.dirty = false;
+    const white = this._w || (this._w = new THREE.Color(1, 1, 1));
+    for (const lv of L) {
+      let n = 0;
+      for (let i = 0; i < this.base.length; i++) {
+        if (!this.shown[i] || this.lod[i] !== lv) continue;
+        for (const m of this.meshes[lv]) { m.setMatrixAt(n, this.base[i]); if (m.instanceColor) m.setColorAt(n, this.kit.damaged ? white : this.color[i]); }
+        n++;
+      }
+      for (const m of this.meshes[lv]) { m.count = n; m.visible = n > 0; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+    }
+  }
+  // Einzelnes, nicht instanziertes Modell (für Zerstörung: ausgebranntes Wrack) aus einer Stufe des Bausatzes
+  static single(kit, lv, mtx, burnt) {
+    const g = new THREE.Group();
+    for (const [slot, geo] of Object.entries(kit.levels[lv] || kit.levels[Object.keys(kit.levels).pop()])) {
+      if (burnt && slot === 'glass') continue;
+      const m = new THREE.Mesh(geo, kit.mats[slot]); m.castShadow = slot !== 'glass'; m.receiveShadow = true; m.userData.sharedGeo = true; g.add(m);
+    }
+    mtx.decompose(g.position, g.quaternion, g.scale);
+    return g;
+  }
+  dispose() { for (const lv of this.levels) for (const m of this.meshes[lv]) { m.removeFromParent(); m.dispose(); } }
+}
 const FURNITURE = ['furn:table', 'furn:table', 'furn:bed', 'furn:shelf', 'furn:cabinet', 'furn:sofa', 'furn:counter'];
 const CAR_PAINT = ['#e8e8e6', '#c8ccd0', '#2a2c30', '#1e2e4a', '#8a1a1a', '#2e4a34', '#d8ccb0', '#4a5a6a', '#b04a1a', '#e0c040', '#3a6a9a', '#6a6e72'];
 const DECO_TINT = { flowers: ['#ff4a6a', '#ffd040', '#ffffff', '#c070ff', '#ff8a30'], bush: ['#ffffff', '#e0ffd0', '#c8e8b0', '#f0f4d0'], rug: ['#a83a32', '#3a5a8a', '#c8a050', '#5a7a4a', '#8a6a9a'] };
+
+// ======================= G6: realistische Figuren (characters.js) =======================
+// Basen: Soldaten ohne human_m_02 (wirkt jugendlich), human_f_02 gar nicht (wirkt füllig) – Nutzervorgabe „schön/kräftig“
+const FIG_SOLDIER = { m: ['human_m_01', 'human_m_03'], f: ['human_f_01', 'human_f_03'] };
+const FIG_CIV = ['human_m_01', 'human_m_02', 'human_m_03', 'human_f_01', 'human_f_03'];
+const FIG_BASES = ['human_m_01', 'human_m_02', 'human_m_03', 'human_f_01', 'human_f_03'];
+const FIG_STEP = 0.3; // s je Feld (sichtbar) für echte Figuren – Lauf-Clip ohne Fußgleiten
+const hashStr = (str) => { let h = 2166136261; for (const ch of String(str)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return h >>> 0; };
+// Einstellung „Figuren“: engine.settings.figures 'real' | 'simple'; Standard: PC real, schwache Geräte simple
+export function figuresMode(engine) {
+  const v = engine?.settings?.figures;
+  if (v === 'real' || v === 'simple') return v;
+  try {
+    const nav = globalThis.navigator || {};
+    const weak = (nav.deviceMemory && nav.deviceMemory < 3) || (nav.hardwareConcurrency && nav.hardwareConcurrency <= 2) || (engine?.renderer?.capabilities?.maxTextureSize || 4096) < 4096;
+    return weak ? 'simple' : 'real';
+  } catch { return 'real'; }
+}
 
 // ======================= G6: PBR-Boden (CC0-Texturen aus assets/textures) =======================
 // Schichten eines Textur-Arrays (Albedo sRGB + Rauheit in Alpha, Normal-Map); 0 = keine Schicht (nur bisherige Canvas-Textur)
@@ -229,6 +322,14 @@ export class Tactical {
   build() {
     const o = this.opts;
     const kind = o.site.kind;
+    // G6: Figuren-Bibliothek sofort anfordern (lädt parallel zum Kartenaufbau); 'simple' = bisherige Modelle
+    this.figMode = figuresMode(this.engine);
+    this.realModels = this.figMode === 'real';
+    this.figures = { state: this.realModels ? 'loading' : 'off', quality: this.engine.mobile ? 'low' : 'high', queue: [] };
+    if (this.realModels) {
+      try { this.figLoad = loadCharacterLibrary({ quality: this.figures.quality, bases: FIG_BASES }); this.figLoad.catch(() => {}); }
+      catch (e) { this.figLoad = Promise.reject(e); this.figLoad.catch(() => {}); }
+    }
     this.map = generateMap({ biome: o.biome, ufoType: o.site.ufoType, kind, night: o.night && kind !== 'hive' });
     const m = this.map;
     this.W = m.W; this.H = m.H;
@@ -251,6 +352,7 @@ export class Tactical {
     this.buildDeco();
     this.buildHelpers();
     this.spawnUnits();
+    this.initFigures();
     this.buildHud();
     this.bindInput();
     this.updateVisibility(true);
@@ -260,47 +362,83 @@ export class Tactical {
     this.cam.x = this.camT.x = p.x; this.cam.z = this.camT.z = p.z;
   }
 
+  // G6: Umgebungslicht über environment.js (HDRI je Biom/Tageszeit), Sonne bzw. CSM-Sonne auf großen Karten
+  pickSky() {
+    const o = this.opts, biome = o.biome, kind = o.site?.kind;
+    if (biome === 'hive') return 'hive';
+    if (this.map.night) return 'night';
+    // stabil je Einsatzort: Hash aus Ort-ID → Wetter/Tageszeit
+    let h = 2166136261; for (const ch of String(o.site?.id ?? o.site?.name ?? '')) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    const r = ((h >>> 0) % 1000) / 1000;
+    if (o.sky && ['day', 'overcast', 'dusk'].includes(o.sky)) return o.sky;
+    if (biome === 'arctic') return r < 0.6 ? 'overcast' : r < 0.75 ? 'dusk' : 'day';
+    if (biome === 'forest') return r < 0.4 ? 'overcast' : r < 0.55 ? 'dusk' : 'day';
+    if (biome === 'desert') return r < 0.15 ? 'dusk' : 'day';
+    if (kind === 'terror') return r < 0.25 ? 'overcast' : r < 0.4 ? 'dusk' : 'day';
+    return r < 0.25 ? 'overcast' : r < 0.4 ? 'dusk' : 'day';
+  }
+
   buildEnvironment() {
     const night = this.map.night, hive = this.opts.biome === 'hive';
-    const top = hive ? new THREE.Color(0x0a0410) : night ? new THREE.Color(0x02040b) : new THREE.Color(0x3f78c8);
-    const hor = hive ? new THREE.Color(0x2a0d30) : night ? new THREE.Color(0x0d1730) : new THREE.Color(this.opts.biome === 'desert' ? 0xe8d2a8 : 0xbcd4ea);
-    const skyMat = new THREE.ShaderMaterial({
-      uniforms: { top: { value: top }, hor: { value: hor }, night: { value: night || hive ? 1 : 0 } },
-      vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: `uniform vec3 top; uniform vec3 hor; uniform float night; varying vec3 vP;
-        float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,45.164))) * 43758.5453); }
-        void main(){ float t = smoothstep(-0.05, 0.6, vP.y); vec3 c = mix(hor, top, t);
-          if (night > 0.5) { vec3 q = floor(vP * 300.0); float s = step(0.997, h(q)) * t; c += vec3(s); }
-          gl_FragColor = vec4(c, 1.0); }`,
-      side: THREE.BackSide, depthWrite: false,
-    });
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), skyMat);
-    this.scene.add(sky);
-    // Umgebungsbeleuchtung (IBL) aus dem Himmel erzeugen
-    const pmrem = new THREE.PMREMGenerator(this.engine.renderer);
-    const envScene = new THREE.Scene(); envScene.add(sky.clone());
-    const ground = new THREE.Mesh(new THREE.CircleGeometry(300, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: hor.clone().multiplyScalar(0.3) }));
-    ground.position.y = -5; envScene.add(ground);
-    this.envRT = pmrem.fromScene(envScene, 0.04);
-    this.scene.environment = this.envRT.texture;
-    this.scene.environmentIntensity = night ? 0.25 : hive ? 0.35 : 0.8;
-    pmrem.dispose();
-    this.scene.fog = new THREE.FogExp2(hor, night ? 0.012 : 0.0065);
+    const sky = this.sky = this.pickSky();
+    // Voreinstellungen: Nebel-/Horizontfarbe (passend zum HDRI-Horizont), Sonne, Hemisphäre, Umgebungsintensität
+    const P = {
+      day: { fog: this.opts.biome === 'desert' ? 0xd8c8a8 : 0xb4c6d8, dens: 0.0065, sun: 0xfff0d8, si: 3.0, sunPos: [0.6, 1.1, 0.35], hemi: [0xbdd8ff, 0x4a3a28, 0.35], env: 0.85, bg: 0.9 },
+      overcast: { fog: 0xa9b0b6, dens: 0.0085, sun: 0xe8ecf0, si: 1.1, sunPos: [0.3, 1.2, 0.2], hemi: [0xc8d0d8, 0x3e3a34, 0.45], env: 1.15, bg: 0.85 },
+      dusk: { fog: 0x8a6a62, dens: 0.0075, sun: 0xffb27a, si: 2.4, sunPos: [0.95, 0.38, -0.25], hemi: [0x8a90b8, 0x3a2a22, 0.4], env: 0.9, bg: 0.8 },
+      night: { fog: 0x0d1730, dens: 0.012, sun: 0x8fa8ff, si: 0.6, sunPos: [0.6, 1.1, 0.35], hemi: [0x223355, 0x080808, 0.35], env: 0.28 },
+      hive: { fog: 0x2a0d30, dens: 0.0065, sun: 0xc080ff, si: 0.7, sunPos: [0.6, 1.1, 0.35], hemi: [0xbdd8ff, 0x4a3a28, 0.5], env: 0.22 },
+    }[sky];
+    const proceduralSky = sky === 'night' || sky === 'hive';
+    if (proceduralSky) {
+      const top = hive ? new THREE.Color(0x0a0410) : new THREE.Color(0x02040b);
+      const hor = hive ? new THREE.Color(0x2a0d30) : new THREE.Color(0x0d1730);
+      const skyMat = new THREE.ShaderMaterial({
+        uniforms: { top: { value: top }, hor: { value: hor }, night: { value: 1 } },
+        vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+        fragmentShader: `uniform vec3 top; uniform vec3 hor; uniform float night; varying vec3 vP;
+          float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,45.164))) * 43758.5453); }
+          void main(){ float t = smoothstep(-0.05, 0.6, vP.y); vec3 c = mix(hor, top, t);
+            if (night > 0.5) { vec3 q = floor(vP * 300.0); float s = step(0.997, h(q)) * t; c += vec3(s); }
+            gl_FragColor = vec4(c, 1.0); }`,
+        side: THREE.BackSide, depthWrite: false,
+      });
+      this.scene.add(new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), skyMat));
+    }
+    // HDRI (Hive: Nacht-HDRI stark gedämpft); bis zum Laden setzt environment.js sofort die prozedurale Ersatz-PMREM
+    const envName = sky === 'hive' ? 'night' : sky;
+    try {
+      applyEnvironment(this.scene, envName, { background: proceduralSky ? 'none' : 'sky', intensity: P.env, backgroundIntensity: P.bg, rotation: sky === 'dusk' ? -0.6 : 0.4 }).catch(() => {});
+    } catch (e) { console.warn('AEGIS: Umgebung nicht verfügbar', e); }
+    if (this.scene.environment) this.scene.environmentIntensity = P.env;
+    if (!proceduralSky && !this.scene.background) this.scene.background = new THREE.Color(P.fog);
+    this.scene.fog = new THREE.FogExp2(P.fog, P.dens);
 
     const S = this.engine.shadowSize;
-    const sun = new THREE.DirectionalLight(night ? 0x8fa8ff : hive ? 0xc080ff : 0xfff0d8, night ? 0.6 : hive ? 0.7 : 3.2);
     const ext = this.W * TILE * 0.75;
-    sun.position.set(ext * 0.6, ext * 1.1, ext * 0.35);
-    sun.castShadow = this.engine.settings.shadows !== 'off';
-    sun.shadow.mapSize.set(S, S);
-    Object.assign(sun.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 1, far: ext * 4 });
-    sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.04;
-    this.scene.add(sun, sun.target);
-    this.sun = sun;
-    this.scene.add(new THREE.HemisphereLight(night ? 0x223355 : 0xbdd8ff, night ? 0x080808 : 0x4a3a28, night ? 0.35 : 0.9));
+    const shadowsOn = this.engine.settings.shadows !== 'off';
+    const sunDir = new THREE.Vector3(...P.sunPos).normalize();
+    // Große Karten (Frachter/Schlachtschiff) auf dem PC mit hoher Schattenstufe: kaskadierte Schatten (environment.js)
+    const useCSM = !proceduralSky && shadowsOn && !this.engine.mobile && this.engine.settings.shadows === 'high' && this.W >= 38 && this.engine.settings.csm !== false;
+    if (useCSM) {
+      try {
+        this.csm = createSunWithCSM(this.scene, this.camera, { cascades: 3, maxFar: 120, shadowMapSize: Math.min(S, 2048), direction: sunDir.clone().negate(), color: P.sun, intensity: P.si, lightMargin: 40 });
+      } catch (e) { console.warn('AEGIS: CSM nicht verfügbar – einfache Sonne', e); this.csm = null; }
+    }
+    if (!this.csm) {
+      const sun = new THREE.DirectionalLight(P.sun, P.si);
+      sun.position.copy(sunDir).multiplyScalar(ext * 1.27);
+      sun.castShadow = shadowsOn;
+      sun.shadow.mapSize.set(S, S);
+      Object.assign(sun.shadow.camera, { left: -ext, right: ext, top: ext, bottom: -ext, near: 1, far: ext * 4 });
+      sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.04;
+      this.scene.add(sun, sun.target);
+      this.sun = sun;
+    }
+    this.scene.add(new THREE.HemisphereLight(P.hemi[0], P.hemi[1], P.hemi[2]));
     for (const l of this.map.lights) {
       const p = this.cellPos(l.x, l.y);
-      const pl = new THREE.PointLight(l.color, l.intensity, 18, 1.6);
+      const pl = new THREE.PointLight(l.color, l.intensity * (sky === 'dusk' ? 0.6 : 1), 18, 1.6);
       pl.position.set(p.x, l.h, p.z);
       this.scene.add(pl);
       if (l.lamp) { const d = l.dir || [1, 0]; pl.position.x += d[0] * 0.9; pl.position.z += d[1] * 0.9; } // Mast als instanzierte Deko (buildDeco)
@@ -309,7 +447,7 @@ export class Tactical {
     for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffaa55, 0, 14, 2); this.scene.add(l); this.lightPool.push(l); }
     this.unitLight = new THREE.PointLight(0xcfe6ff, night ? 22 : 0, 16, 1.6);
     this.scene.add(this.unitLight);
-    this.engine.renderer.toneMappingExposure = night ? 1.25 : 1.0;
+    this.engine.renderer.toneMappingExposure = night ? 1.25 : sky === 'dusk' ? 1.1 : 1.0;
   }
 
   buildGround() {
@@ -414,7 +552,20 @@ export class Tactical {
     this.groundCanvas = groundTex.image;
     this.groundTex = groundTex;
     const gw = m.W * TILE, gh = m.H * TILE;
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh).rotateX(-Math.PI / 2), patchFog(new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, bumpMap: groundTex, bumpScale: 1.2 })));
+    // G6: PBR-Detailschichten je Bodentyp (Gewichte je Feld, 2×RGBA = 8 Schichten)
+    const wd = [new Uint8Array(m.W * m.H * 4), new Uint8Array(m.W * m.H * 4)];
+    for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) {
+      const L = FLOOR_LAYER[m.at(x, y).floor] || 0; if (!L) continue;
+      wd[(L - 1) >> 2][(y * m.W + x) * 4 + ((L - 1) & 3)] = 255;
+    }
+    const wTex = wd.map((d) => { const t = new THREE.DataTexture(d, m.W, m.H, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; return t; });
+    this.groundWeights = wTex;
+    const gUni = {
+      gAlb: { value: null }, gNrm: { value: null }, gW0: { value: wTex[0] }, gW1: { value: wTex[1] },
+      gMapSize: { value: new THREE.Vector2(gw, gh) }, gScale: { value: new Array(9).fill(1) }, gMean: { value: Array.from({ length: 9 }, () => new THREE.Vector3(0.5, 0.5, 0.5)) },
+      gStrength: { value: 0.85 },
+    };
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh).rotateX(-Math.PI / 2), patchFog(groundPBRMaterial(new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, bumpMap: groundTex, bumpScale: 1.2 }), gUni)));
     ground.receiveShadow = true;
     this.scene.add(ground);
     this.ground = ground;
@@ -422,9 +573,19 @@ export class Tactical {
     const baseCol = cols[m.at(0, 0).floor] || cols.grass;
     const outerTex = canvasTexture(256, 256, (c, w, h) => { c.fillStyle = baseCol[0]; c.fillRect(0, 0, w, h); for (let i = 0; i < 4000; i++) { c.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '255,255,255'},0.07)`; c.fillRect(Math.random() * w, Math.random() * h, 3, 3); } });
     outerTex.repeat.set(30, 30);
-    const outer = new THREE.Mesh(new THREE.PlaneGeometry(800, 800).rotateX(-Math.PI / 2), patchFog(new THREE.MeshStandardMaterial({ map: outerTex, roughness: 1 })));
+    const outer = new THREE.Mesh(new THREE.PlaneGeometry(800, 800).rotateX(-Math.PI / 2), patchFog(groundPBRMaterial(new THREE.MeshStandardMaterial({ map: outerTex, roughness: 1 }), gUni)));
     outer.position.y = -0.02; outer.receiveShadow = true;
     this.scene.add(outer);
+    this.groundPBR = 'loading';
+    loadGroundPBR(this.engine.mobile ? 256 : 512).then((P) => {
+      if (this.disposed) return;
+      if (!P) { this.groundPBR = 'fallback'; return; }
+      gUni.gAlb.value = P.alb; gUni.gNrm.value = P.nrm;
+      gUni.gScale.value = P.scale.slice(); gUni.gMean.value = P.mean.map((c) => new THREE.Vector3(...c));
+      for (const mm of [ground.material, outer.material]) { mm.defines = { ...(mm.defines || {}), GROUND_PBR: '' }; mm.needsUpdate = true; }
+      this.groundPBR = 'pbr';
+      this.engine.resetHistory?.(); this.engine.invalidate?.();
+    });
     // Grasbüschel als Detail
     const tufts = [];
     for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) { const c = m.at(x, y); if (['grass', 'field', 'field2', 'graveyard'].includes(c.floor) && !c.wall) tufts.push([x, y, c.floor === 'field2']); if (c.floor === 'crops' && !c.wall) for (let k = 0; k < 2; k++) tufts.push([x, y, 'crop']); }
@@ -607,7 +768,10 @@ export class Tactical {
         v = 'car:' + variant;
         rot = c.wall.vert == null ? randInt(0, 3) * T2 + randRange(-0.15, 0.15) : (c.wall.vert ? 0 : T2) + (rand() < 0.5 ? Math.PI : 0) + randRange(-0.06, 0.06);
         const paint = new THREE.Color(variant === 'tractor' ? choice(['#3a7a2a', '#b82a1a', '#2a5a9a', '#d0a020']) : choice(CAR_PAINT));
-        colors = parts[v].map((pp) => (pp.paint ? paint : null));
+        // G6: Hero-Auto (Lack/Glas/Chrom aus herocar.js) statt Kastenmodell; Traktor bleibt das alte Modell
+        const hv = this.realModels && HERO_VARIANT[variant];
+        if (hv) { v = 'hero:' + variant; c.wall.hero = hv; colors = [paint]; }
+        else colors = parts[v].map((pp) => (pp.paint ? paint : null));
       }
       if (t === 'hay' && rand() < 0.4) v = 'hay:stack';
       if (t === 'log') rot = (c.wall.vert ? T2 : 0) + randRange(-0.25, 0.25);
@@ -623,7 +787,7 @@ export class Tactical {
     this.props = {};
     for (const [t, vs] of Object.entries(counts)) {
       const sets = {};
-      for (const [v, n] of Object.entries(vs)) sets[v] = new PropSet(this.scene, parts[v], n, shadows);
+      for (const [v, n] of Object.entries(vs)) sets[v] = v.startsWith('hero:') ? this.makeHeroSet(v.slice(5), n, shadows) : new PropSet(this.scene, parts[v], n, shadows);
       this.props[t] = new VariantSet(sets);
     }
     const links = {};
@@ -699,12 +863,61 @@ export class Tactical {
       this.ufoRim = [rim, lights];
       rim.visible = lights.visible = false;
     }
-    // Transporter am Kartenrand
-    const tr = makeTransport();
+    // Transporter am Kartenrand (G6: Kondor aus craftmodels.js, Heck mit offener Rampe zur Landezone)
     const lz = this.map.lz[0];
     const tp = this.cellPos(lz.x + 2, m.H - 1);
-    tr.position.set(tp.x, 0, tp.z + 10.5);
+    let tr = null;
+    if (this.realModels) {
+      try {
+        tr = makeKondor({ gear: true, lod: this.engine.mobile ? 'low' : 'high', seed: 3, damage: 0.25, shadows: this.engine.settings.shadows !== 'off' });
+        const ud = tr.userData;
+        tr.rotation.y = Math.PI; // Nase (−Z) vom Einsatzgebiet weg, Heckrampe (+Z) zur Landezone
+        tr.position.set(tp.x, -ud.groundY, tp.z + TILE * 0.5 + 14.6);
+        setHatch(tr, 1);
+        tr.traverse((o) => { if (o.isMesh) { o.castShadow = o.castShadow !== false; o.receiveShadow = true; } });
+        this.transport = tr;
+      } catch (e) { console.warn('AEGIS: Transporter (craftmodels) fehlgeschlagen – altes Modell', e); tr = null; }
+    }
+    if (!tr) { tr = makeTransport(); tr.position.set(tp.x, 0, tp.z + 10.5); }
     this.scene.add(tr);
+  }
+
+  // G6: Instanz-Satz für eine Hero-Auto-Variante (geteilte Geometrie/Materialien aus dem Cache von herocar.js)
+  makeHeroSet(variant, n, shadows) {
+    const hv = HERO_VARIANT[variant], mobile = !!this.engine.mobile;
+    const kit = getHeroCarKit(hv.type, { damage: hv.damage, paintColor: hv.paint, seed: hv.seed, levels: mobile ? [1, 2] : [0, 1, 2] });
+    for (const m of Object.values(kit.mats)) patchFog(m);
+    if (hv.burnt && !kit.burntTuned) { // ausgebrannt: matter, rußiger Lack, Leuchten aus
+      kit.burntTuned = true;
+      Object.assign(kit.mats.paint, { clearcoat: 0, roughness: 0.92, metalness: 0.2 }); kit.mats.paint.color.setRGB(0.55, 0.5, 0.46);
+      kit.mats.headlight.emissiveIntensity = 0; kit.mats.taillight.emissiveIntensity = 0;
+    }
+    const set = new HeroCarSet(this.scene, kit, n, shadows, { scale: Math.min(1, 4.6 / kit.dims.length), mobile, burnt: hv.burnt });
+    (this.heroSets ||= []).push(set);
+    return set;
+  }
+  // Zerstörtes Hero-Auto: erst ausgebranntes Wrack mit Feuer/Rauch zeigen, danach wie bisher entfernen
+  wreckHeroCar(t, idx, x, y) {
+    const vs = this.props[t]; const ref = vs?.ref?.[idx]; if (!ref) return;
+    const [set, li] = ref; if (!(set instanceof HeroCarSet)) return;
+    const burnt = getHeroCarKit(set.kit.type, { damage: 1, paintColor: 0x1a1a1a, seed: 11, levels: this.engine.mobile ? [1, 2] : [0, 1, 2] });
+    for (const m of Object.values(burnt.mats)) patchFog(m);
+    if (this.csm) Object.values(burnt.mats).forEach((m) => this.csm.setupMaterial(m));
+    const lv = this.engine.mobile ? 2 : 1;
+    const g = HeroCarSet.single(burnt, lv, set.base[li], true);
+    this.scene.add(g);
+    const p = this.cellPos(x, y), pos = new THREE.Vector3(p.x, 0.8, p.z);
+    this.flash(pos, 0xff8030, 5, 0.3);
+    let k = 0, acc = 0;
+    this.fx.push((dt) => {
+      if (this.disposed) { g.removeFromParent(); return false; }
+      k += dt; acc += dt;
+      if (acc > 0.08) { acc = 0; this.emit(pos.clone(), new THREE.Color(2.2, 0.8, 0.2), 0.6, 0.35, 0.5); this.emit(pos.clone().setY(1.2), new THREE.Color(0.18, 0.17, 0.17), 0.5, 0.8, 1.6, false, true); }
+      if (k < 1.8) return true;
+      for (let i = 0; i < 10; i++) this.emit(pos.clone(), new THREE.Color(0.4, 0.38, 0.35), 0, 1.4, 1.1, false, true);
+      g.removeFromParent();
+      return false;
+    });
   }
 
   // Nicht blockierende Umgebungsdetails (ein InstancedMesh je Bauteil und Typ)
@@ -913,10 +1126,144 @@ export class Tactical {
     if (site.kind === 'terror') {
       for (let i = 0; i < 8; i++) {
         const sp = pick(shuffle(m.civSpawns.slice())); if (!sp) break;
-        this.addUnit({ team: 'civ', name: 'Zivilist', x: sp.x, y: sp.y, hp: 20, tu: 50, acc: 0, react: 0, armor: 0, weapon: null, obj: makeCivilian(), sight: 12 });
+        this.spawnCivilian(sp.x, sp.y);
       }
     }
   }
+  spawnCivilian(x, y) {
+    const u = this.addUnit({ team: 'civ', name: 'Zivilist', x, y, hp: 20, tu: 50, acc: 0, react: 0, armor: 0, weapon: null, obj: makeCivilian(), sight: 12, figSeed: (rand() * 1e9) >>> 0 });
+    if (this.figures?.state === 'ready') this.upgradeUnit(u);
+    else if (this.figures?.queue) this.figures.queue.push(u);
+    return u;
+  }
+
+  // ======================= G6: Figuren =======================
+  initFigures() {
+    const F = this.figures;
+    if (!this.realModels) return;
+    F.queue = this.units.filter((u) => u.team === 'player' || u.team === 'civ');
+    this.figLoad.then(() => {
+      if (this.disposed) return;
+      F.state = 'upgrading';
+      F.t0 = performance.now();
+    }).catch((e) => {
+      console.warn('AEGIS: Figuren nicht ladbar – einfache Figuren', e?.message || e);
+      F.state = 'fallback'; F.queue = [];
+    });
+  }
+  // Pro Bild einige Einheiten auf echte Figuren umstellen (verteilt die Erzeugungskosten)
+  stepFigureUpgrade() {
+    const F = this.figures; if (F.state !== 'upgrading') return;
+    const t0 = performance.now();
+    while (F.queue.length && performance.now() - t0 < 40) this.upgradeUnit(F.queue.shift());
+    if (!F.queue.length) {
+      F.state = 'ready'; F.ms = Math.round(performance.now() - F.t0);
+      if (this.csm) this.csm.setupAll(this.scene);
+      this.engine.resetHistory?.();
+    }
+  }
+  makeFigure(u) {
+    const q = this.figures.quality;
+    let opts;
+    if (u.team === 'player') {
+      const s = u.soldier || {}, h = hashStr(s.id || s.name || u.name);
+      const sex = s.sex === 'f' || s.look?.sex === 'f' ? 'f' : s.sex === 'm' || s.look?.sex === 'm' ? 'm' : (h % 100) < 30 ? 'f' : 'm';
+      const bases = FIG_SOLDIER[sex], armorId = ARMORS[s.armor] ? s.armor : 'none';
+      const w = WEAPONS[u.weapon] || {};
+      opts = {
+        base: bases[(h >>> 8) % bases.length], role: 'soldier', seed: h, quality: q,
+        armor: { type: armorId, color: ARMORS[armorId].color }, weapon: w.hands === 1 ? 'pistol' : 'rifle',
+        weaponColor: w.fx === 'plasma' ? 0x24302a : w.fx === 'laser' ? 0x30323c : undefined,
+      };
+    } else {
+      const h = u.figSeed ?? ((rand() * 1e9) >>> 0);
+      opts = { base: FIG_CIV[h % FIG_CIV.length], role: 'civilian', seed: h, quality: q, weapon: null };
+    }
+    const ch = makeCharacter(opts);
+    ch.root.traverse((o) => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach((mm) => patchFog(mm)); });
+    ch.setFrustumCulled(true);
+    if (ch.weapon) ch.weapon.userData.muzzle = ch.muzzle;
+    return ch;
+  }
+  upgradeUnit(u) {
+    if (!u || u.obj?.userData.char || !u.alive || u.ko || u.dying || this.disposed) return;
+    let ch;
+    try { ch = this.makeFigure(u); } catch (e) { console.warn('AEGIS: Figur fehlgeschlagen – einfache Figur', e); return; }
+    const old = u.obj, root = new THREE.Group();
+    root.name = 'unit:' + u.team; root.add(ch.root);
+    root.position.copy(old.position); root.rotation.copy(old.rotation); root.visible = old.visible;
+    root.userData = { char: ch, gun: ch.weapon, kind: u.team === 'player' ? 'soldier' : 'civ', real: true };
+    this.scene.remove(old);
+    old.traverse((o) => { o.geometry?.dispose(); if (u.team === 'civ' && o.material && !o.material.userData?.shared) o.material.dispose(); });
+    this.scene.add(root);
+    u.obj = root;
+    this.csm?.setupAll(root);
+    ch.setState(u.kneel ? 'kneel' : 'idle', { fade: 0.0001, force: true });
+    ch.update(0.016, () => 0);
+  }
+  // Zustand der Figur aus dem Spielzustand ableiten und animieren
+  updateFigure(u, dt) {
+    const ch = u.obj.userData.char;
+    if (u.figSettled) return; // liegende Leiche/Bewusstlose: Pose eingefroren
+    if (!u.obj.visible && u.alive) return;
+    if (u.alive) {
+      if (u.figHold > 0) u.figHold -= dt;
+      const busyClip = ['hit', 'shoot', 'kneelShoot', 'reload'].includes(ch.state);
+      if (!busyClip && !(u.figHold > 0)) {
+        let want, speed = 0;
+        if (u.anim.walk > 0) { speed = u.anim.speed || 4; want = speed > 3.2 ? 'run' : 'walk'; }
+        else if (u.kneel) want = 'kneel';
+        else if (u.team === 'civ' && this.civScared(u)) want = 'crouch';
+        else want = 'idle';
+        if (want !== ch.state) ch.setState(want, { speedMps: speed });
+        else if (speed && Math.abs(ch.speedMps - speed) > 0.3) ch.setSpeed(speed);
+      }
+    } else if (u.figDeadT != null) {
+      u.figDeadT += dt;
+      if (ch.state === 'dead' || u.figDeadT > 3.2) { ch.update(dt, null); this.settleFigure(u); return; }
+    }
+    ch.update(dt, this._flat || (this._flat = () => 0));
+  }
+  civScared(u) {
+    return this.units.some((a) => a.team === 'alien' && a.alive && Math.abs(a.x - u.x) + Math.abs(a.y - u.y) < 14 && this.isVisibleAlien(a));
+  }
+  // Präzise Hülle der aktuellen (gehäuteten) Pose
+  figureBox(root) {
+    const box = (this._fbb ||= new THREE.Box3()).makeEmpty(), tmp = (this._fbt ||= new THREE.Box3());
+    root.updateMatrixWorld(true);
+    root.traverse((o) => {
+      if (!o.isMesh || !o.visible || o.material?.transparent) return;
+      if (o.isSkinnedMesh) { o.skeleton.update(); o.computeBoundingBox(); tmp.copy(o.boundingBox).applyMatrix4(o.matrixWorld); }
+      else { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); tmp.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld); }
+      box.union(tmp);
+    });
+    return box;
+  }
+  // Leiche/Bewusstlose: liegt mittig auf dem Feld, tiefster Punkt knapp über dem Boden (T8), Pose eingefroren
+  settleFigure(u) {
+    const cp = this.cellPos(u.x, u.y), obj = u.obj;
+    const bb = this.figureBox(obj);
+    if (!bb.isEmpty()) {
+      obj.position.x += cp.x - (bb.min.x + bb.max.x) / 2;
+      obj.position.z += cp.z - (bb.min.z + bb.max.z) / 2;
+      obj.position.y += 0.03 - bb.min.y;
+    }
+    u.figSettled = true; u.figDeadT = null;
+    // Kugel für Frustum-Culling an die liegende Pose anpassen
+    obj.traverse((o) => { if (o.isSkinnedMesh) { o.computeBoundingSphere(); o.boundingSphere.radius *= 1.3; } });
+    u.dying = false;
+    if (u.figOnSettle) { const f = u.figOnSettle; u.figOnSettle = null; f(); }
+  }
+  figAim(u, t) {
+    const ch = u.obj.userData.char; if (!ch || !u.alive) return;
+    const d = Math.hypot(t.x - u.x, t.y - u.y) * TILE || 1;
+    const th = t.ground ? 0.1 : t.kneel ? 0.9 : 1.2;
+    ch.setAimPitch(Math.atan2(th - (u.kneel ? 1.0 : 1.4), d));
+    ch.setState(u.kneel ? 'kneelAim' : 'aim');
+    u.figHold = 30;
+  }
+  figShot(u) { const ch = u.obj.userData.char; if (ch && u.alive) ch.setState(u.kneel ? 'kneelShoot' : 'shoot', { force: true }); }
+  figDone(u) { if (u.obj?.userData.char) u.figHold = 0.6; }
 
   addAlien(type, x, y, guard) {
     const a = ALIENS[type];
@@ -933,8 +1280,8 @@ export class Tactical {
     const p = this.cellPos(u.x, u.y);
     u.obj.position.set(p.x, 0, p.z);
     u.obj.rotation.y = rand() * Math.PI * 2;
-    u.obj.traverse((c) => { if (c.isMesh) { c.castShadow = true; } });
-    u.anim = { walk: 0, t: rand() * 10 };
+    if (!u.obj.userData.char) u.obj.traverse((c) => { if (c.isMesh) { c.castShadow = true; } });
+    u.anim = { walk: 0, t: rand() * 10, speed: 0 };
     this.scene.add(u.obj);
     this.occ[u.y * this.W + u.x] = u.id;
     this.units.push(u);
@@ -1180,7 +1527,9 @@ export class Tactical {
       this.occ[u.y * this.W + u.x] = u.id;
       u.movedTurn = this.turn; // Bewegungsscanner
       const visible = u.team === 'player' || this.isVisibleAlien(u) || (u.team === 'civ' && this.vis[u.y * this.W + u.x]);
-      const dur = (visible ? 0.24 : 0.02) / spd;
+      const real = !!u.obj.userData.char;
+      const dur = (visible ? (real ? FIG_STEP : 0.24) : 0.02) / spd;
+      u.anim.speed = (diag ? TILE * 1.414 : TILE) / Math.max(dur, 1e-3);
       if (visible && u.team !== 'civ') { this.camT.x = to.x; this.camT.z = to.z; }
       let t = 0;
       while (t < dur) {
@@ -1276,6 +1625,7 @@ export class Tactical {
     const wasBusy = this.busy; this.busy = true;
     this.spendTu(u, cost);
     this.faceTo(u, t.x, t.y);
+    this.figAim(u, t);
     const showShot = u.team === 'player' || t.team === 'player' || (u.team === 'alien' && this.isVisibleAlien(u)) || !!this.vis[t.y * this.W + t.x];
     if (u.team === 'alien' && showShot) { u.revealed = true; u.obj.visible = true; this.updateAlienBadges(); }
     if (showShot) { this.camT.x = (u.obj.position.x + t.obj.position.x) / 2; this.camT.z = (u.obj.position.z + t.obj.position.z) / 2; await sleep(160 / (this.engine.settings.animSpeed || 1)); }
@@ -1286,9 +1636,11 @@ export class Tactical {
       if (ammo) ammo.rounds = Math.max(0, ammo.rounds - 1);
       const chance = this.hitChance(u, t, mode);
       const hit = t.alive && rand() < chance;
+      this.figShot(u);
       await this.shoot(u, t, hit, w, showShot);
       if (s < shots - 1) await sleep(90);
     }
+    this.figDone(u);
     this.busy = this.ended ? true : wasBusy;
     if (u.team === 'player' && !this.ended) this.refreshUi();
     return true;
@@ -1299,7 +1651,8 @@ export class Tactical {
     let to, impact = null;
     if (w.melee) {
       sfx('melee');
-      u.obj.userData.body.position.z = 0.4; setTimeout(() => { u.obj.userData.body.position.z = 0; }, 200);
+      if (u.obj.userData.body) { u.obj.userData.body.position.z = 0.4; setTimeout(() => { if (u.obj.userData.body) u.obj.userData.body.position.z = 0; }, 200); }
+      else this.figShot(u);
       await sleep(150);
       if (hit) this.damage(t, w.dmg, u, { dtype: w.dtype }); else this.floatAt(t, 'Verfehlt', '#aaa');
       return;
@@ -1419,6 +1772,7 @@ export class Tactical {
     if (t.team === 'player' && dmg > 0) Input.rumble(0.8, 0.5, 220);
     if (t.team === 'player' && t === this.selected) this.refreshUi();
     if (t.hp <= 0) this.kill(t, src);
+    else if (dmg > 0 && t.obj.userData.char && !(t.figHold > 0)) t.obj.userData.char.setState('hit', { force: true });
   }
 
   // Betäubung (W1 4.5): bewusstlos statt tot – liegt sichtbar, Feld wird frei, zählt für den Missionssieg
@@ -1445,6 +1799,7 @@ export class Tactical {
     if (t.hp <= 0) { t.ko = false; if (t.koBy) { t.koBy.captures = Math.max(0, t.koBy.captures - 1); t.koBy = null; } this.kill(t, src); }
   }
   koEffects(t) {
+    if (t.obj.userData.char) return this.koFigure(t);
     const obj = t.obj, ud = obj.userData, cp = this.cellPos(t.x, t.y);
     obj.rotation.order = 'YXZ';
     t.koSave = { limbs: {}, by: ud.body?.position.y || 0 };
@@ -1474,8 +1829,35 @@ export class Tactical {
       return true;
     });
   }
+  // G6: Bewusstlos (echte Figur): Sturz-Clip, liegen bleiben, blauer Ring
+  koFigure(t) {
+    const obj = t.obj, ch = obj.userData.char, cp = this.cellPos(t.x, t.y);
+    this.spark(this.bodyPoint(t), 0x60a0ff, 16);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.55, 0.7, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.4, 0.9, 2.4), transparent: true, opacity: 0.8, depthWrite: false }));
+    ring.position.set(cp.x, 0.06, cp.z); this.scene.add(ring); t.koRing = ring;
+    t.dying = true; t.figSettled = false; t.figDeadT = 0; t.figHold = 0;
+    ch.setFootIK(false); ch.setState('die', { force: true });
+    t.figOnSettle = () => this.refreshCorpseVis(t);
+    let ph = 0;
+    this.fx.push((dt) => {
+      if (this.disposed || !t.ko) return false;
+      ph += dt; ring.material.opacity = 0.45 + 0.35 * Math.sin(ph * 3);
+      ring.visible = obj.visible;
+      if (obj.visible && rand() < dt * 1.5) this.emit(obj.position.clone().setY(0.4), new THREE.Color(0.6, 1.2, 3), 0.4, 0.2, 0.6);
+      return true;
+    });
+  }
   // Aufwachen: Animation rückwärts, Feld wieder belegen
   standUp(u) {
+    if (u.obj.userData.char) {
+      const ch = u.obj.userData.char, cp = this.cellPos(u.x, u.y);
+      if (u.koRing) { this.scene.remove(u.koRing); u.koRing.geometry.dispose(); u.koRing.material.dispose(); u.koRing = null; }
+      u.figSettled = false; u.figDeadT = null; u.figOnSettle = null;
+      u.obj.position.set(cp.x, 0, cp.z);
+      u.obj.visible = u.team !== 'alien' || this.isVisibleAlien(u);
+      ch.setFootIK(this.figures.quality !== 'low'); ch.setState('idle', { force: true, fade: 0.5 });
+      return;
+    }
     const obj = u.obj, ud = obj.userData, cp = this.cellPos(u.x, u.y);
     if (u.koRing) { this.scene.remove(u.koRing); u.koRing.geometry.dispose(); u.koRing.material.dispose(); u.koRing = null; }
     const z0 = obj.rotation.z, lim = u.koSave?.limbs || {};
@@ -1608,6 +1990,17 @@ export class Tactical {
     else this.stain(t.x, t.y, t.team === 'alien' ? (t.spec === 'vael' || t.spec === 'krull' ? 'rgba(70,170,40,0.75)' : 'rgba(110,50,170,0.75)') : 'rgba(120,10,10,0.85)');
     this.deadRing(t.x, t.y);
     t.glow = [];
+    if (ud.char) { // G6: echte Figur – Sterbe-Clip, Waffe fällt, Leiche liegt sichtbar über dem Boden
+      const ch = ud.char;
+      t.figHold = 0;
+      if (t.koTurn != null && t.figSettled) { t.dying = false; this.refreshCorpseVis(t); return; }
+      this.tossGun(t, cp);
+      ch.setFootIK(false);
+      if (t.koTurn == null || ch.state !== 'dead') ch.setState('die', { force: true });
+      t.figSettled = false; t.figDeadT = 0;
+      t.figOnSettle = () => this.refreshCorpseVis(t);
+      return;
+    }
     this.deaden(obj, drone, t.glow);
     const finish = () => { t.dying = false; this.refreshCorpseVis(t); if (drone) this.startWreck(t); };
     if (t.koTurn != null) { finish(); return; } // lag schon bewusstlos am Boden
@@ -1691,6 +2084,7 @@ export class Tactical {
     c.wall.hp -= amount;
     if (c.wall.hp <= 0) {
       const t = c.wall.type;
+      if (c.wall.hero && c.wall.idx != null) { try { this.wreckHeroCar(t, c.wall.idx, x, y); } catch (e) { console.warn('AEGIS: Wrack', e); } }
       if (c.wall.idx != null) this.props[t].show(c.wall.idx, false);
       this.props[t].base[c.wall.idx] = this.props[t].zero;
       c.wall = null;
@@ -3283,8 +3677,11 @@ export class Tactical {
 
     // Einheiten animieren
     const time = this.engine.time;
+    this.stepFigureUpgrade();
     for (const u of this.units) {
-      const ud = u.obj.userData; if (!ud.body) continue;
+      const ud = u.obj.userData;
+      if (ud.char) { this.updateFigure(u, dt); continue; }
+      if (!ud.body) continue;
       if (!u.alive) continue; // Sterbende/Tote werden von deathEffects() animiert
       u.anim.t += dt;
       const walking = u.anim.walk > 0;
@@ -3326,6 +3723,10 @@ export class Tactical {
       p.sp.material.opacity = (p.smoke ? 0.6 : 1) * (1 - k);
     }
     this.fx = this.fx.filter((f) => f(dt));
+    // G6: Hero-Auto-LOD, CSM-Sonne, Transporter-Leuchten
+    if (this.heroSets) { const cp = this.camera.position; for (const hs of this.heroSets) hs.update(cp); }
+    if (this.csm) { this.csm.update(); if ((this._csmSweep = (this._csmSweep || 0) + dt) > 1) { this._csmSweep = 0; this.csm.setupAll(this.scene); } }
+    if (this.transport) animateCraft(this.transport, time, { throttle: 0 });
     if (this.water) this.water.time.value += dt; // Wellen der Wasserflächen
     if (this.smokes.length || this.flares.length) this.updateEffects(dt, time);
     if (this.fireCount || this.fireLight.intensity) this.updateFire(dt);
@@ -3354,6 +3755,12 @@ export class Tactical {
     this.disposed = true; this.ended = true;
     this.deactivate();
     this.unsub.forEach((f) => f());
+    // G6: geteilte Ressourcen (Figuren-Bibliothek, Hero-Auto-Bausätze) vor dem allgemeinen Aufräumen herauslösen
+    for (const u of this.units) { const ch = u.obj?.userData.char; if (ch) { try { ch.dispose(); } catch { /* */ } u.obj.removeFromParent(); } }
+    this.heroSets?.forEach((hs) => hs.dispose());
+    this.scene.traverse((o) => { if (o.userData.sharedGeo) o.geometry = null; });
+    this.csm?.dispose(); this.csm = null;
+    this.groundWeights?.forEach((t) => t.dispose());
     this.scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
     this.envRT?.dispose(); this.fogTex.dispose(); this.water?.mask.dispose(); this.groundTex.dispose(); this.particleTex?.dispose(); this.smokeTex?.dispose();
     this.smokePool?.forEach((s) => s.material.dispose());
