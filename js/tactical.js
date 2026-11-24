@@ -89,6 +89,104 @@ const FURNITURE = ['furn:table', 'furn:table', 'furn:bed', 'furn:shelf', 'furn:c
 const CAR_PAINT = ['#e8e8e6', '#c8ccd0', '#2a2c30', '#1e2e4a', '#8a1a1a', '#2e4a34', '#d8ccb0', '#4a5a6a', '#b04a1a', '#e0c040', '#3a6a9a', '#6a6e72'];
 const DECO_TINT = { flowers: ['#ff4a6a', '#ffd040', '#ffffff', '#c070ff', '#ff8a30'], bush: ['#ffffff', '#e0ffd0', '#c8e8b0', '#f0f4d0'], rug: ['#a83a32', '#3a5a8a', '#c8a050', '#5a7a4a', '#8a6a9a'] };
 
+// ======================= G6: PBR-Boden (CC0-Texturen aus assets/textures) =======================
+// Schichten eines Textur-Arrays (Albedo sRGB + Rauheit in Alpha, Normal-Map); 0 = keine Schicht (nur bisherige Canvas-Textur)
+const GROUND_LAYERS = [null, ['asphalt', 3], ['concrete', 2.4], ['grass', 2], ['sand', 1.8], ['snow', 2.2], ['dirt', 2], ['sidewalk_pavers', 1.8], ['wood_floor', 1.7]];
+const FLOOR_LAYER = {
+  asphalt: 1, parking: 1, concretefloor: 2, tile: 2, gravel: 6, sidewalk: 7, cobble: 7,
+  grass: 3, graveyard: 3, field: 6, field2: 6, crops: 6, vineyard: 6, mud: 6, dirt: 6, burnt: 6,
+  sand: 4, shore: 4, snow: 5, ice: 5, wood: 8, plank: 8,
+};
+let _groundPBR = null; // Promise<{alb, nrm, mean[], scale[]}> | null (einmal je Sitzung, wird über Missionen geteilt)
+function loadGroundPBR(size) {
+  if (_groundPBR) return _groundPBR;
+  const img = (src) => new Promise((res, rej) => { const i = new Image(); i.decoding = 'async'; i.onload = () => res(i); i.onerror = () => rej(new Error('Textur fehlt: ' + src)); i.src = src; });
+  _groundPBR = (async () => {
+    const n = GROUND_LAYERS.length, S = size, px = S * S * 4;
+    const alb = new Uint8Array(px * n), nrm = new Uint8Array(px * n);
+    const mean = [[0.5, 0.5, 0.5]], scale = [1];
+    const cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const c = cv.getContext('2d', { willReadFrequently: true });
+    const read = (im) => { c.clearRect(0, 0, S, S); c.drawImage(im, 0, 0, S, S); return c.getImageData(0, 0, S, S).data; };
+    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    const LUT = new Float32Array(256).map((_, i) => lin(i));
+    alb.fill(128, 0, px); nrm.fill(128, 0, px);
+    for (let l = 1; l < n; l++) {
+      const [id, sc] = GROUND_LAYERS[l], base = `assets/textures/${id}/`;
+      const [a, nn, r] = await Promise.all([img(base + 'albedo.webp'), img(base + 'normal.webp'), img(base + 'roughness.webp')]);
+      const da = read(a), o = l * px;
+      let sr = 0, sg = 0, sb = 0;
+      for (let i = 0; i < px; i += 4) { alb[o + i] = da[i]; alb[o + i + 1] = da[i + 1]; alb[o + i + 2] = da[i + 2]; sr += LUT[da[i]]; sg += LUT[da[i + 1]]; sb += LUT[da[i + 2]]; }
+      const dr = read(r); for (let i = 0; i < px; i += 4) alb[o + i + 3] = dr[i];
+      const dn = read(nn); for (let i = 0; i < px; i++) nrm[o + i] = dn[i];
+      const k = 4 / px; mean.push([sr * k, sg * k, sb * k]); scale.push(sc);
+    }
+    const mk = (data, srgb) => {
+      const t = new THREE.DataArrayTexture(data, S, S, n);
+      t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
+      t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+      t.generateMipmaps = true; t.anisotropy = 4; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+      t.needsUpdate = true; t.userData.shared = true;
+      return t;
+    };
+    return { alb: mk(alb, true), nrm: mk(nrm, false), mean, scale };
+  })().catch((e) => { console.warn('AEGIS: PBR-Bodentexturen nicht ladbar – bisherige Bodentextur', e?.message || e); _groundPBR = null; return null; });
+  return _groundPBR;
+}
+// Boden-Material um PBR-Detail erweitern: Gewichte je Feld (2 RGBA-Texturen = 8 Schichten, linear gefiltert → weiche Übergänge,
+// Höhen-Blend über die Albedo-Helligkeit), Farbe der Canvas-Textur wird mit (Detail / Mittelwert) moduliert, Normal- und Rauheitskarte
+// aus dem Array. Ohne geladene Texturen (Define fehlt) bleibt das Material wie bisher.
+function groundPBRMaterial(mat, uni) {
+  mat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, uni);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vGroundW;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvGroundW = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec2 vGroundW;
+        #ifdef GROUND_PBR
+        uniform highp sampler2DArray gAlb; uniform highp sampler2DArray gNrm; uniform sampler2D gW0; uniform sampler2D gW1;
+        uniform vec2 gMapSize; uniform float gScale[9]; uniform vec3 gMean[9]; uniform float gStrength;
+        #endif`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        float gUse = 0.0; vec3 gNt = vec3(0.0, 0.0, 1.0); float gRough = 1.0;
+        #ifdef GROUND_PBR
+        {
+          vec2 cuv = vGroundW / gMapSize + 0.5;
+          vec4 w0 = texture2D(gW0, cuv), w1 = texture2D(gW1, cuv);
+          float ws[9]; ws[0] = 0.0; ws[1] = w0.r; ws[2] = w0.g; ws[3] = w0.b; ws[4] = w0.a; ws[5] = w1.r; ws[6] = w1.g; ws[7] = w1.b; ws[8] = w1.a;
+          vec3 acc = vec3(0.0), nacc = vec3(0.0); float racc = 0.0, wsum = 0.0, wtot = 0.0;
+          for (int l = 1; l < 9; l++) {
+            float w = ws[l]; wtot += w;
+            if (w < 0.02) continue;
+            vec2 tuv = vec2(vGroundW.x, -vGroundW.y) / gScale[l];
+            vec4 a = texture(gAlb, vec3(tuv, float(l)));
+            float h = dot(a.rgb, vec3(0.3, 0.5, 0.2));
+            float hw = w * w * w * (0.35 + h) * (0.35 + h);
+            acc += a.rgb / max(gMean[l], vec3(0.015)) * hw; racc += a.a * hw;
+            nacc += (texture(gNrm, vec3(tuv, float(l))).xyz * 2.0 - 1.0) * hw; wsum += hw;
+          }
+          if (wsum > 1e-4) {
+            gUse = clamp(wtot, 0.0, 1.0);
+            vec3 det = clamp(acc / wsum, 0.0, 3.0);
+            diffuseColor.rgb *= mix(vec3(1.0), det, gStrength * gUse);
+            gRough = racc / wsum; gNt = normalize(nacc / wsum);
+          }
+        }
+        #endif`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, clamp(gRough, 0.04, 1.0), gUse);')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        if (gUse > 0.0) {
+          vec3 gT = normalize(mat3(viewMatrix) * vec3(1.0, 0.0, 0.0)), gB = normalize(mat3(viewMatrix) * vec3(0.0, 0.0, -1.0)), gN = normalize(mat3(viewMatrix) * vec3(0.0, 1.0, 0.0));
+          vec3 dn = gT * gNt.x + gB * gNt.y + gN * gNt.z;
+          normal = normalize(normal + (dn - gN) * gUse);
+        }`);
+  };
+  mat.customProgramCacheKey = () => 'groundPBR' + (mat.defines?.GROUND_PBR !== undefined ? '1' : '0');
+  return mat;
+}
+
 export class Tactical {
   constructor(engine, opts, hooks) {
     this.engine = engine;
