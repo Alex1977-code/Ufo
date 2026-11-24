@@ -87,6 +87,13 @@ for (const [kind, biome] of [['terror', 'urban'], ['hive', 'hive']]) {
       if (kind === 'hive') { assert(m.boss && near(r, m, m.boss.x, m.boss.y), `seed ${s}: Boss unerreichbar`); }
       for (const c of m.civSpawns || []) assert(near(r, m, c.x, c.y), `seed ${s}: Zivilist unerreichbar`);
       for (const c of m.cells) if (c.wall) seen.walls.add(c.wall.type);
+      if (kind === 'terror') {
+        // Straßen-/Platzobjekte müssen echte Deckung sein (nicht nur Dekoration)
+        const cover = m.cells.filter((c) => c.wall && !c.indoor && c.bld == null && (WALLS[c.wall.type].full || WALLS[c.wall.type].cover)).length;
+        assert(cover >= 35, `seed ${s}: nur ${cover} Deckungsobjekte im Freien`);
+        const kinds = new Set(m.cells.filter((c) => c.wall && c.bld == null).map((c) => c.wall.type));
+        assert(kinds.size >= 7, `seed ${s}: nur ${kinds.size} Deckungsarten`);
+      }
     }
   });
 }

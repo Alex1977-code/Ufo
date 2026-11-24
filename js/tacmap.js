@@ -622,8 +622,73 @@ function genUrban(map, at, setWall) {
   for (const rx of roadsX) for (const ry of roadsY) {
     for (const [cx, cy, ax, ay] of [[rx - 1, ry - 1, 1, 1], [rx + 3, ry + 3, -1, -1]]) if (freeOut(at, cx, cy)) deco(map, 'tlight', cx, cy, { ox: ax * 0.75, oz: ay * 0.75, rot: Math.atan2(ax, ay), s: 1 });
   }
+  urbanCover(map, at, setWall, { lanes, isRoad, isWalk, roadDir });
   for (let k = 0; k < 40; k++) map.alienSpawns.push({ x: randInt(0, W - 1), y: randInt(0, Math.floor(H * 0.6)) });
   for (let k = 0; k < 30; k++) map.civSpawns.push({ x: randInt(0, W - 1), y: randInt(2, H - 7) });
+}
+
+// Deckung in der Stadt (Terror): Busse/LKW auf der Fahrbahn, Pflanzkübel und Absperrungen auf Gehwegen,
+// Brunnen/Denkmal/Mäuerchen auf Plätzen, Kisten/Tonnen/Container in Hinterhöfen, Gerüste an Fassaden.
+// Alles sind echte Wand-Objekte (halbe bzw. volle Deckung), keine reine Dekoration.
+function urbanCover(map, at, setWall, { lanes, isWalk, roadDir }) {
+  const { W, H } = map;
+  const nearDoor = (x, y) => DIR4.some(([dx, dy]) => at(x + dx, y + dy)?.door) || at(x, y)?.door;
+  const ok = (x, y) => { const c = at(x, y); return c && !c.wall && !c.reserved && !c.indoor && !nearDoor(x, y); };
+  const put = (x, y, type, rot = randInt(0, 3)) => {
+    if (!ok(x, y)) return false;
+    setWall(x, y, type); const c = at(x, y); if (!c.wall) return false;
+    c.wall.rot = rot; c.wall.variant = randInt(0, 3); return true;
+  };
+  // Keine geschlossenen Riegel bauen: höchstens 2 belegte Nachbarn je Feld
+  const crowded = (x, y) => DIR4.filter(([dx, dy]) => at(x + dx, y + dy)?.wall).length >= 2;
+
+  // 1) Große Fahrzeuge auf den Außenspuren (volle Deckung, blockieren Sicht)
+  let big = 0;
+  for (const l of lanes) {
+    if (big >= randInt(2, 4)) break;
+    const [dx, dy] = l.vert ? [0, 1] : [1, 0];
+    if (!ok(l.x, l.y) || at(l.x + dx, l.y + dy)?.wall || at(l.x - dx, l.y - dy)?.wall || crowded(l.x, l.y)) continue;
+    if (rand() < 0.15 && put(l.x, l.y, rand() < 0.5 ? 'bus' : 'truck', l.vert ? choice([0, 2]) : choice([1, 3]))) big++;
+  }
+  // 2) Gehwege: Pflanzkübel (Busch), Betonsperren, Polizei-Sandsäcke, Zeitungs-/Stromkästen als Kisten
+  const walks = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (isWalk(x, y) && ok(x, y) && roadDir(x, y)) walks.push([x, y]);
+  shuffle(walks);
+  const walkWant = { bush: randInt(5, 8), barrier: randInt(2, 4), sandbag: randInt(2, 4), crate: randInt(2, 3), barrel: randInt(1, 3) };
+  for (const [x, y] of walks) {
+    const t = Object.keys(walkWant).find((k) => walkWant[k] > 0 && rand() < 0.35); if (!t) continue;
+    if (map.deco.some((d) => d.x === x && d.y === y) || crowded(x, y)) continue;
+    const [dx, dy] = roadDir(x, y);
+    if (put(x, y, t, dx ? choice([0, 2]) : choice([1, 3]))) walkWant[t]--;
+  }
+  // 3) Freie Innenhof-/Platzflächen (Pflaster zwischen den Häusern)
+  const yard = [];
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) { const c = at(x, y); if (c.floor === 'tile' && ok(x, y)) yard.push([x, y]); }
+  shuffle(yard);
+  // Platz mit Brunnen/Denkmal: größte offene 3×3-Fläche
+  const open3 = ([x, y]) => { for (let v = -1; v <= 1; v++) for (let u = -1; u <= 1; u++) { const c = at(x + u, y + v); if (!c || c.wall || c.indoor || c.reserved || c.floor !== 'tile') return false; } return true; };
+  const plazas = yard.filter(open3);
+  if (plazas.length) {
+    const [px, py] = plazas[0];
+    put(px, py, rand() < 0.6 ? 'fountain' : 'statue', 0);
+    for (const [u, v] of shuffle([[2, 0], [-2, 0], [0, 2], [0, -2]]).slice(0, randInt(1, 3))) put(px + u, py + v, choice(['bush', 'stonewall', 'bush']), u ? 0 : 1);
+  }
+  const yardWant = { crate: randInt(3, 6), barrel: randInt(2, 4), pallet: randInt(2, 4), container: randInt(1, 2), woodpile: randInt(0, 2), stonewall: randInt(2, 4), bush: randInt(2, 4), fuelbarrel: randInt(0, 2) };
+  for (const [x, y] of yard) {
+    const t = Object.keys(yardWant).find((k) => yardWant[k] > 0 && rand() < 0.3); if (!t) continue;
+    if (map.deco.some((d) => d.x === x && d.y === y) || crowded(x, y)) continue;
+    if (put(x, y, t)) yardWant[t]--;
+  }
+  // 4) Baugerüst vor einer Fassade (eine Wand, max. 3 Felder)
+  const b = choice(map.buildings.filter((q) => !q.ruined));
+  if (b && rand() < 0.6) {
+    const side = randInt(0, 3), n = randInt(2, 3);
+    for (let i = 0; i < n; i++) {
+      const x = side < 2 ? b.x0 + 1 + i : side === 2 ? b.x0 - 1 : b.x0 + b.w;
+      const y = side >= 2 ? b.y0 + 1 + i : side === 0 ? b.y0 - 1 : b.y0 + b.h;
+      put(x, y, 'scaffold', side < 2 ? 1 : 0);
+    }
+  }
 }
 
 function genHive(map, at, setWall) {
