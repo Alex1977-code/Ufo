@@ -215,17 +215,29 @@ export function createSunWithCSM(scene, camera, opts = {}) {
   const color = new THREE.Color(opts.color ?? 0xfff0d8);
   for (const l of csm.lights) { l.color.copy(color); l.shadow.normalBias = opts.normalBias ?? 0.04; }
   const done = new WeakSet();
+  // Ursprüngliche (eigene) Hooks je Material: CSM.dispose() löscht onBeforeCompile ersatzlos – damit gemeinsam
+  // genutzte Materialien (Nebel des Krieges, Figuren-Haut) danach weiter funktionieren, stellt dispose() sie wieder her.
+  const orig = new Map();
+  const own = (m, k) => (Object.prototype.hasOwnProperty.call(m, k) ? m[k] : null);
   const api = {
     csm, lights: csm.lights,
     setupMaterial(m) {
       if (!m || done.has(m) || !(m.isMeshStandardMaterial || m.isMeshPhongMaterial || m.isMeshLambertMaterial || m.isMeshToonMaterial)) return;
       done.add(m);
-      const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey?.call(m) || '';
+      const prev = own(m, 'onBeforeCompile'), prevKeyFn = own(m, 'customProgramCacheKey');
+      orig.set(m, { prev, prevKeyFn });
       csm.setupMaterial(m);
       const hook = m.onBeforeCompile;
-      if (prev && prev !== THREE.Material.prototype.onBeforeCompile) m.onBeforeCompile = function (sh, r) { prev.call(this, sh, r); hook.call(this, sh, r); };
-      m.customProgramCacheKey = () => 'csm|' + prevKey;
+      if (prev) m.onBeforeCompile = function (sh, r) { prev.call(this, sh, r); hook.call(this, sh, r); };
+      m.customProgramCacheKey = function () { return 'csm|' + (prevKeyFn ? prevKeyFn.call(this) : ''); };
       m.needsUpdate = true;
+    },
+    /** Alle beleuchteten Materialien unter root einbinden (auch ohne receiveShadow: sonst wirken alle Kaskaden-Lichter). */
+    setupAll(root) {
+      root.traverse((o) => {
+        if (!o.isMesh || !o.material) return;
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => api.setupMaterial(m));
+      });
     },
     setupScene(root) {
       root.traverse((o) => {
@@ -239,7 +251,15 @@ export function createSunWithCSM(scene, camera, opts = {}) {
     setColor(c) { for (const l of csm.lights) l.color.set(c); },
     setIntensity(i) { for (const l of csm.lights) l.intensity = i; },
     setCastShadow(on) { for (const l of csm.lights) l.castShadow = !!on; },
-    dispose() { csm.dispose(); csm.remove(); for (const l of csm.lights) l.dispose?.(); },
+    dispose() {
+      csm.dispose(); csm.remove(); for (const l of csm.lights) l.dispose?.();
+      for (const [m, o] of orig) {
+        if (o.prev) m.onBeforeCompile = o.prev; else delete m.onBeforeCompile;
+        if (o.prevKeyFn) m.customProgramCacheKey = o.prevKeyFn; else delete m.customProgramCacheKey;
+        m.needsUpdate = true;
+      }
+      orig.clear();
+    },
   };
   return api;
 }

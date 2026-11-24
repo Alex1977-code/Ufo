@@ -505,8 +505,15 @@ export const fogUniforms = {
   fogMapSize: { value: new THREE.Vector2(1, 1) },
   fogOutside: { value: 0.32 },
 };
+// Nebel des Krieges in ein Material einbauen. Idempotent; ein vorhandenes onBeforeCompile (z. B. Haut-Shader der
+// Figuren, PBR-Boden) und dessen Programm-Schlüssel bleiben erhalten und laufen vorher.
 export function patchFog(mat) {
-  mat.onBeforeCompile = (sh) => {
+  if (!mat || mat.userData.fogPatched) return mat;
+  mat.userData.fogPatched = true;
+  const prev = Object.prototype.hasOwnProperty.call(mat, 'onBeforeCompile') ? mat.onBeforeCompile : null;
+  const prevKey = Object.prototype.hasOwnProperty.call(mat, 'customProgramCacheKey') ? mat.customProgramCacheKey : null;
+  mat.onBeforeCompile = function (sh, r) {
+    if (prev) prev.call(this, sh, r);
     Object.assign(sh.uniforms, fogUniforms);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec2 vFogW;')
@@ -523,7 +530,7 @@ export function patchFog(mat) {
           float fv = (fuv.x < 0.0 || fuv.y < 0.0 || fuv.x > 1.0 || fuv.y > 1.0) ? fogOutside : texture2D(fogMap, fuv).r;
           gl_FragColor.rgb *= fv; }`);
   };
-  mat.customProgramCacheKey = () => 'fog' + mat.type;
+  mat.customProgramCacheKey = prevKey ? function () { return 'fog' + mat.type + '|' + prevKey.call(this); } : () => 'fog' + mat.type;
   return mat;
 }
 

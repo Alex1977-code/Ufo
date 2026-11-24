@@ -415,6 +415,16 @@ export class Tactical {
         else { M4(p.x, p.z, 0); put(c, t, 'wallIn', null, [inner, white], [atlasTile(2), null]); }
         return;
       }
+      if (t === 'bench' || t === 'bin') {
+        // Stadtmobiliar als Deckung: Modelle der Deko (Front +z), Blickrichtung zur Fahrbahn aus wall.rot, an den Bordstein gerückt
+        const v2 = 'wall:' + t;
+        if (!parts[v2] && parts['deco:' + t]) parts[v2] = parts['deco:' + t].map((pp) => ({ ...pp, shadow: true }));
+        if (parts[v2]) {
+          const a = rr == null ? randInt(0, 3) * T2 : -rr * T2, off = t === 'bench' ? 0.5 : 0.55;
+          M4(p.x + Math.sin(a) * off + (t === 'bin' ? Math.cos(a) * randRange(-0.4, 0.4) : 0), p.z + Math.cos(a) * off - (t === 'bin' ? Math.sin(a) * randRange(-0.4, 0.4) : 0), a + randRange(-0.04, 0.04));
+          put(c, t, v2); return;
+        }
+      }
       if (!parts[t] && !LINE.has(t) && !RUN.has(t) && !['gravestone', 'tent'].includes(t)) {
         // Unbekannter Typ (noch ohne Modell): Platzhalter-Kiste in Typhöhe, damit nichts abstürzt
         M4(p.x, p.z, rand() * 6.28, 1, (WALLS[t]?.h || 1.15) / 1.15, 1); put(c, t, 'crate'); return;
