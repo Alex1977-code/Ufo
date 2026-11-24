@@ -379,7 +379,7 @@ export function propParts() {
   const H = 2.8, F = (g, y0 = 0) => planarUV(g, H, y0);
   const up1 = () => ({ geo: F(bx(T, H, T, 0, H), H), mat: M.facade, atlas: true, bit: 1 });
   const up2 = () => ({ geo: F(bx(T, H, T, 0, 2 * H), 2 * H), mat: M.facade, atlas: true, bit: 2 });
-  const cornice = (w = T) => [[bx(w + 0.1, 0.1, w + 0.1, 0, H - 0.22), '#ffffff'], [bx(w + 0.16, 0.12, w + 0.16, 0, H - 0.12), '#ffffff']];
+  const cornice = (w = T) => [[bx(w + 0.1, 0.1, w + 0.1, 0, H - 0.22), '#ffffff'], [bx(w + 0.16, 0.16, w + 0.16, 0, H - 0.12), '#ffffff']];
   const PL = '#6f6a64', FR = '#f4f2ec';
   const both = (f) => [f(1), f(-1)];
   const wheel = (x, z, r, w, rim = '#b8bcc0') => [[new THREE.CylinderGeometry(r, r, w, 16).rotateZ(Math.PI / 2).translate(x, r, z), '#141414'], [new THREE.CylinderGeometry(r * 0.62, r * 0.62, w + 0.02, 12).rotateZ(Math.PI / 2).translate(x, r, z), rim], [new THREE.CylinderGeometry(r * 0.2, r * 0.2, w + 0.04, 8).rotateZ(Math.PI / 2).translate(x, r, z), '#3a3a3a']];
@@ -436,7 +436,7 @@ export function propParts() {
     ],
     wallIn: () => [
       { geo: F(bx(T, H, T)), mat: M.facade, atlas: true },
-      { geo: mergeGeos([[bx(T + 0.04, 0.14, T + 0.04), '#5a4632'], [bx(T + 0.04, 0.08, T + 0.04, 0, H - 0.08), '#f0ece4']]), mat: M.trim },
+      { geo: mergeGeos([[bx(T + 0.04, 0.14, T + 0.04), '#5a4632'], [bx(T + 0.04, 0.1, T + 0.04, 0, H - 0.07), '#f0ece4']]), mat: M.trim },
     ],
     door: () => [
       { geo: mergeGeos([F(bx(T, 0.6, T, 0, 2.2)), F(bx(0.36, 2.2, T, -0.82)), F(bx(0.36, 2.2, T, 0.82))]), mat: M.facade, atlas: true },

@@ -369,8 +369,8 @@ function genUrban(map, at, setWall) {
   }
   // Geparkte Autos auf den Außenspuren (längs zur Straße), Mittelspur bleibt frei; einige ausgebrannt
   const lanes = [];
-  for (const r of roadsX) for (const x of [r, r + 2]) for (let y = 0; y < H; y++) if (!inRY(y)) lanes.push({ x, y, vert: true });
-  for (const r of roadsY) for (const y of [r, r + 2]) for (let x = 0; x < W; x++) if (!inRX(x)) lanes.push({ x, y, vert: false });
+  for (const r of roadsX) for (const x of [r, r + 2]) for (let y = 0; y < H; y++) if (!inRY(y) && !walkY(y)) lanes.push({ x, y, vert: true });
+  for (const r of roadsY) for (const y of [r, r + 2]) for (let x = 0; x < W; x++) if (!inRX(x) && !walkX(x)) lanes.push({ x, y, vert: false });
   shuffle(lanes);
   let nCar = 0, nBar = 0;
   for (const l of lanes) {
