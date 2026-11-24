@@ -2,7 +2,7 @@
 // Statische Geometrie wird pro Material zu wenigen Meshes zusammengeführt („Baking“) → wenige Draw-Calls, auch auf dem Handy.
 import * as THREE from 'three';
 import { canvasTexture } from './engine.js';
-import { makeTransport } from './models.js';
+import { makeInterceptor, makeTransport, disposeCraft, animateCraft } from './craftmodels.js';
 import { Game } from './game.js';
 import { FACILITIES, CRAFTS } from './data.js';
 import { Input, padLabel } from './input.js';
@@ -260,34 +260,6 @@ function planBase(c) {
 }
 
 // ---------- Modellbau ----------
-function buildJet(parent, type, mt, glowMat) {
-  const g = new THREE.Group(); parent.add(g);
-  const P = type === 'phantom';
-  const hull = P ? mt.hull2 : mt.hull;
-  g.scale.setScalar(P ? 1.12 : 1);
-  mesh(g, new THREE.CylinderGeometry(0.48, 0.36, 4.2, 14), hull, 0, 1.05, 0.2, Math.PI / 2);
-  mesh(g, new THREE.ConeGeometry(0.36, 1.5, 14), hull, 0, 1.05, -2.65, -Math.PI / 2);
-  const can = mesh(g, new THREE.SphereGeometry(0.34, 14, 10), mt.canopy, 0, 1.36, -1.2); can.scale.set(1, 0.75, 2.4);
-  const wing = new THREE.Shape();
-  const pts = P ? [[0.4, -0.4], [3.0, -1.3], [3.2, -0.8], [0.5, 1.9], [-0.5, 1.9], [-3.2, -0.8], [-3.0, -1.3], [-0.4, -0.4]]
-    : [[0.3, -1.2], [2.7, 1.2], [2.5, 1.7], [-2.5, 1.7], [-2.7, 1.2], [-0.3, -1.2]];
-  pts.forEach(([x, y], i) => (i ? wing.lineTo(x, y) : wing.moveTo(x, y)));
-  mesh(g, new THREE.ExtrudeGeometry(wing, { depth: 0.09, bevelEnabled: false }), hull, 0, 1.02, 0.4, Math.PI / 2);
-  if (P) for (const sx of [-1, 1]) box(g, 1.0, 0.05, 0.4, hull, sx * 0.75, 1.15, -1.9);
-  for (const sx of [-1, 1]) {
-    mesh(g, new THREE.BoxGeometry(0.07, 0.95, 1.0), hull, sx * 0.32, 1.6, 1.85, 0, 0, -sx * 0.3);
-    box(g, 0.3, 0.4, 1.2, mt.steelDark, sx * 0.5, 0.95, -0.2);
-    box(g, 0.6, 0.02, 0.25, mt.accent, sx * 1.6, 1.07, 0.9);
-    cyl(g, 0.04, 0.04, 0.7, mt.steelDark, sx * 0.9, 0.5, 0.6, 6);
-    cyl(g, 0.16, 0.16, 0.12, mt.tire, sx * 0.9, 0.16, 0.6, 10, 0, Math.PI / 2);
-  }
-  cyl(g, 0.04, 0.04, 0.7, mt.steelDark, 0, 0.5, -1.9, 6);
-  cyl(g, 0.14, 0.14, 0.1, mt.tire, 0, 0.14, -1.9, 10, 0, Math.PI / 2);
-  cyl(g, 0.3, 0.34, 0.45, mt.steelDark, 0, 1.05, 2.5, 14, Math.PI / 2);
-  mesh(g, new THREE.CircleGeometry(0.27, 14), glowMat, 0, 1.05, 2.73);
-  return g;
-}
-
 function radarHeadGeometry() {
   const g = new THREE.Group();
   cyl(g, 0.5, 0.6, 0.5, null, 0, 0, 0, 12);
@@ -433,6 +405,7 @@ class BaseView {
     this.selMesh.visible = false; this.selMesh.renderOrder = 5; sc.add(this.selMesh);
 
     this.content = new THREE.Group(); sc.add(this.content);
+    this.crafts = new THREE.Group(); sc.add(this.crafts); // Fluggeräte (craftmodels.js), nicht gebacken
   }
 
   buildTerrain(st) {
@@ -490,6 +463,7 @@ class BaseView {
   }
 
   clearContent() {
+    this.crafts?.children.slice().forEach((c) => disposeCraft(c));
     this.content.children.slice().forEach((m) => { m.geometry.dispose(); this.content.remove(m); });
     this.tempMats.forEach((m) => m.dispose()); this.tempMats = [];
     this.labels.forEach((l) => l.el.remove()); this.labels = [];
@@ -598,7 +572,9 @@ class BaseView {
     for (const sx of [-1, 1]) box(g, 0.3, 0.3, 7.6, mt.steel, lx + sx * 3.65, FLOOR + 6.8, 0);
     const tr = Game.c.transport;
     if (!tr || tr.status === 'ready') {
-      const t = makeTransport(); t.scale.setScalar(0.33); t.position.set(lx, FLOOR + 0.25, 0.3); g.add(t);
+      const t = makeTransport({ gear: true, transmission: false }), k = 0.2; // ~28 m → Plattform
+      t.scale.setScalar(k); t.position.set(g.position.x + lx, FLOOR + 0.25 - t.userData.groundY * k, g.position.z + 0.3);
+      this.crafts.add(t);
     }
   }
 
@@ -614,8 +590,11 @@ class BaseView {
       const cr = m.bays[bi];
       box(g, 1.4, 0.06, 0.35, cr ? statusMat[cr.status] || mt.green : mt.steelDark, bx, FLOOR + 0.03, -3.85);
       if (cr && (cr.status === 'ready' || cr.status === 'repair')) {
-        const j = buildJet(g, cr.type, mt, cr.type === 'phantom' ? mt.blue : mt.warm);
-        j.position.set(bx, FLOOR, 0.2);
+        const num = +((cr.name || '').match(/(\d+)\s*$/)?.[1] || Game.c.crafts.indexOf(cr) + 1);
+        const j = makeInterceptor(cr.type, { gear: true, transmission: false, seed: num, code: `${cr.type === 'phantom' ? 'PH' : 'FK'}-${String(num).padStart(2, '0')}`, damage: cr.status === 'repair' ? 0.35 : 0 });
+        const k = 0.4; // Falke 14 m / Phantom 16 m → Stellplatz
+        j.scale.setScalar(k); j.position.set(g.position.x + bx, FLOOR - j.userData.groundY * k, g.position.z + 0.2);
+        this.crafts.add(j);
         if (cr.status === 'repair') { // Wartungsarm + Arbeitsbühne
           box(g, 0.3, 2.6, 0.3, mt.yellow, bx + 2.3, FLOOR + 1.3, 1.5);
           beam(g, new THREE.Vector3(bx + 2.3, FLOOR + 2.5, 1.5), new THREE.Vector3(bx + 0.7, FLOOR + 1.9, 0.6), 0.1, mt.yellow);
@@ -1060,6 +1039,7 @@ class BaseView {
       this.dishes.instanceMatrix.needsUpdate = true;
     }
     this.holo.rotation.y = this.t * 0.5;
+    for (const c of this.crafts.children) animateCraft(c, this.t);
     this.holo.children[1].rotation.z = this.t * 1.3;
     const on = (this.t * 1.6) % 1 < 0.5;
     this.mt.blink.color.setRGB(1, 0.42, 0.05).multiplyScalar(on ? 4.5 : 0.25);
