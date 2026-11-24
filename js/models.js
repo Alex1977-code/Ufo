@@ -918,8 +918,512 @@ export function propParts() {
     'deco:ice': () => [{ geo: mergeGeos([new THREE.DodecahedronGeometry(0.38, 0).scale(1, 0.8, 1).translate(0, 0.2, 0), new THREE.DodecahedronGeometry(0.24, 0).translate(0.38, 0.12, 0.15), new THREE.OctahedronGeometry(0.2, 0).translate(-0.28, 0.12, -0.25)]), mat: M.ice }],
     'deco:rug': () => [{ geo: mergeGeos([[bx(1.5, 0.012, 1.0), '#ffffff'], [bx(1.3, 0.014, 0.8), '#d8d0c4']]), mat: M.furnSoft, tint: true, shadow: false }],
   };
+  Object.assign(defs, mapDefs(M));
   for (const [k, f] of Object.entries(defs)) { let v = null; Object.defineProperty(P, k, { get: () => (v ||= f()), enumerable: true, configurable: true }); }
   return { parts: P, mats: M };
+}
+
+// ---------- Karten-Hindernisse (Vertrag orchestrator/karten): Wandmodule, Deckung, Vegetation, Fahrzeuge, Bauwerke ----------
+// Lokales Koordinatensystem: Feld = x/z ∈ [-1, 1], Boden y = 0; lineare Objekte entlang x; Fahrzeuge/Container: vorne = +z.
+// Materialien werden erst erzeugt, wenn ein Typ auf der Karte vorkommt (Teile sind Lazy-Getter).
+function mapDefs(M) {
+  const T = TILE, L = {}, t0 = textures();
+  const mk = (k, f) => L[k] ||= f();
+  const W = {
+    stone: () => mk('stone', () => rough({ map: tx('stoneWall'), roughness: 0.95 }, tx('stoneWallD'), 1.8)),
+    concrete: () => mk('concrete', () => rough({ map: tx('formConcrete'), roughness: 0.9 }, tx('formConcreteD'), 0.8)),
+    corr: () => mk('corr', () => rough({ map: tx('corrugated'), metalness: 0.55, roughness: 0.55 }, tx('corrugatedD'), 1.6)),
+    plaster: () => mk('plaster', () => rough({ map: tx('plasterCrack'), roughness: 0.92 }, tx('plasterCrackD'), 1)),
+    glass: () => mk('glass', () => std({ color: 0xa8c8d4, metalness: 0.1, roughness: 0.04, transparent: true, opacity: 0.3, envMapIntensity: 1.8, depthWrite: false })),
+    burlap: () => mk('burlap', () => rough({ map: tx('burlap'), vertexColors: true, roughness: 1 }, tx('burlapD'), 1.4)),
+    endGrain: () => mk('endGrain', () => rough({ map: tx('endGrain'), vertexColors: true, roughness: 0.9 }, tx('endGrainD'), 1)),
+    barkVC: () => mk('barkVC', () => rough({ map: t0.bark, vertexColors: true, roughness: 1 }, t0.barkD, 1.5)),
+    birch: () => mk('birch', () => rough({ map: tx('birchBark'), roughness: 0.85 }, tx('birchBarkD'), 0.8)),
+    palm: () => mk('palm', () => rough({ map: tx('palmBark'), roughness: 0.95 }, tx('palmBarkD'), 1.8)),
+    frond: () => mk('frond', () => std({ map: tx('frond'), vertexColors: true, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.8 })),
+    rockVC: () => mk('rockVC', () => rough({ map: t0.rock, vertexColors: true, roughness: 0.95, flatShading: true }, t0.rockD, 1.5)),
+    container: () => mk('container', () => atlasify(rough({ map: tx('container'), metalness: 0.45, roughness: 0.7 }, tx('containerD'), 1.4))),
+    drum: () => mk('drum', () => rough({ map: tx('drum'), vertexColors: true, metalness: 0.5, roughness: 0.7 }, tx('drumD'), 0.6)),
+    fuelDrum: () => mk('fuelDrum', () => rough({ map: tx('fuelDrum'), vertexColors: true, metalness: 0.45, roughness: 0.7 }, tx('fuelDrumD'), 0.6)),
+    pump: () => mk('pump', () => rough({ map: tx('pump'), emissiveMap: tx('pumpEmit'), emissive: 0xffffff, emissiveIntensity: 1.4, vertexColors: true, metalness: 0.15, roughness: 0.6 }, tx('pumpD'), 0.3)),
+    veh: () => mk('veh', () => std({ map: tx('veh'), roughnessMap: tx('vehR'), vertexColors: true, metalness: 0.3, roughness: 1, envMapIntensity: 1.3 })),
+    vehPaint: () => mk('vehPaint', () => std({ vertexColors: true, metalness: 0.4, roughness: 0.38, envMapIntensity: 1.2 })),
+    ashlar: () => mk('ashlar', () => rough({ map: t0.concrete, color: 0xe2d4b6, vertexColors: true, roughness: 0.85 }, t0.concreteD, 0.9)),
+    pool: () => mk('pool', () => std({ color: 0x3f7f8c, roughness: 0.04, metalness: 0.1, transparent: true, opacity: 0.78, envMapIntensity: 1.8 })),
+    grave: () => mk('grave', () => rough({ map: tx('grave'), vertexColors: true, roughness: 0.5 }, tx('graveD'), 0.5)),
+    bronze: () => mk('bronze', () => rough({ map: t0.concrete, color: 0x6f9a86, metalness: 0.55, roughness: 0.55 }, t0.concreteD, 0.7)),
+    steel: () => mk('steel', () => rough({ map: t0.plain, vertexColors: true, metalness: 0.65, roughness: 0.5 }, t0.plainD, 0.3)),
+    tank: () => mk('tank', () => rough({ map: tx('tankPaint'), metalness: 0.4, roughness: 0.6 }, tx('tankPaintD'), 0.6)),
+    silo: () => mk('silo', () => rough({ map: tx('silo'), metalness: 0.6, roughness: 0.45 }, tx('siloD'), 1.2)),
+    tent: () => mk('tent', () => rough({ map: t0.fabric, vertexColors: true, roughness: 0.85 }, t0.plainD, 0.4)),
+    mil: () => mk('mil', () => rough({ map: tx('milcrate'), vertexColors: true, roughness: 0.85 }, tx('milcrateD'), 0.8)),
+    chain: () => mk('chain', () => std({ map: tx('chain'), transparent: true, side: THREE.DoubleSide, metalness: 0.6, roughness: 0.45, depthWrite: false })),
+  };
+  const H = 2.8, F = (g, h = H) => planarUV(g, h, 0);
+  const hsl = (h, s, l) => new THREE.Color().setHSL(h, s, l);
+  const v2 = (a) => a.map(([x, y]) => new THREE.Vector2(x, y));
+  // UV-v nach Höhe (durchgehende Rinde über mehrere Stammstücke)
+  const uvH = (g, h) => { const p = g.attributes.position, uv = g.attributes.uv; for (let i = 0; i < p.count; i++) uv.setY(i, p.getY(i) / h); return g; };
+  // Projektion (x, y) → Atlas-Bereich; Vorderseite (+z) erhält rect, alle anderen Flächen def
+  const projUV = (g, x0, x1, y0, y1, rect, def) => {
+    const p = g.attributes.position, n = g.attributes.normal, uv = g.attributes.uv;
+    for (let i = 0; i < p.count; i++) { const r = n.getZ(i) > 0.7 ? rect : def, u = (p.getX(i) - x0) / (x1 - x0), v = (p.getY(i) - y0) / (y1 - y0); uv.setXY(i, r[0] + u * (r[2] - r[0]), r[1] + v * (r[3] - r[1])); }
+    return g;
+  };
+  const D = {};
+
+  // ===== Wandmodule (volles Feld, wie Gebäudewände) =====
+  D.stone = () => [{ geo: mergeGeos([F(bx(T, H, T)), F(bx(T + 0.1, 0.5, T + 0.1)), F(bx(T + 0.08, 0.16, T + 0.08, 0, H - 0.16))]), mat: W.stone() }];
+  D.concrete = () => [{ geo: mergeGeos([F(bx(T, H, T)), F(bx(T + 0.06, 0.3, T + 0.06)), F(bx(T + 0.12, 0.12, T + 0.12, 0, H - 0.12))]), mat: W.concrete() }];
+  D.metalsheet = () => [
+    { geo: F(bx(T, 3.2, T), 3.2), mat: W.corr() },
+    { geo: mergeGeos([[bx(T + 0.05, 0.3, T + 0.05), '#8d8b86'], [bx(T + 0.1, 0.08, T + 0.1, 0, 3.18), '#b8bcc0'], [bx(T + 0.05, 0.05, T + 0.05, 0, 1.6), '#9aa0a4']]), mat: M.trim, shadow: false },
+  ];
+  D.plaster = () => [
+    { geo: F(bx(T, H, T)), mat: W.plaster() },
+    { geo: mergeGeos([[bx(T + 0.05, 0.4, T + 0.05), '#7a756e'], [bx(T + 0.1, 0.1, T + 0.1, 0, H - 0.22), '#ffffff'], [bx(T + 0.16, 0.14, T + 0.16, 0, H - 0.12), '#ffffff']]), mat: M.trim, shadow: false },
+  ];
+  // ===== Glaswand: Sockel, Sprossen, zwei Scheiben =====
+  D.glass = () => {
+    const fr = '#e9ebe8';
+    const f = [[bx(T, 0.4, 0.24), '#9b988f'], [bx(T, 0.06, 0.1, 0, 0.4), fr], [bx(T, 0.08, 0.12, 0, 2.5), fr], [bx(T, 0.05, 0.08, 0, 1.45), fr], [bx(T, 0.04, 0.16, 0, 2.58), '#b9bec2']];
+    for (const x of [-0.97, 0, 0.97]) f.push([bx(0.06, 2.1, 0.09, x, 0.4), fr]);
+    return [{ geo: mergeGeos(f), mat: M.decoVC }, { geo: mergeGeos([bx(0.9, 2.04, 0.015, -0.485, 0.46), bx(0.9, 2.04, 0.015, 0.485, 0.46)]), mat: W.glass(), shadow: false }];
+  };
+  // ===== Niedrige Feldsteinmauer: verjüngter, unregelmäßiger Kern + Decksteine =====
+  D.stonewall = () => {
+    const body = new THREE.BoxGeometry(T, 0.78, 0.64, 10, 4, 3).translate(0, 0.39, 0), p = body.attributes.position;
+    for (let i = 0; i < p.count; i++) p.setZ(i, p.getZ(i) * (1 - 0.3 * p.getY(i) / 0.78));
+    warp(body, 0.035, 2.2); planarUV(body, 2.8);
+    const caps = Array.from({ length: 7 }, (_, i) => stoneGeo(0.16 + rnd() * 0.04, -0.9 + i * 0.3 + (rnd() - 0.5) * 0.06, 0.84, (rnd() - 0.5) * 0.08, 1.15, 0.5, 1.15));
+    return [{ geo: mergeGeos([body, ...caps]), mat: W.stone() }];
+  };
+  // ===== Sandsackstellung: 6 Lagen im Verband, unten zweireihig =====
+  D.sandbag = () => {
+    const cols = ['#cdb98f', '#bca97c', '#a99a70', '#8f8c62', '#c4b088'], out = [];
+    const bag = (x, y, z, len, ry) => {
+      const g = new THREE.SphereGeometry(0.5, 7, 5), p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) p.setY(i, Math.max(-0.36, Math.min(0.36, p.getY(i))));
+      return [g.scale(len, 0.2, 0.36).rotateZ((rnd() - 0.5) * 0.08).rotateY(ry).translate(x, y + 0.072, z), cols[(rnd() * cols.length) | 0]];
+    };
+    for (let k = 0; k < 6; k++) {
+      const xs = k % 2 ? [[-0.86, 0.42], [-0.33, 0.62], [0.33, 0.62], [0.86, 0.42]] : [[-0.66, 0.64], [0, 0.64], [0.66, 0.64]];
+      for (const z of k < 3 ? [-0.18, 0.18] : [0.02]) for (const [x, len] of xs) out.push(bag(x + (rnd() - 0.5) * 0.04, k * 0.152, z + (rnd() - 0.5) * 0.04, len, (rnd() - 0.5) * 0.1));
+    }
+    return [{ geo: mergeGeos(out), mat: W.burlap() }];
+  };
+  // ===== Holzstapel: Rundhölzer in Lagen, Stirnseiten mit Jahresringen, Stützpfosten =====
+  D.woodpile = () => {
+    const sides = [], ends = [];
+    for (let r = 0; r < 5; r++) {
+      const n = r % 2 ? 7 : 8;
+      for (let i = 0; i < n; i++) {
+        const rad = 0.075 + rnd() * 0.03, len = 0.9 + rnd() * 0.12, dz = (rnd() - 0.5) * 0.08, cx = -0.7 + i * 0.2 + (r % 2 ? 0.1 : 0) + (rnd() - 0.5) * 0.02, cy = 0.19 + r * 0.173 + (rnd() - 0.5) * 0.015, sh = 0.72 + rnd() * 0.4;
+        sides.push([new THREE.CylinderGeometry(rad, rad, len, 7, 1, true).rotateY(rnd() * 3).rotateX(Math.PI / 2).translate(cx, cy, dz), [sh, sh * 0.95, sh * 0.9]]);
+        for (const s of [-1, 1]) ends.push([new THREE.CircleGeometry(rad, 7).rotateY(s < 0 ? Math.PI : 0).translate(cx, cy, dz + (s * len) / 2), [0.8 + rnd() * 0.25, 0.75 + rnd() * 0.2, 0.7 + rnd() * 0.2]]);
+      }
+    }
+    for (const z of [-0.3, 0.3]) sides.push([bx(1.9, 0.1, 0.1, 0, 0, z), '#9a8a7a']);
+    for (const x of [-0.93, 0.93]) for (const z of [-0.32, 0.32]) sides.push([rod([x, 0, z], [x * 1.02, 1.12, z], 0.045, 0.04, 6), '#b0a090']);
+    return [{ geo: mergeGeos(sides), mat: W.barkVC() }, { geo: mergeGeos(ends), mat: W.endGrain(), shadow: false }];
+  };
+  // ===== Busch: Laubballen mit Innenschatten =====
+  D.bush = () => {
+    const l = [[blob(0.55, 0, 0.5, 0, 1.15, 0.85, 1.1, 0.25), '#ffffff']];
+    for (let i = 0; i < 6; i++) { const a = i * 1.05 + rnd() * 0.5, r = 0.35 + rnd() * 0.2; l.push([blob(0.28 + rnd() * 0.14, Math.cos(a) * r * 1.1, 0.3 + rnd() * 0.45, Math.sin(a) * r, 1, 0.85, 1, 0.3), hsl(0.24 + rnd() * 0.05, 0.35, 0.55 + rnd() * 0.3)]); }
+    return [{ geo: shadeY(mergeGeos(l), 0, 1.0, 0.45), mat: M.leafVC }];
+  };
+  // ===== Hohe Hecke: verformter Quader + Ausreißer oben/seitlich =====
+  D.tallhedge = () => {
+    const g = warp(new THREE.BoxGeometry(T, 2.05, 1.0, 8, 8, 4).translate(0, 1.025, 0), 0.07, 2.5);
+    scaleUV(g, 2, 2);
+    const l = [[g, '#ffffff']];
+    for (let i = 0; i < 7; i++) l.push([blob(0.22 + rnd() * 0.12, -0.85 + i * 0.28, 1.95 + rnd() * 0.15, (rnd() - 0.5) * 0.6, 1.2, 0.8, 1, 0.3), hsl(0.25, 0.3, 0.6 + rnd() * 0.25)]);
+    return [{ geo: shadeY(mergeGeos(l), 0, 2.1, 0.4), mat: M.leafVC }];
+  };
+  // ===== Birke: weißer, leicht gebogener Stamm, lockere hohe Krone =====
+  D.birch = () => {
+    const pts = [[0, 0, 0], [0.04, 1.6, 0.02], [0.12, 3.2, -0.04], [0.08, 4.6, 0.03], [0.02, 5.6, 0]], rads = [0.17, 0.13, 0.1, 0.07, 0.035];
+    const wood = []; for (let i = 0; i < 4; i++) wood.push(rod(pts[i], pts[i + 1], rads[i], rads[i + 1], 8));
+    for (let i = 0; i < 7; i++) { const y = 2.4 + i * 0.45, a = i * 2.4 + rnd(), l = 0.6 + rnd() * 0.7, p0 = [0.1, y, 0]; wood.push(rod(p0, [p0[0] + Math.cos(a) * l, y + 0.4 + rnd() * 0.4, Math.sin(a) * l], 0.04, 0.015, 5)); }
+    wood.forEach((g) => uvH(g, 5.8));
+    const crown = [];
+    for (let i = 0; i < 10; i++) { const y = 3.0 + rnd() * 2.7, rr = (1 - (y - 3) / 3.4) * 0.95 + 0.25, a = rnd() * 6.28; crown.push([blob(0.42 + rnd() * 0.32, Math.cos(a) * rr * 0.8 + 0.08, y, Math.sin(a) * rr * 0.8, 1, 1.3, 1, 0.32), hsl(0.2 + rnd() * 0.05, 0.4, 0.62 + rnd() * 0.25)]); }
+    return [{ geo: mergeGeos(wood), mat: W.birch() }, { geo: shadeY(mergeGeos(crown), 2.6, 6.2, 0.55), mat: M.leafVC }];
+  };
+  // ===== Eiche: kräftiger Stamm mit Wurzelanläufen, ausladende Äste, breite unregelmäßige Krone =====
+  D.oak = () => {
+    const wood = [[rod([0, 0, 0], [0.05, 2.4, 0], 0.46, 0.34, 10), '#ffffff']];
+    for (let i = 0; i < 5; i++) { const a = i * 1.26 + rnd() * 0.4; wood.push([rod([Math.cos(a) * 0.28, 0.32, Math.sin(a) * 0.28], [Math.cos(a) * 0.72, 0, Math.sin(a) * 0.72], 0.2, 0.05, 6), '#e8e0d8']); }
+    const limbs = [];
+    for (let i = 0; i < 5; i++) {
+      const a = i * 1.26 + rnd() * 0.5, r = 1.0 + rnd() * 0.5, y = 3.4 + rnd() * 0.9, e = [Math.cos(a) * r, y, Math.sin(a) * r];
+      wood.push([rod([0.05, 2.2, 0], e, 0.22, 0.1, 7), '#ffffff']); limbs.push(e);
+      for (let k = 0; k < 2; k++) { const b = a + (rnd() - 0.5) * 1.4; wood.push([rod(e, [e[0] + Math.cos(b) * 0.7, e[1] + 0.6 + rnd() * 0.5, e[2] + Math.sin(b) * 0.7], 0.09, 0.03, 5), '#ffffff']); }
+    }
+    const crown = [[blob(1.35, 0, 5.4, 0, 1.25, 0.72, 1.25, 0.3), hsl(0.27, 0.35, 0.55)]];
+    for (const e of limbs) {
+      crown.push([blob(0.9 + rnd() * 0.35, e[0] * 1.15, e[1] + 1.0 + rnd() * 0.4, e[2] * 1.15, 1.2, 0.78, 1.2, 0.34), hsl(0.24 + rnd() * 0.06, 0.4, 0.5 + rnd() * 0.3)]);
+      crown.push([blob(0.5 + rnd() * 0.25, e[0] * 1.5, e[1] + 0.5, e[2] * 1.5, 1.1, 0.8, 1.1, 0.35), hsl(0.25 + rnd() * 0.05, 0.4, 0.45 + rnd() * 0.25)]);
+    }
+    return [{ geo: mergeGeos(wood), mat: W.barkVC() }, { geo: shadeY(mergeGeos(crown), 3.2, 7, 0.5), mat: M.leafVC }];
+  };
+  // ===== Palme: gebogener Ringstamm, hängende Fiederwedel, Kokosnüsse, trockene Wedel =====
+  D.palm = () => {
+    const P = (t) => [0.9 * t * t, 5.5 * t, 0.15 * t * t], n = 9, trunk = [];
+    for (let i = 0; i < n; i++) trunk.push(rod(P(i / n), P((i + 1) / n), i === 0 ? 0.3 : 0.2 - (0.07 * i) / n, 0.2 - (0.07 * (i + 1)) / n, 10));
+    const C = P(1), fr = [];
+    const frond = (az, len, lift, col, w0 = 0.55) => {
+      const N = 8, pos = [], uv = [], idx = [], dx = Math.cos(az), dz = Math.sin(az), px = -dz, pz = dx;
+      for (let i = 0; i <= N; i++) {
+        const s = i / N, d = len * s, y = C[1] + len * (lift * s - 0.9 * s * s), w = w0 * Math.sin(Math.PI * Math.min(1, 0.12 + s * 0.95)), cx = C[0] + dx * d, cz = C[2] + dz * d;
+        pos.push(cx + (px * w) / 2, y - w * 0.14, cz + (pz * w) / 2, cx, y + w * 0.06, cz, cx - (px * w) / 2, y - w * 0.14, cz - (pz * w) / 2);
+        uv.push(0, s, 0.5, s, 1, s);
+        if (i) { const a = (i - 1) * 3; idx.push(a, a + 3, a + 1, a + 1, a + 3, a + 4, a + 1, a + 4, a + 2, a + 2, a + 4, a + 5); }
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+      fr.push([g, col]);
+    };
+    for (let i = 0; i < 11; i++) frond((i / 11) * 6.28 + rnd() * 0.3, 2.3 + rnd() * 0.5, 0.35 + rnd() * 0.3, hsl(0.22 + rnd() * 0.05, 0.3, 0.75 + rnd() * 0.2));
+    for (let i = 0; i < 3; i++) frond(rnd() * 6.28, 1.5, 1.25, '#ffffff', 0.4);
+    for (let i = 0; i < 3; i++) frond(rnd() * 6.28, 1.6, -0.5, '#9a7a48', 0.4);
+    for (let i = 0; i < 4; i++) { const a = i * 1.6 + rnd(); fr.push([uvConst(ball(0.1, C[0] + Math.cos(a) * 0.16, C[1] - 0.12, C[2] + Math.sin(a) * 0.16, 8, 6), [0.49, 0.5, 0.51, 0.5]), '#6a4422']); }
+    return [{ geo: mergeGeos(trunk), mat: W.palm() }, { geo: mergeGeos(fr), mat: W.frond() }];
+  };
+  // ===== Abgestorbener Baum: verwitterter, verzweigter Stamm =====
+  D.deadtree = () => {
+    const l = [];
+    const branch = (a, dir, len, r, depth) => {
+      const b = [a[0] + dir[0] * len, a[1] + dir[1] * len, a[2] + dir[2] * len];
+      l.push([rod(a, b, r, r * 0.62, depth === 0 ? 8 : 5), depth === 0 ? '#9a9288' : '#a8a096']);
+      if (depth >= 3) return;
+      for (let i = 0, k = depth === 0 ? 3 : 2; i < k; i++) {
+        const az = rnd() * 6.28, el = 0.3 + rnd() * 0.7, v = [dir[0] * 0.55 + Math.cos(el) * Math.cos(az), dir[1] * 0.55 + Math.sin(el), dir[2] * 0.55 + Math.cos(el) * Math.sin(az)], m = Math.hypot(...v);
+        if (depth === 2 && rnd() < 0.3) continue; // abgebrochen
+        branch(b, v.map((q) => q / m), len * (0.5 + rnd() * 0.2), r * 0.6, depth + 1);
+      }
+    };
+    branch([0, 0, 0], [0.04, 1, 0.02], 1.9, 0.22, 0);
+    for (let i = 0; i < 4; i++) { const a = i * 1.57 + rnd() * 0.5; l.push([rod([Math.cos(a) * 0.12, 0.25, Math.sin(a) * 0.12], [Math.cos(a) * 0.55, -0.02, Math.sin(a) * 0.55], 0.1, 0.03, 5), '#8f877c']); }
+    return [{ geo: mergeGeos(l), mat: W.barkVC() }];
+  };
+  // ===== Baumstumpf: Rinde mit Wurzelanläufen, Schnittfläche mit Jahresringen =====
+  D.stump = () => {
+    const bark = [[new THREE.CylinderGeometry(0.34, 0.42, 0.5, 11, 1, true).translate(0, 0.25, 0), '#ffffff'], [new THREE.TorusGeometry(0.335, 0.03, 5, 11).rotateX(Math.PI / 2).translate(0, 0.5, 0), '#c8b8a0']];
+    for (let i = 0; i < 5; i++) { const a = i * 1.26 + rnd() * 0.4; bark.push([rod([Math.cos(a) * 0.25, 0.24, Math.sin(a) * 0.25], [Math.cos(a) * 0.8, -0.02, Math.sin(a) * 0.8], 0.16, 0.04, 6), '#e0d8d0']); }
+    return [{ geo: mergeGeos(bark), mat: W.barkVC() }, { geo: mergeGeos([new THREE.CircleGeometry(0.34, 11).rotateX(-Math.PI / 2).translate(0, 0.5, 0)]), mat: W.endGrain(), shadow: false }];
+  };
+  // ===== Geröllhaufen: kantige Steine, große unten =====
+  D.rockpile = () => {
+    const l = [], add = (r, x, y, z) => l.push([stoneGeo(r, x, y, z, 1 + rnd() * 0.4, 0.6 + rnd() * 0.3, 1 + rnd() * 0.3), hsl(0.08, 0.06 + rnd() * 0.08, 0.5 + rnd() * 0.35)]);
+    add(0.5, 0, 0.3, 0); add(0.42, 0.48, 0.24, -0.3); add(0.4, -0.5, 0.22, 0.28); add(0.36, 0.1, 0.6, 0.08); add(0.3, -0.3, 0.3, -0.45);
+    for (let i = 0; i < 10; i++) { const a = rnd() * 6.28, r = 0.6 + rnd() * 0.35; add(0.1 + rnd() * 0.16, Math.cos(a) * r, 0.07, Math.sin(a) * r); }
+    return [{ geo: mergeGeos(l), mat: W.rockVC() }];
+  };
+  // ===== Schiffscontainer als 2-m-Segmente (vorne / Mitte / hinten mit Türen / einzeln) – Farbe = Atlasspalte je Instanz =====
+  const cont = (role) => {
+    const Wc = 1.96, hw = Wc / 2, Hc = 2.59, C = (x0, y0, x1, y1) => pxRect(x0, y0, x1, y1);
+    const A = C(2, 2, 126, 254), B = C(130, 2, 254, 254), Dr = C(4, 260, 124, 508), Fw = C(132, 260, 252, 444), P = C(136, 452, 248, 508);
+    const front = role === 'front' || role === 'single', rear = role === 'rear' || role === 'single', side = role === 'rear' || role === 'front' ? B : A;
+    const g = [boxUV(Wc, Hc - 0.02, 2.0, 0, 0.01, 0, [side, side, P, P, front ? Fw : P, rear ? Dr : P])];
+    for (const s of [-1, 1]) g.push(boxUV(0.07, 0.16, 2.0, s * (hw + 0.02), 0, 0, [], P), boxUV(0.07, 0.1, 2.0, s * (hw + 0.02), Hc - 0.1, 0, [], P));
+    const ends = [...(front ? [1] : []), ...(rear ? [-1] : [])];
+    for (const e of ends) {
+      const zc = e * (1 - 0.075);
+      for (const s of [-1, 1]) { g.push(boxUV(0.16, Hc, 0.17, s * (hw - 0.06), 0, zc, [], P)); for (const y of [0, Hc - 0.13]) g.push(boxUV(0.2, 0.13, 0.2, s * (hw - 0.06), y, zc, [], P)); }
+      g.push(boxUV(Wc + 0.04, 0.2, 0.17, 0, 0, zc, [], P), boxUV(Wc + 0.04, 0.16, 0.17, 0, Hc - 0.16, zc, [], P));
+    }
+    if (rear) for (const x of [-0.71, -0.27, 0.27, 0.71]) {
+      g.push(uvConst(rod([x, 0.12, -1.035], [x, 2.45, -1.035], 0.022, 0.022, 6), P), uvConst(bx(0.06, 0.05, 0.05, x, 0.06, -1.03), P), uvConst(bx(0.06, 0.05, 0.05, x, 2.48, -1.03), P));
+      g.push(uvConst(bx(0.05, 0.04, 0.24, x + 0.04, 1.2, -1.12), P));
+    }
+    return [{ geo: mergeGeos(g), mat: W.container(), atlas: true }];
+  };
+  for (const r of ['front', 'mid', 'rear', 'single']) D['container:' + r] = () => cont(r);
+  // ===== Palettenstapel (Europaletten), optional mit Ladung =====
+  const eur = (x, y, z, ry, col) => {
+    const g = [], c = new THREE.Color(col), sh = () => c.clone().multiplyScalar(0.85 + rnd() * 0.25);
+    for (const [zz, w] of [[-0.3275, 0.145], [-0.165, 0.1], [0, 0.145], [0.165, 0.1], [0.3275, 0.145]]) g.push([bx(1.2, 0.022, w, 0, 0.122, zz), sh()]);
+    for (const xx of [-0.5275, 0, 0.5275]) g.push([bx(0.145, 0.022, 0.8, xx, 0.1, 0), sh()]);
+    for (const zz of [-0.3275, 0, 0.3275]) { g.push([bx(1.2, 0.022, 0.145, 0, 0, zz), sh()]); for (const xx of [-0.5275, 0, 0.5275]) g.push([bx(0.145, 0.078, 0.145, xx, 0.022, zz), sh().multiplyScalar(0.85)]); }
+    return g.map(([q, cc]) => [q.rotateY(ry).translate(x, y, z), cc]);
+  };
+  const stack = (n, z, out) => { for (let k = 0; k < n; k++) out.push(...eur((rnd() - 0.5) * 0.06, k * 0.144, z + (rnd() - 0.5) * 0.05, (rnd() - 0.5) * 0.06, rnd() < 0.6 ? '#dcc69a' : '#a89f8c')); };
+  D.pallet = () => { const o = []; stack(6, -0.44, o); stack(4, 0.44, o); return [{ geo: mergeGeos(o), mat: M.furnWood }]; };
+  D['pallet:load'] = () => {
+    const o = [], load = []; stack(1, -0.44, o); stack(1, 0.44, o);
+    for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < 3; k++) load.push([bx(0.57, 0.24, 0.38, -0.29 + i * 0.58, 0.145 + k * 0.245, -0.63 + j * 0.39), new THREE.Color('#b8925e').multiplyScalar(0.85 + rnd() * 0.25)]);
+    for (const x of [-0.3, 0.3]) load.push([bx(0.03, 0.75, 0.8, x, 0.14, -0.44), '#3a3a3a'], [bx(0.03, 0.02, 0.8, x, 0.89, -0.44), '#3a3a3a']);
+    load.push([bx(1.16, 0.02, 0.78, 0, 0.88, -0.44), '#d8d4c8']);
+    for (let k = 0; k < 4; k++) for (let i = 0; i < 2; i++) { const g = new THREE.SphereGeometry(0.5, 8, 5), p = g.attributes.position; for (let q = 0; q < p.count; q++) p.setY(q, Math.max(-0.35, Math.min(0.35, p.getY(q)))); load.push([g.scale(0.58, 0.18, 0.4).rotateY(k % 2 ? Math.PI / 2 : 0).translate(k % 2 ? -0.22 + i * 0.44 : 0, 0.205 + k * 0.125, 0.44 + (k % 2 ? 0 : -0.2 + i * 0.4)), new THREE.Color('#cfccc2').multiplyScalar(0.9 + rnd() * 0.12)]); }
+    return [{ geo: mergeGeos(o), mat: M.furnWood }, { geo: mergeGeos(load), mat: M.decoVC }];
+  };
+  // ===== Fässer (200 l): Mantel, Rollsicken, Falz, Deckel mit Spunden =====
+  const drum = (x, z, ry, sh, lying = false) => {
+    const band = (y0) => [0, y0, 1, y0 + 0.02];
+    const l = [new THREE.CylinderGeometry(0.29, 0.29, 0.86, 16, 1, true).translate(0, 0.44, 0)];
+    for (const y of [0.29, 0.59]) l.push(uvRect(new THREE.CylinderGeometry(0.297, 0.297, 0.035, 16, 1, true).translate(0, y, 0), band(0.32)));
+    l.push(uvRect(new THREE.CylinderGeometry(0.296, 0.29, 0.03, 16, 1, true).translate(0, 0.86, 0), band(0.95)), uvRect(new THREE.CylinderGeometry(0.29, 0.296, 0.03, 16, 1, true), band(0.02)));
+    l.push(uvRect(new THREE.CircleGeometry(0.288, 16).rotateX(-Math.PI / 2).translate(0, 0.875, 0), [0.6, 0.4, 0.8, 0.6]));
+    l.push(uvRect(cyl(0.035, 0.035, 0.02, 8, 0.15, 0.87, 0.05), band(0.5)), uvRect(cyl(0.025, 0.025, 0.02, 8, -0.16, 0.87, -0.04), band(0.5)));
+    return l.map((g) => { g.rotateY(ry); if (lying) g.rotateZ(Math.PI / 2).translate(0.44, 0.29, 0); return [g.translate(x, 0, z), [sh, sh, sh]]; });
+  };
+  D.barrel = () => [{ geo: mergeGeos([...drum(-0.36, -0.3, rnd() * 6, 1), ...drum(0.3, -0.38, rnd() * 6, 0.85), ...drum(-0.05, 0.27, rnd() * 6, 0.95), ...drum(0.0, 0.62, 0.3, 0.8, true)]), mat: W.drum() }];
+  D.fuelbarrel = () => [{ geo: mergeGeos([...drum(-0.33, -0.25, 1.2, 1), ...drum(0.33, -0.2, 2.6, 0.9), ...drum(0, 0.36, 4.4, 0.95)]), mat: W.fuelDrum() }];
+  // ===== Zapfsäule auf Tankinsel: Gehäuse mit Anzeige (leuchtend), Schläuche, Rammschutz =====
+  D.fuelpump = () => {
+    const Fp = pxRect(4, 0, 124, 256), Pp = pxRect(140, 10, 250, 180);
+    const body = [[uvRect(bx(1.9, 0.16, 0.95), Pp), '#c8c6c0'], [uvRect(bx(0.25, 0.17, 0.97, -0.84), Pp), '#e0b020'], [uvRect(bx(0.25, 0.17, 0.97, 0.84), Pp), '#e0b020'],
+      [boxUV(0.9, 1.4, 0.46, 0, 0.18, 0, [null, null, null, null, Fp, Fp], Pp), '#ffffff'], [uvRect(bx(0.94, 0.06, 0.5, 0, 0.16), Pp), '#5a5a5a'], [uvRect(bx(0.98, 0.1, 0.54, 0, 1.58), Pp), '#c42a1e'], [uvRect(bx(0.1, 1.3, 0.3, 0, 0.25, 0), Pp), '#d8d8d8']];
+    const dark = [];
+    for (const s of [-1, 1]) {
+      const c = new THREE.CatmullRomCurve3([[0.43, 1.3, 0.12], [0.6, 1.0, 0.2], [0.66, 0.5, 0.26], [0.58, 0.32, 0.12], [0.5, 0.86, 0.07]].map(([x, y, z]) => new THREE.Vector3(s * x, y, z)));
+      dark.push([new THREE.TubeGeometry(c, 20, 0.022, 5), '#161616'], [bx(0.06, 0.26, 0.16, s * 0.475, 0.78, 0.05), '#3a3a3a'], [bx(0.06, 0.2, 0.11, s * 0.5, 0.86, 0.06), s > 0 ? '#2a8a3a' : '#1c1c1c']);
+      dark.push([cyl(0.07, 0.07, 0.95, 10, s * 0.84, 0.16, 0), '#d8b020'], [cyl(0.073, 0.073, 0.1, 10, s * 0.84, 0.66, 0), '#141414'], [cyl(0.073, 0.073, 0.1, 10, s * 0.84, 0.86, 0), '#141414']);
+    }
+    return [{ geo: mergeGeos(body), mat: W.pump() }, { geo: mergeGeos(dark), mat: M.carDark, shadow: false }];
+  };
+  // ===== Fahrzeug-Baukasten (Bus, Lkw): Lack (Instanzfarbe) + Detailatlas =====
+  const VR = (k) => pxRect(...VEH[k]);
+  const vb = (k, w, h, d, x, y, z, col = '#ffffff') => [uvRect(bx(w, h, d, x, y, z), VR(k)), col];
+  const vWheel = (x, z, r, w) => [[uvRect(new THREE.CylinderGeometry(r, r, w, 16).rotateZ(Math.PI / 2).translate(x, r, z), VR('tire')), '#ffffff'], [uvRect(new THREE.CylinderGeometry(r * 0.58, r * 0.58, w + 0.02, 14).rotateZ(Math.PI / 2).translate(x, r, z), VR('rim')), '#ffffff']];
+  const shift = (parts, dz) => parts.map(([g, c]) => [g.clone().translate(0, 0, dz), c]);
+  const vehOut = (paint, det) => [{ geo: mergeGeos(paint), mat: W.vehPaint(), paint: true }, { geo: mergeGeos(det), mat: W.veh() }];
+  // Bus (Reise-/Linienbus), Segment 2 m: vorne mit Frontscheibe/Tür/Vorderachse, Mitte, hinten mit Motor/Heckachse
+  const busSeg = (role) => {
+    const Wb = 2.4, hw = Wb / 2, yb = 0.32, belt = 1.12, wt = 2.48, roof = 2.98, r = 0.48;
+    const zF = role === 'front' ? 0.98 : 1.0, zR = role === 'rear' ? -0.98 : -1.0, wheels = role === 'front' ? [-0.35] : role === 'rear' ? [0.25] : [];
+    const paint = [[sideProfile([...archLine(zF, zR, yb, wheels, r + 0.07), [zR, belt], [zF, belt]], Wb, 0.03), '#ffffff'], [bx(Wb, roof - wt - 0.07, zF - zR, 0, wt, (zF + zR) / 2), '#ffffff'], [bx(Wb - 0.16, 0.07, zF - zR, 0, roof - 0.07, (zF + zR) / 2), '#ffffff']];
+    const det = [];
+    for (const z0 of [zR, (zF + zR) / 2]) det.push(vb('win', Wb - 0.04, wt - belt, (zF - zR) / 2, 0, belt, z0 + (zF - zR) / 4));
+    det.push(vb('plain', Wb + 0.012, 0.1, zF - zR, 0, 0.95, (zF + zR) / 2, '#f4f4f2'), vb('black', Wb + 0.01, 0.1, zF - zR, 0, yb, (zF + zR) / 2));
+    for (const wz of wheels) for (const s of [-1, 1]) det.push(...vWheel(s * (hw - 0.2), wz, r, 0.32));
+    if (role === 'front') {
+      det.push(vb('glass', Wb - 0.12, wt - belt + 0.3, 0.04, 0, belt - 0.2, 0.975), vb('sign', Wb - 0.4, 0.26, 0.03, 0, 2.6, 0.99), vb('black', Wb + 0.04, 0.26, 0.14, 0, 0.28, 0.97));
+      for (const s of [-1, 1]) det.push(vb('head', 0.34, 0.16, 0.03, s * 0.82, 0.62, 0.99), vb('amber', 0.12, 0.12, 0.03, s * 1.08, 0.64, 0.99), vb('black', 0.05, 0.05, 0.4, s * 1.22, 2.2, 1.1), vb('black', 0.08, 0.34, 0.14, s * 1.42, 1.85, 1.28), [beam([s * 1.2, 2.25, 0.95], [s * 1.42, 2.15, 1.28], 0.04), '#202020']);
+      det.push(vb('grille', 0.9, 0.18, 0.03, 0, 0.42, 0.99), vb('plate', 0.52, 0.12, 0.02, 0, 0.32, 1.05), vb('door', 0.02, wt - 0.4, 0.86, -(hw + 0.012), 0.4, 0.45));
+      det.push(vb('black', Wb - 0.1, 0.04, 0.05, 0, belt - 0.22, 0.99));
+    }
+    if (role === 'rear') {
+      det.push(vb('glass', Wb - 0.3, 0.9, 0.03, 0, 1.5, -0.985), vb('vent', Wb - 0.5, 0.6, 0.03, 0, 0.55, -0.99), vb('black', Wb + 0.04, 0.24, 0.12, 0, 0.26, -0.98), vb('plate', 0.52, 0.12, 0.02, 0, 0.3, -1.05));
+      for (const s of [-1, 1]) det.push(vb('tail', 0.14, 0.7, 0.03, s * 1.08, 0.6, -0.99));
+    }
+    if (role === 'mid') det.push(vb('plain', 1.1, 0.22, 1.2, 0, roof, 0, '#c8cacc'));
+    return [paint, det];
+  };
+  // Lkw/Sattelzug, Segment 2 m: Fahrerhaus (vorne), Auflieger-Mitte, Auflieger-Heck mit Türen und Doppelachse
+  const truckSeg = (role) => {
+    const Wt = 2.45, hw = Wt / 2, r = 0.5, paint = [], det = [];
+    det.push(vb('black', 0.14, 0.24, 2.0, -0.45, 0.6, 0), vb('black', 0.14, 0.24, 2.0, 0.45, 0.6, 0));
+    if (role === 'front') {
+      paint.push([sideProfile([...archLine(0.98, -0.3, 0.72, [0.32], r + 0.07), [-0.3, 3.08], [0.62, 3.08], [0.86, 2.95], [0.95, 2.2], [0.98, 1.0]], Wt - 0.05, 0.05), '#ffffff']);
+      det.push(vb('glass', Wt - 0.3, 0.9, 0.04, 0, 1.85, 0.965), vb('grille', 1.5, 0.62, 0.03, 0, 1.05, 0.99), vb('black', Wt + 0.04, 0.4, 0.16, 0, 0.4, 0.96), vb('plate', 0.52, 0.12, 0.02, 0, 0.55, 1.05));
+      for (const s of [-1, 1]) {
+        det.push(vb('glass', 0.02, 0.75, 0.55, s * (hw - 0.01), 1.95, 0.5), vb('head', 0.36, 0.16, 0.03, s * 0.86, 0.6, 1.05), vb('amber', 0.12, 0.12, 0.03, s * 1.12, 0.6, 1.05), vb('black', 0.4, 0.05, 0.35, s * (hw - 0.15), 0.55, 0.5), vb('black', 0.4, 0.05, 0.35, s * (hw - 0.15), 0.85, 0.5));
+        det.push(vb('black', 0.08, 0.36, 0.14, s * 1.45, 1.95, 0.95), [beam([s * 1.2, 2.3, 0.8], [s * 1.45, 2.2, 0.95], 0.04), '#202020'], vb('chrome', 0.03, 0.03, 0.2, s * (hw + 0.01), 1.6, 0.0));
+        det.push(...vWheel(s * (hw - 0.22), 0.32, r, 0.32), ...vWheel(s * (hw - 0.3), -0.65, r, 0.5), [new THREE.CylinderGeometry(r + 0.08, r + 0.08, 0.55, 10, 1, true, 0, Math.PI).rotateZ(Math.PI / 2).rotateX(Math.PI / 2).translate(s * (hw - 0.3), r, -0.65), '#202020']);
+      }
+      det.push(vb('black', 1.2, 0.1, 0.9, 0, 0.82, -0.65), [rod([hw - 0.18, 0.9, -0.38], [hw - 0.18, 3.25, -0.38], 0.06, 0.06, 8), '#c8ccd0'], vb('chrome', Wt - 0.2, 0.06, 0.06, 0, 2.86, 0.88));
+      det.forEach((d) => { if (d[0].attributes.uv && d[1] === '#c8ccd0') uvRect(d[0], VR('chrome')); });
+    } else {
+      const z0 = role === 'rear' ? -0.98 : -1.0, len = 1.0 - z0;
+      paint.push([bx(Wt, 2.0, len, 0, 1.2, (1.0 + z0) / 2), '#ffffff']);
+      det.push(vb('black', Wt - 0.2, 0.25, len, 0, 0.95, (1.0 + z0) / 2), vb('plain', Wt + 0.02, 0.1, len, 0, 1.2, (1.0 + z0) / 2, '#9aa0a6'), vb('plain', Wt + 0.02, 0.08, len, 0, 3.12, (1.0 + z0) / 2, '#9aa0a6'));
+      for (let z = z0 + 0.25; z < 1; z += 0.5) for (const s of [-1, 1]) det.push(vb('plain', 0.02, 1.9, 0.05, s * (hw + 0.01), 1.25, z, '#b8bcc0'));
+      if (role === 'mid') for (const s of [-1, 1]) det.push(vb('plain', 0.04, 0.07, len, s * (hw - 0.05), 0.55, (1.0 + z0) / 2, '#8a8e92'), vb('plain', 0.04, 0.07, len, s * (hw - 0.05), 0.8, (1.0 + z0) / 2, '#8a8e92'));
+      if (role === 'rear') {
+        for (const s of [-1, 1]) { for (const wz of [0.3, -0.38]) det.push(...vWheel(s * (hw - 0.3), wz, r, 0.5)); det.push(vb('tail', 0.3, 0.16, 0.03, s * 0.95, 0.78, -1.0), vb('black', 0.4, 0.4, 0.02, s * (hw - 0.3), 0.15, -0.72)); }
+        det.push(vb('black', 0.02, 1.9, 0.03, 0, 1.25, -0.995), vb('black', Wt - 0.4, 0.14, 0.1, 0, 0.42, -0.98), vb('plate', 0.52, 0.12, 0.02, 0, 0.62, -1.0));
+        for (const x of [-0.85, -0.3, 0.3, 0.85]) det.push(vb('chrome', 0.04, 1.85, 0.04, x, 1.27, -1.0));
+      }
+    }
+    return [paint, det];
+  };
+  for (const [name, seg] of [['bus', busSeg], ['truck', truckSeg]]) {
+    for (const r of ['front', 'mid', 'rear']) D[name + ':' + r] = () => vehOut(...seg(r));
+    D[name + ':single'] = () => { const [p1, d1] = seg('front'), [p2, d2] = seg('rear'); return vehOut([...shift(p1, 1), ...shift(p2, -1)], [...shift(d1, 1), ...shift(d2, -1)]); };
+  }
+  // ===== Ausgebranntes Militärfahrzeug (Schützenpanzer): Wanne, Laufwerk, verdrehter Turm, hängendes Rohr, Trümmer =====
+  D.milwreck = () => {
+    const rust = '#6b3a22', soot = '#221d1a', ash = '#5c5750', olive = '#4a4a38', l = [];
+    l.push([sideProfile([[2.05, 0.55], [2.1, 1.0], [1.3, 1.58], [-1.9, 1.6], [-2.05, 1.4], [-2.05, 0.55]], 2.1, 0.04), olive]);
+    for (const s of [-1, 1]) {
+      l.push([bx(0.48, 0.06, 3.6, s * 1.08, 0.86, 0), soot], [bx(0.48, 0.06, 3.3, s * 1.08, 0.0, 0.0), soot]);
+      for (const z of [-1.4, -0.7, 0, 0.7, 1.4]) l.push([new THREE.CylinderGeometry(0.33, 0.33, 0.4, 12).rotateZ(Math.PI / 2).translate(s * 1.08, 0.38, z), z === 0 && s > 0 ? rust : soot]);
+      for (const z of [-1.82, 1.82]) l.push([new THREE.CylinderGeometry(0.27, 0.27, 0.42, 10).rotateZ(Math.PI / 2).translate(s * 1.08, 0.56, z), soot]);
+    }
+    l.push([bx(0.05, 0.42, 2.2, 1.34, 0.6, -0.6), rust], [bx(0.05, 0.42, 1.2, -1.34, 0.62, 0.5).rotateX(0.12), ash]);
+    const tur = sideProfile([[0.85, 0], [0.92, 0.28], [0.6, 0.52], [-0.8, 0.52], [-0.9, 0.24], [-0.85, 0]], 1.4, 0.03).rotateY(0.45).translate(0, 1.6, -0.25);
+    l.push([tur, ash], [rod([0.3, 1.95, 0.45], [0.95, 1.5, 2.25], 0.085, 0.065, 8), soot], [bx(0.55, 0.04, 0.5, 0, 0, 0).rotateZ(-1.1).translate(-0.35, 2.32, -0.4), rust]);
+    for (const [x, y, z, w, h, d] of [[1.06, 1.0, 0.6, 0.02, 0.35, 0.5], [-1.06, 1.1, -0.8, 0.02, 0.3, 0.6], [0.2, 1.61, 0.4, 0.6, 0.01, 0.5]]) l.push([bx(w, h, d, x, y, z), '#0a0807']);
+    l.push([bx(0.45, 0.05, 1.5, 0, 0, 0).rotateY(0.3).translate(-1.6, 0.02, 1.7), soot]);
+    for (let i = 0; i < 7; i++) { const a = rnd() * 6.28, r = 2.0 + rnd() * 0.6; l.push([bx(0.2 + rnd() * 0.4, 0.03, 0.15 + rnd() * 0.3).rotateY(rnd() * 3).rotateX((rnd() - 0.5) * 0.5).translate(Math.cos(a) * r * 0.6, 0.02, Math.sin(a) * r), rnd() < 0.5 ? rust : soot]); }
+    return [{ geo: mergeGeos(l), mat: M.burnt }];
+  };
+  // ===== Ziehbrunnen: Steinkranz, Holzgestell mit Dach, Haspel, Seil, Eimer, Wasserspiegel =====
+  D.well = () => {
+    const ring = scaleUV(new THREE.LatheGeometry(v2([[0.82, 0], [0.82, 0.8], [0.8, 0.86], [0.6, 0.86], [0.56, 0.8], [0.56, 0.2]]), 16), 3, 0.35);
+    const w = '#7a5634', l = [[new THREE.CircleGeometry(0.57, 16).rotateX(-Math.PI / 2).translate(0, 0.32, 0), '#0f1c22']];
+    for (const s of [-1, 1]) l.push([bx(0.1, 1.55, 0.1, s * 0.69, 0.8, 0), '#6b4a2e'], [bx(0.08, 0.08, 0.6, s * 0.69, 2.2, 0), '#6b4a2e']);
+    l.push([rod([-0.75, 1.55, 0], [0.75, 1.55, 0], 0.055, 0.055, 8), w], [rod([-0.12, 1.55, 0], [0.18, 1.55, 0], 0.085, 0.085, 8), '#b8a070'], [rod([0.75, 1.55, 0], [0.9, 1.55, 0], 0.02), '#3a3a3a'], [rod([0.9, 1.55, 0], [0.9, 1.33, 0], 0.02), '#3a3a3a'], [rod([0.9, 1.33, 0], [0.9, 1.33, 0.15], 0.025), w]);
+    l.push([rod([0.05, 1.5, 0], [0.05, 1.1, 0], 0.012, 0.012, 4), '#b8a070'], [cyl(0.12, 0.095, 0.2, 10, 0.05, 0.9, 0), '#80858a'], [new THREE.TorusGeometry(0.1, 0.008, 4, 10, Math.PI).translate(0.05, 1.1, 0), '#3a3a3a']);
+    for (const s of [-1, 1]) l.push([bx(1.85, 0.04, 0.78).rotateX(s * 0.62).translate(0, 2.25, s * 0.3), '#5a3a26']);
+    l.push([bx(1.9, 0.08, 0.08, 0, 2.47, 0), '#4a3020']);
+    return [{ geo: mergeGeos([ring]), mat: W.stone() }, { geo: mergeGeos(l), mat: M.furnWood }];
+  };
+  // ===== Springbrunnen: achteckiges Becken, Säule mit Schale, Wasserspiegel und Strahlen =====
+  D.fountain = () => {
+    const basin = new THREE.LatheGeometry(v2([[0.001, 0.2], [0.8, 0.2], [0.8, 0.5], [0.83, 0.56], [0.98, 0.56], [1.0, 0.5], [0.97, 0.06], [1.02, 0]]), 8).rotateY(Math.PI / 8);
+    const col = new THREE.LatheGeometry(v2([[0.001, 0.2], [0.24, 0.2], [0.24, 0.3], [0.17, 0.36], [0.13, 0.85], [0.18, 0.92], [0.46, 0.98], [0.48, 1.04], [0.4, 1.06], [0.12, 1.02], [0.09, 1.2], [0.12, 1.24], [0.06, 1.3], [0.08, 1.38], [0.001, 1.46]]), 16);
+    const water = [new THREE.CircleGeometry(0.8, 8).rotateX(-Math.PI / 2).rotateY(Math.PI / 8).translate(0, 0.45, 0), new THREE.CircleGeometry(0.4, 16).rotateX(-Math.PI / 2).translate(0, 1.03, 0), rod([0, 1.44, 0], [0, 1.7, 0], 0.025, 0.01, 6)];
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28, c = Math.cos(a), s = Math.sin(a); water.push(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(new THREE.Vector3(0.46 * c, 1.04, 0.46 * s), new THREE.Vector3(0.6 * c, 1.08, 0.6 * s), new THREE.Vector3(0.68 * c, 0.46, 0.68 * s)), 8, 0.018, 4)); }
+    return [{ geo: mergeGeos([basin, col]), mat: W.ashlar() }, { geo: mergeGeos(water), mat: W.pool(), shadow: false }];
+  };
+  // ===== Grabsteine (Variante = Form): 0 Rundbogen-Stein, 1 Kreuz, 2 liegende Platte, 3 alter schiefer Stein =====
+  const GI = pxRect(4, 4, 124, 252), GP = pxRect(150, 20, 240, 240);
+  const plot = () => [[uvRect(bx(0.08, 0.1, 1.75, -0.44, 0, 0.1), GP), '#cfcfca'], [uvRect(bx(0.08, 0.1, 1.75, 0.44, 0, 0.1), GP), '#cfcfca'], [uvRect(bx(0.96, 0.1, 0.08, 0, 0, 0.94), GP), '#cfcfca'], [uvRect(bx(0.8, 0.05, 1.6, 0, 0, 0.12), GP), '#4a3a2a'], [uvRect(bx(0.09, 0.17, 0.09, 0.25, 0.05, 0.75), GP), '#8a1a14']];
+  D['gravestone:0'] = () => {
+    const s = new THREE.Shape(); s.moveTo(-0.3, 0); s.lineTo(0.3, 0); s.lineTo(0.3, 0.6); s.absarc(0, 0.6, 0.3, 0, Math.PI, false); s.lineTo(-0.3, 0);
+    const g = projUV(new THREE.ExtrudeGeometry(s, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.015, bevelSegments: 1, curveSegments: 10 }).translate(0, 0.15, -0.8), -0.3, 0.3, 0.15, 1.05, GI, GP);
+    return [{ geo: mergeGeos([[g, '#ffffff'], [uvRect(bx(0.75, 0.15, 0.32, 0, 0, -0.74), GP), '#e8e8e4'], ...plot()]), mat: W.grave() }];
+  };
+  D['gravestone:1'] = () => [{ geo: mergeGeos([[uvRect(bx(0.5, 0.12, 0.3, 0, 0, -0.74), GP), '#e8e8e4'], [uvRect(bx(0.36, 0.1, 0.22, 0, 0.12, -0.74), GP), '#f0f0ec'], [uvRect(bx(0.11, 0.85, 0.1, 0, 0.22, -0.74), GP), '#ffffff'], [uvRect(bx(0.5, 0.1, 0.1, 0, 0.78, -0.74), GP), '#ffffff'], ...plot()]), mat: W.grave() }];
+  D['gravestone:2'] = () => {
+    const slab = boxUV(0.78, 0.1, 1.5, 0, 0.05, 0.12, [null, null, pxRect(4, 60, 124, 200)], GP);
+    return [{ geo: mergeGeos([[slab, '#ffffff'], [projUV(bx(0.6, 0.45, 0.14, 0, 0, -0.78), -0.3, 0.3, 0, 0.45, pxRect(4, 4, 124, 120), GP), '#f4f4f0'], ...plot().slice(0, 3)]), mat: W.grave() }];
+  };
+  D['gravestone:3'] = () => {
+    const s = new THREE.Shape(); s.moveTo(-0.24, 0); s.lineTo(0.24, 0); s.lineTo(0.24, 0.62); s.lineTo(0, 0.82); s.lineTo(-0.24, 0.62); s.lineTo(-0.24, 0);
+    const g = projUV(new THREE.ExtrudeGeometry(s, { depth: 0.1, bevelEnabled: false }), -0.24, 0.24, 0, 0.82, GI, GP).rotateX(-0.2).rotateZ(0.08).translate(0, 0, -0.7);
+    return [{ geo: mergeGeos([[g, '#a8b09a'], [uvRect(blob(0.5, 0, 0, 0.1, 0.9, 0.22, 1.5, 0.15), GP), '#5a7040']]), mat: W.grave() }];
+  };
+  // ===== Denkmal: Stufensockel aus Sandstein, Bronzefigur mit erhobenem Arm, Tafel =====
+  D.statue = () => {
+    const ped = [bx(1.8, 0.22, 1.8), bx(1.5, 0.22, 1.5, 0, 0.22), bx(1.05, 1.0, 1.05, 0, 0.44), bx(1.2, 0.14, 1.2, 0, 1.44), bx(1.12, 0.06, 1.12, 0, 1.58)].map((g) => [g, '#ffffff']);
+    const y = 1.64, b = [bx(0.7, 0.08, 0.6, 0, y), bx(0.5, 0.3, 0.02, 0, 0.75, 0.53)];
+    b.push(rod([-0.12, y + 0.08, -0.05], [-0.11, y + 0.95, 0], 0.085, 0.1, 8), rod([0.12, y + 0.08, 0.12], [0.11, y + 0.95, 0], 0.085, 0.1, 8));
+    b.push(bx(0.14, 0.08, 0.26, -0.12, y + 0.08, 0.0), bx(0.14, 0.08, 0.26, 0.12, y + 0.08, 0.17));
+    b.push(new THREE.LatheGeometry(v2([[0.36, 0], [0.31, 0.4], [0.25, 0.85], [0.001, 0.86]]), 14).scale(1, 1, 0.75).translate(0, y + 0.45, 0));
+    b.push(new THREE.CylinderGeometry(0.21, 0.25, 0.5, 12).scale(1, 1, 0.75).translate(0, y + 1.32, 0), ball(0.3, 0, y + 1.6, 0, 12, 8).scale(1, 0.4, 0.58).translate(0, (y + 1.6) * 0.6, 0));
+    b.push(cyl(0.06, 0.07, 0.12, 8, 0, y + 1.66, 0), ball(0.12, 0, y + 1.86, 0.01, 12, 10), cyl(0.125, 0.13, 0.06, 12, 0, y + 1.9, 0));
+    b.push(rod([0.27, y + 1.58, 0], [0.38, y + 1.75, 0.3], 0.065, 0.055, 8), rod([0.38, y + 1.75, 0.3], [0.43, y + 2.02, 0.6], 0.055, 0.045, 8), ball(0.055, 0.44, y + 2.06, 0.63, 8, 6));
+    b.push(rod([-0.27, y + 1.58, 0], [-0.32, y + 1.22, 0.06], 0.065, 0.055, 8), rod([-0.32, y + 1.22, 0.06], [-0.3, y + 0.98, 0.18], 0.055, 0.045, 8), bx(0.2, 0.26, 0.05, -0.3, y + 0.88, 0.22));
+    b.push(new THREE.CylinderGeometry(0.3, 0.44, 1.15, 12, 1, true, Math.PI * 0.55, Math.PI * 0.9).translate(0, y + 1.1, -0.04));
+    return [{ geo: mergeGeos(ped), mat: W.ashlar() }, { geo: mergeGeos(b), mat: W.bronze() }];
+  };
+  // ===== Strommast: Gitterturm mit Eckstielen, Riegeln, Kreuzverbänden, Traverse, Isolatoren, Fundamenten =====
+  D.pylon = () => {
+    const S = [], st = '#a9afb3', lv = [0, 0.4, 1.9, 3.3, 4.6, 5.8, 7.0], wd = (h) => 0.85 - (0.53 * h) / 7.0, cn = (sx, sz, h) => [sx * wd(h), h, sz * wd(h)];
+    const cs = [[1, 1], [1, -1], [-1, -1], [-1, 1]];
+    for (const [sx, sz] of cs) { for (let i = 0; i < lv.length - 1; i++) S.push([beam(cn(sx, sz, lv[i]), cn(sx, sz, lv[i + 1]), 0.09), st]); S.push([bx(0.55, 0.35, 0.55, sx * 0.85, -0.12, sz * 0.85), '#9a9890'], [beam(cn(sx, sz, 7.0), [0, 8.2, 0], 0.06), st]); }
+    for (let f = 0; f < 4; f++) {
+      const a = cs[f], b2 = cs[(f + 1) % 4];
+      for (let i = 1; i < lv.length; i++) { S.push([beam(cn(...a, lv[i]), cn(...b2, lv[i]), 0.06), st], [beam(cn(...a, lv[i - 1]), cn(...b2, lv[i]), 0.045), st], [beam(cn(...b2, lv[i - 1]), cn(...a, lv[i]), 0.045), st]); }
+    }
+    for (const s of [-1, 1]) {
+      S.push([beam([s * 0.32, 6.7, 0.25], [s * 2.4, 6.75, 0], 0.07), st], [beam([s * 0.32, 6.7, -0.25], [s * 2.4, 6.75, 0], 0.07), st], [beam([s * 0.32, 7.0, 0], [s * 2.4, 6.8, 0], 0.07), st]);
+      for (let k = 0; k < 7; k++) S.push([cyl(0.11, 0.11, 0.045, 10, s * 2.25, 6.0 + k * 0.1, 0), '#6a4a3a']);
+      S.push([rod([s * 2.25, 6.0, 0], [s * 2.25, 6.72, 0], 0.015), '#888888'], [rod([s * 2.25, 5.95, -0.7], [s * 2.25, 5.95, 0.7], 0.022), '#3a3a3a']);
+    }
+    S.push([bx(0.32, 0.28, 0.012, 0, 1.55, wd(1.6) + 0.02), '#e8c020'], [bx(0.16, 0.14, 0.014, 0, 1.6, wd(1.6) + 0.025), '#111111']);
+    return [{ geo: mergeGeos(S), mat: W.steel() }];
+  };
+  // ===== Wasserturm/Tank auf Stelzen: Beine mit Kreuzverband, Umgang mit Geländer, Leiter, Tank mit Kegeldach =====
+  D.watertank = () => {
+    const S = [], st = '#8a9096', top = 2.25, legs = [[1, 1], [1, -1], [-1, -1], [-1, 1]];
+    for (const [sx, sz] of legs) S.push([rod([sx * 0.85, 0, sz * 0.85], [sx * 0.62, top, sz * 0.62], 0.07, 0.06, 8), st], [bx(0.3, 0.12, 0.3, sx * 0.85, 0, sz * 0.85), '#9a9890']);
+    for (let f = 0; f < 4; f++) {
+      const [ax, az] = legs[f], [bx2, bz] = legs[(f + 1) % 4], P = (sx, sz, h) => [sx * (0.85 - 0.23 * (h / top)), h, sz * (0.85 - 0.23 * (h / top))];
+      S.push([rod(P(ax, az, 0.2), P(bx2, bz, 1.2), 0.02), st], [rod(P(bx2, bz, 0.2), P(ax, az, 1.2), 0.02), st], [rod(P(ax, az, 1.2), P(bx2, bz, 2.2), 0.02), st], [rod(P(bx2, bz, 1.2), P(ax, az, 2.2), 0.02), st], [rod(P(ax, az, 1.2), P(bx2, bz, 1.2), 0.025), st]);
+    }
+    S.push([cyl(1.18, 1.18, 0.06, 24, 0, top), '#6a6e72'], [new THREE.TorusGeometry(1.15, 0.02, 4, 28).rotateX(Math.PI / 2).translate(0, top + 0.95, 0), st]);
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * 6.28; S.push([rod([Math.cos(a) * 1.15, top, Math.sin(a) * 1.15], [Math.cos(a) * 1.15, top + 0.95, Math.sin(a) * 1.15], 0.015, 0.015, 4), st]); }
+    for (const x of [-0.2, 0.2]) S.push([rod([x, 0, 1.2], [x, top + 0.95, 1.2], 0.02, 0.02, 5), st]);
+    for (let y = 0.3; y < top + 0.9; y += 0.3) S.push([rod([-0.2, y, 1.2], [0.2, y, 1.2], 0.012, 0.012, 4), st]);
+    const tank = [scaleUV(new THREE.CylinderGeometry(0.98, 0.98, 1.5, 24, 1, true).translate(0, top + 0.06 + 0.75, 0), 3, 1), uvRect(new THREE.ConeGeometry(1.03, 0.45, 24, 1, true).translate(0, top + 1.56 + 0.225, 0), [0, 0.05, 3, 0.3]), new THREE.TorusGeometry(0.99, 0.03, 4, 24).rotateX(Math.PI / 2).translate(0, top + 1.56, 0), cyl(0.06, 0.06, 0.15, 8, 0, top + 1.98), ball(0.08, 0, top + 2.16, 0, 8, 6)];
+    return [{ geo: mergeGeos(tank), mat: W.tank() }, { geo: mergeGeos(S), mat: W.steel() }];
+  };
+  // ===== Getreidesilo: gewellter Zylinder mit Versteifungsringen, Kegeldach mit Lüfter, Leiter mit Rückenschutz =====
+  D.silo = () => {
+    const body = [scaleUV(new THREE.CylinderGeometry(0.97, 0.97, 6.4, 24, 1, true).translate(0, 3.55, 0), 4, 5), scaleUV(new THREE.ConeGeometry(1.01, 1.2, 24, 1, true).translate(0, 7.35, 0), 4, 1), new THREE.TorusGeometry(0.99, 0.04, 4, 24).rotateX(Math.PI / 2).translate(0, 6.75, 0)];
+    for (const y of [1.6, 3.2, 4.8]) body.push(new THREE.TorusGeometry(0.98, 0.025, 4, 24).rotateX(Math.PI / 2).translate(0, y, 0));
+    body.push(cyl(0.16, 0.16, 0.25, 10, 0, 7.7), new THREE.ConeGeometry(0.25, 0.16, 10).translate(0, 8.03, 0));
+    const S = [[cyl(1.05, 1.08, 0.35, 24), '#9a9890'], [bx(0.55, 0.6, 0.06, 0, 0.35, 0.97), '#7a7e82']], st = '#9aa0a6';
+    for (const x of [-0.2, 0.2]) S.push([rod([x, 0.35, 1.04], [x, 7.0, 1.04], 0.02, 0.02, 5), st]);
+    for (let y = 0.6; y < 7; y += 0.3) S.push([rod([-0.2, y, 1.04], [0.2, y, 1.04], 0.012, 0.012, 4), st]);
+    for (let y = 2.4; y < 7; y += 0.75) S.push([new THREE.TorusGeometry(0.36, 0.015, 4, 12, Math.PI).rotateX(Math.PI / 2).translate(0, y, 1.04), st]);
+    for (const a of [0.15, 0.85, 1.57, 2.29, 3.0]) S.push([rod([Math.cos(a) * 0.36, 2.4, 1.04 + Math.sin(a) * 0.36], [Math.cos(a) * 0.36, 6.9, 1.04 + Math.sin(a) * 0.36], 0.012, 0.012, 4), st]);
+    return [{ geo: mergeGeos(body), mat: W.silo() }, { geo: mergeGeos(S), mat: W.steel(), shadow: false }];
+  };
+  // ===== Baugerüst (ein Feld, entlang x): Ständer, Riegel, Diagonale, Bohlenbeläge, Bordbretter =====
+  D.scaffold = () => {
+    const st = '#aeb4b8', S = [], P = [], tube = (a, b) => S.push([rod(a, b, 0.024, 0.024, 6, true), st]);
+    for (const x of [-0.97, 0.97]) for (const z of [-0.38, 0.38]) { tube([x, 0.04, z], [x, 3.25, z]); S.push([bx(0.15, 0.04, 0.15, x, 0, z), '#5a5e62']); }
+    for (const y of [0.2, 1.0, 2.0, 3.0]) { for (const z of [-0.38, 0.38]) tube([-1.0, y, z], [1.0, y, z]); for (const x of [-0.97, 0.97]) tube([x, y, -0.44], [x, y, 0.44]); }
+    for (const y of [1.5, 2.5, 3.5]) tube([-1.0, y, 0.4], [1.0, y, 0.4]);
+    for (const x of [-0.97, 0.97]) tube([x, 3.0, 0.38], [x, 3.55, 0.38]);
+    tube([-0.97, 0.2, 0.43], [0.97, 2.0, 0.43]); tube([0.97, 2.0, 0.43], [-0.97, 3.0, 0.43]);
+    for (const y of [1.0, 2.0, 3.0]) { for (let i = 0; i < 4; i++) P.push([bx(2.0, 0.04, 0.18, (rnd() - 0.5) * 0.06, y + 0.025, -0.28 + i * 0.19), ['#c4a878', '#a8895a', '#b89a6a'][(rnd() * 3) | 0]]); P.push([bx(2.0, 0.15, 0.03, 0, y + 0.065, 0.415), '#9a7a48']); }
+    return [{ geo: mergeGeos(S), mat: W.steel() }, { geo: mergeGeos(P), mat: M.furnWood }];
+  };
+  // ===== Zelte (Variante = Form): Kuppelzelt mit Gestänge/Apsis, Firstzelt =====
+  D['tent:dome'] = () => {
+    const sh = new THREE.SphereGeometry(1, 18, 7, 0, Math.PI * 2, 0, Math.PI / 2), p = sh.attributes.position;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), f = 1 - 0.07 * (0.5 - 0.5 * Math.cos(4 * (Math.atan2(z, x) - Math.PI / 4))); p.setXYZ(i, x * f, p.getY(i) * (0.97 + 0.03 * f), z * f); }
+    sh.computeVertexNormals(); sh.scale(1.05, 1.25, 0.8);
+    const l = [[sh, '#ffffff'], [new THREE.SphereGeometry(0.6, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2).scale(0.9, 1.45, 0.75).translate(0, 0, 0.6), '#e8e8e8']];
+    l.push([new THREE.CircleGeometry(0.32, 12, 0, Math.PI).scale(1, 1.7, 1).rotateX(-0.42).translate(0, 0.02, 1.02), '#3a3a3a']);
+    for (const s of [-1, 1]) l.push([new THREE.TorusGeometry(1.0, 0.016, 4, 22, Math.PI).rotateY((s * Math.PI) / 4).scale(1.06, 1.27, 0.82), '#2a2a2a']);
+    for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) l.push([rod([sx * 0.66, 0.95, sz * 0.5], [sx * 1.35, 0, sz * 1.0], 0.006, 0.006, 3), '#e0e0e0'], [cyl(0.015, 0.015, 0.1, 4, sx * 1.35, 0, sz * 1.0), '#555555']);
+    return [{ geo: shadeY(mergeGeos(l), 0, 1.25, 0.65), mat: W.tent() }];
+  };
+  D['tent:ridge'] = () => {
+    const Lr = 2.1, hf = 0.85, ht = 1.3, sl = Math.atan2(ht, hf), len = Math.hypot(ht, hf), l = [];
+    for (const s of [-1, 1]) l.push([new THREE.BoxGeometry(len, 0.02, Lr).rotateZ(s > 0 ? -sl : sl).translate((s * hf) / 2, ht / 2, 0), '#ffffff']);
+    const tri = (w, h) => { const sp = new THREE.Shape(); sp.moveTo(-w, 0); sp.lineTo(w, 0); sp.lineTo(0, h); sp.lineTo(-w, 0); return new THREE.ShapeGeometry(sp); };
+    l.push([tri(hf, ht).translate(0, 0, Lr / 2 - 0.02), '#e8e8e8'], [tri(hf, ht).rotateY(Math.PI).translate(0, 0, -Lr / 2 + 0.02), '#e8e8e8'], [tri(0.32, 0.95).translate(0, 0, Lr / 2 - 0.01), '#2a2a2a']);
+    for (const e of [-1, 1]) l.push([rod([0, 0, e * (Lr / 2 + 0.04)], [0, ht + 0.1, e * (Lr / 2 + 0.04)], 0.014, 0.014, 4), '#3a3a3a'], [rod([0, ht + 0.06, e * (Lr / 2 + 0.04)], [0, 0, e * (Lr / 2 + 0.9)], 0.006, 0.006, 3), '#e0e0e0']);
+    for (const s of [-1, 1]) for (const z of [-0.7, 0.7]) l.push([rod([s * hf * 0.45, ht * 0.55, z], [s * 1.35, 0, z], 0.006, 0.006, 3), '#e0e0e0']);
+    return [{ geo: shadeY(mergeGeos(l), 0, 1.3, 0.7), mat: W.tent() }];
+  };
+  // ===== Militärkisten: zwei lange Kisten, eine quer oben, Munitionsdosen, Griffe =====
+  D.milcrate = () => {
+    const Sx = pxRect(2, 2, 126, 126), Ex = pxRect(130, 2, 254, 126), Pl = pxRect(10, 140, 246, 246);
+    const crate = (w, h, d, x, y, z, ry) => boxUV(w, h, d, 0, 0, 0, [Ex, Ex, Pl, Pl, Sx, Sx], Pl).rotateY(ry).translate(x, y, z);
+    const l = [[crate(1.3, 0.5, 0.58, -0.05, 0, -0.33, 0.03), '#ffffff'], [crate(1.3, 0.5, 0.58, 0.04, 0, 0.32, -0.04), '#eeeee6'], [crate(1.0, 0.42, 0.5, 0.05, 0.5, 0.0, 0.18), '#e6eadc']];
+    for (const [x, z] of [[0.86, -0.55], [0.86, -0.22], [0.78, 0.72]]) l.push([uvRect(bx(0.3, 0.19, 0.15, x, 0, z), Pl), '#a6a680'], [uvRect(bx(0.05, 0.02, 0.1, x, 0.19, z), Pl), '#2a2a22']);
+    for (const z of [-0.33, 0.32]) for (const s of [-1, 1]) l.push([uvRect(bx(0.03, 0.06, 0.22, s * 0.67, 0.26, z), Pl), '#2a2a22']);
+    return [{ geo: mergeGeos(l), mat: W.mil() }];
+  };
+  // ===== Maschendrahtzaun: Pfosten mittig, Oberrohr, Spanndraht, Drahtgeflecht (Alpha) =====
+  D.chainlink = () => {
+    const st = '#b4bac0', S = [[rod([0, -0.05, 0], [0, 2.05, 0], 0.035, 0.035, 8), st], [cyl(0.045, 0.045, 0.05, 8, 0, 2.04, 0), '#8a9096'], [rod([-1, 1.98, 0], [1, 1.98, 0], 0.021, 0.021, 6, true), st], [rod([-1, 0.06, 0], [1, 0.06, 0], 0.006, 0.006, 4), '#8a9096'], [bx(0.2, 0.06, 0.2, 0, -0.02, 0), '#9a9890']];
+    return [{ geo: mergeGeos(S), mat: W.steel() }, { geo: scaleUV(new THREE.PlaneGeometry(2.0, 1.94).translate(0, 1.0, 0), 16, 16), mat: W.chain(), shadow: false }];
+  };
+  return D;
+}
+
+// ---------- Animierte Wasserfläche (Fluss/Teich): Normalmap-Wellen über Zeit, Ufer-Ausblendung per Maske, Nebel des Krieges ----------
+// mask: DataTexture W×H (R = 1 im Wasser), gleiche Abbildung wie die Nebelkarte
+export function makeWater(mask) {
+  const time = { value: 0 };
+  const n = tx('waterN');
+  const mat = patchFog(new THREE.MeshStandardMaterial({ color: 0x24505e, roughness: 0.07, metalness: 0.05, transparent: true, opacity: 0.86, normalMap: n, normalScale: new THREE.Vector2(0.4, 0.4), envMapIntensity: 1.5, depthWrite: false }));
+  const base = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    base(sh, r);
+    sh.uniforms.wTime = time; sh.uniforms.wMask = { value: mask };
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float wTime; uniform sampler2D wMask;')
+      .replace('vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;', 'vec3 mapN = texture2D( normalMap, vNormalMapUv + vec2(wTime * 0.021, wTime * 0.013) ).xyz + texture2D( normalMap, vNormalMapUv * 1.63 + vec2(-wTime * 0.017, wTime * 0.024) ).xyz - 1.0;')
+      .replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
+        { float wm = texture2D(wMask, vFogW / fogMapSize + 0.5).r;
+          float foam = smoothstep(0.34, 0.5, wm) * (1.0 - smoothstep(0.5, 0.72, wm));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.68, 0.66), foam * 0.45);
+          diffuseColor.a *= smoothstep(0.3, 0.55, wm); }`);
+  };
+  mat.customProgramCacheKey = () => 'fogWater';
+  return { mat, time };
 }
 
 // ---------- Einheiten ----------
