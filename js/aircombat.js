@@ -126,7 +126,7 @@ class Particles {
         varying float vA; varying vec3 vC;
         void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
           gl_PointSize = clamp(aSize * uScale / max(-mv.z, 0.1), 1.0, 512.0);
-          vA = aAlpha * (1.0 - smoothstep(700.0, 2200.0, -mv.z)); vC = aColor; }`,
+          vA = aAlpha * (1.0 - smoothstep(700.0, 2200.0, -mv.z)) * smoothstep(1.5, 9.0, -mv.z); vC = aColor; }`,
       fragmentShader: /* glsl */ `uniform sampler2D map; varying float vA; varying vec3 vC;
         void main(){ vec4 t = texture2D(map, gl_PointCoord); gl_FragColor = vec4(vC * t.rgb, t.a * vA); if (gl_FragColor.a < 0.004) discard; }`,
       transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
@@ -499,7 +499,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
             vec3 H = normalize(uSun + V);
             col += uSunC * pow(max(dot(N, H), 0.0), 220.0) * 3.0;
           }
-          float fog = 1.0 - exp(-dist * 0.00085);
+          float fog = 1.0 - exp(-dist * 0.0006);
           gl_FragColor = vec4(mix(col, uFog, clamp(fog, 0.0, 1.0)), 1.0);
         }`,
     });
@@ -516,7 +516,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
         void main(){
           vec2 p = (vW.xz + uOff) * uScale;
           float n = fbm(p);
-          float c = smoothstep(uCover, uCover + 0.22, n);
+          float c = smoothstep(uCover, uCover + 0.3, n);
           float dist = length(vW - cameraPosition);
           float shade = mix(0.68, 1.08, smoothstep(uCover, uCover + 0.35, fbm(p + vec2(0.04, 0.06) * uSun.xz)));
           vec3 col = uCloud * shade * (0.75 + 0.35 * max(uSun.y, 0.0));
@@ -526,7 +526,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
         }`,
       transparent: true, depthWrite: false, side: THREE.DoubleSide,
     });
-    cloudLow = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), cloudMat(-70, 0.0018, 0.5, 0.95));
+    cloudLow = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), cloudMat(-70, 0.0011, 0.5, 0.95));
     cloudLow.rotation.x = -Math.PI / 2; cloudLow.position.y = -70; cloudLow.frustumCulled = false; cloudLow.renderOrder = -2;
     scene.add(cloudLow);
     cloudHigh = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), cloudMat(260, 0.0009, 0.55, 0.55));
@@ -564,7 +564,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     const sc = randRange(60, 150);
     s.scale.set(sc * 1.8, sc, 1);
   }
-  function visDist(d) { return 12 + R * 1.25 + d * 6; }
+  function visDist(d) { return 10 + R * 1.3 + d * 4.5; }
   function syncPylons() {
     const ms = jet.userData.missiles;
     const vis = Math.ceil((S.ammo / W.ammo) * ms.length);
@@ -840,7 +840,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
       }
       m.mesh.lookAt(m.mesh.position.x * 2 - p.x, m.mesh.position.y * 2 - p.y, m.mesh.position.z * 2 - p.z); // +Z nach hinten, Nase (−Z) voraus
       m.mesh.position.copy(p);
-      trail(m.last, p, 0.7, (q) => smoke.spawn(q.x, q.y, q.z, randRange(-0.6, 0.6), randRange(-0.3, 0.6), randRange(-0.6, 0.6), randRange(1.2, 1.8), 0.7, 3.4, 0.55, [0.86, 0.86, 0.88], [0.6, 0.6, 0.64], 0.8));
+      trail(m.last, p, 0.7, (q) => smoke.spawn(q.x, q.y, q.z, randRange(-0.6, 0.6), randRange(-0.3, 0.6), randRange(-0.6, 0.6), randRange(1.2, 1.8), 0.6, 2.8, 0.4, [0.86, 0.86, 0.88], [0.6, 0.6, 0.64], 0.8));
       fire.spawn(p.x, p.y, p.z, 0, 0, 0, 0.12, 0.8, 0.3, 0.9, [2, 1.1, 0.4]);
       m.last.copy(p);
       if (m.over <= 0 && m.t >= 1) {
@@ -1202,7 +1202,7 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     updateMissiles(dt);
     updateBolts(dt);
     updateFlashes(dt);
-    const windZ = WORLD_SPEED * 0.18;
+    const windZ = WORLD_SPEED * 0.07;
     smoke.update(dt, windZ); fire.update(dt, windZ * 0.5);
     const scale = (engine.internalH || innerHeight) / (2 * Math.tan((camera.fov * Math.PI) / 360));
     smoke.mat.uniforms.uScale.value = fire.mat.uniforms.uScale.value = scale;
@@ -1225,9 +1225,9 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     } else if (S.camCut === 'flee') {
       tp.copy(S.camFixed); tl.copy(jet.position); rate = 3;
     } else {
-      const back = 13 + (craft.type === 'phantom' ? 1.5 : 0);
-      tp.set(jet.position.x * 0.6, jet.position.y + 3.4, jet.position.z + back);
-      tl.copy(jet.position).lerp(ufoObj.position, 0.45); tl.y += 1;
+      const back = (13 + (craft.type === 'phantom' ? 1.5 : 0)) * (camera.aspect < 0.8 ? 1.25 : 1);
+      tp.set(jet.position.x * 0.6, jet.position.y + 3.8, jet.position.z + back);
+      tl.copy(jet.position).lerp(ufoObj.position, 0.32); tl.y += 1;
       if (S.camCut === 'escape') rate = 2;
     }
     camPos.x = smooth(camPos.x, tp.x, rate, rawDt);
