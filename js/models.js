@@ -131,12 +131,12 @@ const TEXGEN = {
     while (y < h) {
       const rh = 16 + rnd() * 18; let x = -rnd() * 50;
       while (x < w) {
-        const rw = 28 + rnd() * 52, v = 92 + rnd() * 70, k = [[1, 0.96, 0.9], [1, 0.9, 0.78], [0.92, 0.94, 0.97], [1, 0.93, 0.82]][(rnd() * 4) | 0];
+        const rw = 28 + rnd() * 52, v = 118 + rnd() * 55, k = [[1, 0.95, 0.88], [1, 0.9, 0.78], [0.95, 0.95, 0.94], [1, 0.92, 0.8]][(rnd() * 4) | 0];
         for (const ox of [0, -w, w]) {
           const sx = x + ox + 1.5 + rnd() * 2, sy = y + 1.5 + rnd() * 2, sw = rw - 3 - rnd() * 3, sh = rh - 3 - rnd() * 3;
           if (sx > w || sx + sw < 0) continue;
           c.fillStyle = `rgb(${v * k[0]},${v * k[1]},${v * k[2]})`; rrect(c, sx, sy, sw, sh, 3 + rnd() * 5); c.fill();
-          const g = c.createLinearGradient(sx, sy, sx + sw * 0.3, sy + sh); g.addColorStop(0, 'rgba(255,255,255,0.18)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,0.3)');
+          const g = c.createLinearGradient(sx, sy, sx + sw * 0.3, sy + sh); g.addColorStop(0, 'rgba(255,255,255,0.1)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,0.18)');
           c.fillStyle = g; rrect(c, sx, sy, sw, sh, 4); c.fill();
         }
         x += rw;
@@ -174,11 +174,11 @@ const TEXGEN = {
     c.fillStyle = '#ece7dc'; c.fillRect(0, 0, w, h);
     for (let k = 0; k < 50; k++) blotch(c, rnd() * w, rnd() * h, 10 + rnd() * 30, rnd() < 0.5 ? 'rgba(120,110,95,0.07)' : 'rgba(255,255,255,0.1)');
     speckle(c, w, h, 4000, ['rgba(0,0,0,0.07)', 'rgba(255,255,255,0.12)'], 2);
-    for (let k = 0; k < 2; k++) {
-      const x = 20 + rnd() * 200, y = 30 + rnd() * 170, pw = 26 + rnd() * 30, ph = 18 + rnd() * 26;
+    for (let k = 0; k < 1; k++) {
+      const x = 20 + rnd() * 200, y = 40 + rnd() * 150, pw = 12 + rnd() * 12, ph = 9 + rnd() * 8;
       c.save(); c.beginPath(); c.moveTo(x, y); for (let a = 0; a < 6.28; a += 0.6) c.lineTo(x + Math.cos(a) * pw * (0.6 + rnd() * 0.5), y + Math.sin(a) * ph * (0.6 + rnd() * 0.5)); c.closePath();
       c.fillStyle = 'rgba(70,60,50,0.6)'; c.fill(); c.clip();
-      for (let by = y - 40; by < y + 40; by += 9) for (let bx = x - 60 + ((by / 9) % 2) * 9; bx < x + 60; bx += 18) { const v = 130 + rnd() * 40; c.fillStyle = `rgb(${v},${v * 0.55},${v * 0.42})`; c.fillRect(bx, by, 16, 7); }
+      for (let by = y - 40; by < y + 40; by += 9) for (let bx = x - 60 + ((by / 9) % 2) * 9; bx < x + 60; bx += 18) { const v = 120 + rnd() * 30; c.fillStyle = `rgb(${v},${v * 0.7},${v * 0.6})`; c.fillRect(bx, by, 16, 7); }
       c.restore();
     }
     for (let k = 0; k < 5; k++) crack(c, rnd() * w, rnd() * h * 0.7, 12 + rnd() * 16, 1.2 + (rnd() - 0.5) * 1.5, 1.2);
@@ -303,7 +303,7 @@ const TEXGEN = {
   waterN: () => {
     const N = 128, cv = document.createElement('canvas'); cv.width = cv.height = N;
     const ctx = cv.getContext('2d'), img = ctx.createImageData(N, N), d = img.data;
-    const waves = Array.from({ length: 9 }, (_, i) => ({ kx: ((rnd() * 7) | 0) - 3 || 1, ky: ((rnd() * 7) | 0) - 3 + (i % 2), a: 0.6 / (1 + i * 0.35), p: rnd() * 6.28 }));
+    const waves = Array.from({ length: 14 }, (_, i) => ({ kx: ((rnd() * 13) | 0) - 6 || 2, ky: ((rnd() * 13) | 0) - 6 + (i % 2), a: 0.5 / (1 + i * 0.3), p: rnd() * 6.28 }));
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       let dx = 0, dy = 0;
       for (const w of waves) { const ph = (2 * Math.PI * (w.kx * x + w.ky * y)) / N + w.p, cc = Math.cos(ph) * w.a; dx += cc * w.kx; dy += cc * w.ky; }
@@ -601,7 +601,7 @@ function rod(a, b, r0, r1 = r0, seg = 6, open = false) {
 // Glatter Raumrausch-Ersatz (gleiche Position → gleicher Wert, daher rissfrei)
 const nz3 = (x, y, z, s) => Math.sin(x * 3.1 + s) * Math.sin(y * 2.7 + s * 1.7) * Math.sin(z * 3.3 + s * 0.6) + 0.5 * Math.sin(x * 7.3 + y * 5.1 + s * 2.3) * Math.sin(z * 6.7 - y * 4.1 + s);
 // Unregelmäßiger Laub-/Strauchballen mit weichen radialen Normalen
-function blob(r, x, y, z, sx = 1, sy = 1, sz = 1, amp = 0.2, detail = 1, seed = rnd() * 50) {
+function blob(r, x, y, z, sx = 1, sy = 1, sz = 1, amp = 0.2, detail = r >= 0.8 ? 2 : 1, seed = rnd() * 50) {
   const g = new THREE.IcosahedronGeometry(1, detail), p = g.attributes.position, n = g.attributes.normal, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i).normalize();
@@ -680,7 +680,7 @@ export const FACADES = {
   barn: { tile: 1, up: 1, tint: ['#a8382a', '#8a2e22', '#d8d4cc', '#7a5634'], trim: '#f4f1ea', roof: ['#4a4a4e', '#6e6a64', '#5d3a2a'] },
   warehouse: { tile: 7, up: 7, tint: ['#e8ecef', '#c8d4dc', '#e0dcd0', '#d0dcd0'], trim: '#9aa0a6', roof: ['#8a8e92', '#6a6e72'] },
   church: { tile: 2, up: 6, tint: ['#f4eee4', '#e8e0d2', '#ffffff'], trim: '#f0ece4', roof: ['#4a4e56', '#5a5452'] },
-  gasstation: { tile: 3, up: 5, tint: ['#f4f4f2', '#e8ecf0'], trim: '#c42a1e', roof: ['#d8dadc', '#c8ccd0'] },
+  gasstation: { tile: 3, up: 5, tint: ['#f4f4f2', '#e8ecf0'], trim: '#e4e6e8', roof: ['#d8dadc', '#c8ccd0'] },
   bunker: { tile: 3, up: 3, tint: ['#d8d8d4', '#c4c4be', '#cfd2c8'], trim: '#a8a8a2', roof: ['#6a6a6a', '#5f625a'] },
   cabin: { tile: 1, up: 1, tint: ['#7a5634', '#6b4a2e', '#8a6440'], trim: '#3d2a1a', roof: ['#3e4a3a', '#4a3a2e', '#55524c'] },
   ruin: { tile: 2, up: 6, tint: ['#e0d8c8', '#d0c8b8'], trim: '#c8c0b0', roof: ['#5a5452'] },
@@ -941,7 +941,7 @@ function mapDefs(M, P) {
   const T = TILE, L = {}, t0 = textures();
   const mk = (k, f) => L[k] ||= f();
   const W = {
-    stone: () => mk('stone', () => rough({ map: tx('stoneWall'), roughness: 0.95 }, tx('stoneWallD'), 1.8)),
+    stone: () => mk('stone', () => rough({ map: tx('stoneWall'), roughness: 0.95 }, tx('stoneWallD'), 0.9)),
     concrete: () => mk('concrete', () => rough({ map: tx('formConcrete'), roughness: 0.9 }, tx('formConcreteD'), 0.8)),
     corr: () => mk('corr', () => rough({ map: tx('corrugated'), metalness: 0.55, roughness: 0.55 }, tx('corrugatedD'), 1.6)),
     plaster: () => mk('plaster', () => rough({ map: tx('plasterCrack'), roughness: 0.92 }, tx('plasterCrackD'), 1)),
@@ -952,7 +952,8 @@ function mapDefs(M, P) {
     birch: () => mk('birch', () => rough({ map: tx('birchBark'), roughness: 0.85 }, tx('birchBarkD'), 0.8)),
     palm: () => mk('palm', () => rough({ map: tx('palmBark'), roughness: 0.95 }, tx('palmBarkD'), 1.8)),
     frond: () => mk('frond', () => std({ map: tx('frond'), vertexColors: true, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.8 })),
-    rockVC: () => mk('rockVC', () => rough({ map: t0.rock, vertexColors: true, roughness: 0.95, flatShading: true }, t0.rockD, 1.5)),
+    rockVC: () => mk('rockVC', () => rough({ map: t0.rock, vertexColors: true, roughness: 0.95, flatShading: true }, t0.rockD, 0.4)),
+    wreck: () => mk('wreck', () => rough({ map: t0.concrete, vertexColors: true, metalness: 0.35, roughness: 0.85 }, t0.concreteD, 0.8)),
     container: () => mk('container', () => atlasify(rough({ map: tx('container'), metalness: 0.45, roughness: 0.7 }, tx('containerD'), 1.4))),
     drum: () => mk('drum', () => rough({ map: tx('drum'), vertexColors: true, metalness: 0.5, roughness: 0.7 }, tx('drumD'), 0.6)),
     fuelDrum: () => mk('fuelDrum', () => rough({ map: tx('fuelDrum'), vertexColors: true, metalness: 0.45, roughness: 0.7 }, tx('fuelDrumD'), 0.6)),
@@ -1114,7 +1115,7 @@ function mapDefs(M, P) {
     const l = [];
     const branch = (a, dir, len, r, depth) => {
       const b = [a[0] + dir[0] * len, a[1] + dir[1] * len, a[2] + dir[2] * len];
-      l.push([rod(a, b, r, r * 0.62, depth === 0 ? 8 : 5), depth === 0 ? '#9a9288' : '#a8a096']);
+      l.push([rod(a, b, r, r * 0.62, depth === 0 ? 8 : 5), depth === 0 ? '#a29a8e' : '#b0a89c']);
       if (depth >= 3) return;
       for (let i = 0, k = depth === 0 ? 3 : 2; i < k; i++) {
         const az = rnd() * 6.28, el = 0.3 + rnd() * 0.7, v = [dir[0] * 0.55 + Math.cos(el) * Math.cos(az), dir[1] * 0.55 + Math.sin(el), dir[2] * 0.55 + Math.cos(el) * Math.sin(az)], m = Math.hypot(...v);
@@ -1122,9 +1123,9 @@ function mapDefs(M, P) {
         branch(b, v.map((q) => q / m), len * (0.5 + rnd() * 0.2), r * 0.6, depth + 1);
       }
     };
-    branch([0, 0, 0], [0.04, 1, 0.02], 1.9, 0.22, 0);
+    branch([0, 0, 0], [0.04, 1, 0.02], 1.9, 0.26, 0);
     for (let i = 0; i < 4; i++) { const a = i * 1.57 + rnd() * 0.5; l.push([rod([Math.cos(a) * 0.12, 0.25, Math.sin(a) * 0.12], [Math.cos(a) * 0.55, -0.02, Math.sin(a) * 0.55], 0.1, 0.03, 5), '#8f877c']); }
-    return [{ geo: mergeGeos(l), mat: W.barkVC() }];
+    return [{ geo: mergeGeos(l), mat: M.furnWood }];
   };
   // ===== Baumstumpf: Rinde mit Wurzelanläufen, Schnittfläche mit Jahresringen =====
   D.stump = () => {
@@ -1183,7 +1184,7 @@ function mapDefs(M, P) {
     const l = [new THREE.CylinderGeometry(0.29, 0.29, 0.86, 16, 1, true).translate(0, 0.44, 0)];
     for (const y of [0.29, 0.59]) l.push(uvRect(new THREE.CylinderGeometry(0.297, 0.297, 0.035, 16, 1, true).translate(0, y, 0), band(0.32)));
     l.push(uvRect(new THREE.CylinderGeometry(0.296, 0.29, 0.03, 16, 1, true).translate(0, 0.86, 0), band(0.95)), uvRect(new THREE.CylinderGeometry(0.29, 0.296, 0.03, 16, 1, true), band(0.02)));
-    l.push(uvRect(new THREE.CircleGeometry(0.288, 16).rotateX(-Math.PI / 2).translate(0, 0.875, 0), [0.6, 0.4, 0.8, 0.6]));
+    l.push(uvRect(new THREE.CircleGeometry(0.288, 16).rotateX(-Math.PI / 2).translate(0, 0.875, 0), [0.9, 0.45, 0.98, 0.55]), uvRect(new THREE.CircleGeometry(0.288, 16).rotateX(Math.PI / 2).translate(0, 0.01, 0), [0.9, 0.45, 0.98, 0.55]));
     l.push(uvRect(cyl(0.035, 0.035, 0.02, 8, 0.15, 0.87, 0.05), band(0.5)), uvRect(cyl(0.025, 0.025, 0.02, 8, -0.16, 0.87, -0.04), band(0.5)));
     return l.map((g) => { g.rotateY(ry); if (lying) g.rotateZ(Math.PI / 2).translate(0.44, 0.29, 0); return [g.translate(x, 0, z), [sh, sh, sh]]; });
   };
@@ -1247,7 +1248,8 @@ function mapDefs(M, P) {
     } else {
       const z0 = role === 'rear' ? -0.98 : -1.0, len = 1.0 - z0;
       paint.push([bx(Wt, 2.0, len, 0, 1.2, (1.0 + z0) / 2), '#ffffff']);
-      det.push(vb('black', Wt - 0.2, 0.25, len, 0, 0.95, (1.0 + z0) / 2), vb('plain', Wt + 0.02, 0.1, len, 0, 1.2, (1.0 + z0) / 2, '#9aa0a6'), vb('plain', Wt + 0.02, 0.08, len, 0, 3.12, (1.0 + z0) / 2, '#9aa0a6'));
+      det.push(vb('black', Wt - 0.2, 0.25, len, 0, 0.95, (1.0 + z0) / 2));
+      for (const s of [-1, 1]) det.push(vb('plain', 0.04, 0.12, len, s * (hw + 0.01), 1.2, (1.0 + z0) / 2, '#9aa0a6'), vb('plain', 0.04, 0.1, len, s * (hw + 0.01), 3.1, (1.0 + z0) / 2, '#9aa0a6'));
       for (let z = z0 + 0.25; z < 1; z += 0.5) for (const s of [-1, 1]) det.push(vb('plain', 0.02, 1.9, 0.05, s * (hw + 0.01), 1.25, z, '#b8bcc0'));
       if (role === 'mid') for (const s of [-1, 1]) det.push(vb('plain', 0.04, 0.07, len, s * (hw - 0.05), 0.55, (1.0 + z0) / 2, '#8a8e92'), vb('plain', 0.04, 0.07, len, s * (hw - 0.05), 0.8, (1.0 + z0) / 2, '#8a8e92'));
       if (role === 'rear') {
@@ -1264,7 +1266,7 @@ function mapDefs(M, P) {
   }
   // ===== Ausgebranntes Militärfahrzeug (Schützenpanzer): Wanne, Laufwerk, verdrehter Turm, hängendes Rohr, Trümmer =====
   D.milwreck = () => {
-    const rust = '#6b3a22', soot = '#221d1a', ash = '#5c5750', olive = '#4a4a38', l = [];
+    const rust = '#9a5230', soot = '#3a322c', ash = '#8a8278', olive = '#6e6c52', l = [];
     l.push([sideProfile([[2.05, 0.55], [2.1, 1.0], [1.3, 1.58], [-1.9, 1.6], [-2.05, 1.4], [-2.05, 0.55]], 2.1, 0.04), olive]);
     for (const s of [-1, 1]) {
       l.push([bx(0.48, 0.06, 3.6, s * 1.08, 0.86, 0), soot], [bx(0.48, 0.06, 3.3, s * 1.08, 0.0, 0.0), soot]);
@@ -1277,7 +1279,7 @@ function mapDefs(M, P) {
     for (const [x, y, z, w, h, d] of [[1.06, 1.0, 0.6, 0.02, 0.35, 0.5], [-1.06, 1.1, -0.8, 0.02, 0.3, 0.6], [0.2, 1.61, 0.4, 0.6, 0.01, 0.5]]) l.push([bx(w, h, d, x, y, z), '#0a0807']);
     l.push([bx(0.45, 0.05, 1.5, 0, 0, 0).rotateY(0.3).translate(-1.6, 0.02, 1.7), soot]);
     for (let i = 0; i < 7; i++) { const a = rnd() * 6.28, r = 2.0 + rnd() * 0.6; l.push([bx(0.2 + rnd() * 0.4, 0.03, 0.15 + rnd() * 0.3).rotateY(rnd() * 3).rotateX((rnd() - 0.5) * 0.5).translate(Math.cos(a) * r * 0.6, 0.02, Math.sin(a) * r), rnd() < 0.5 ? rust : soot]); }
-    return [{ geo: mergeGeos(l), mat: M.burnt }];
+    return [{ geo: mergeGeos(l), mat: W.wreck() }];
   };
   // ===== Ziehbrunnen: Steinkranz, Holzgestell mit Dach, Haspel, Seil, Eimer, Wasserspiegel =====
   D.well = () => {
@@ -1424,16 +1426,19 @@ function mapDefs(M, P) {
 
 // ---------- Animierte Wasserfläche (Fluss/Teich): Normalmap-Wellen über Zeit, Ufer-Ausblendung per Maske, Nebel des Krieges ----------
 // mask: DataTexture W×H (R = 1 im Wasser), gleiche Abbildung wie die Nebelkarte
-export function makeWater(mask) {
-  const time = { value: 0 };
+export function makeWater(mask, sky = null) {
+  const time = { value: 0 }, wSky = { value: new THREE.Color(sky || 0xa8c4dc) };
   const n = tx('waterN');
-  const mat = patchFog(new THREE.MeshStandardMaterial({ color: 0x24505e, roughness: 0.07, metalness: 0.05, transparent: true, opacity: 0.86, normalMap: n, normalScale: new THREE.Vector2(0.4, 0.4), envMapIntensity: 1.5, depthWrite: false }));
+  const mat = patchFog(new THREE.MeshStandardMaterial({ color: 0x1d5068, roughness: 0.03, metalness: 0.1, transparent: true, opacity: 0.8, normalMap: n, normalScale: new THREE.Vector2(0.3, 0.3), envMapIntensity: 2.2, depthWrite: false }));
   const base = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     base(sh, r);
-    sh.uniforms.wTime = time; sh.uniforms.wMask = { value: mask };
+    sh.uniforms.wTime = time; sh.uniforms.wMask = { value: mask }; sh.uniforms.wSky = wSky;
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float wTime; uniform sampler2D wMask;')
+      .replace('#include <common>', '#include <common>\nuniform float wTime; uniform sampler2D wMask; uniform vec3 wSky;')
+      .replace('#include <opaque_fragment>', `{ float fr = pow(1.0 - clamp(abs(dot(normalize(vViewPosition), normal)), 0.0, 1.0), 3.0);
+          outgoingLight = mix(outgoingLight, wSky * 0.85, clamp(0.1 + fr * 0.7, 0.0, 0.6)); diffuseColor.a = clamp(diffuseColor.a * (1.0 + fr * 0.5), 0.0, 1.0); }
+        #include <opaque_fragment>`)
       .replace('vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;', 'vec3 mapN = texture2D( normalMap, vNormalMapUv + vec2(wTime * 0.021, wTime * 0.013) ).xyz + texture2D( normalMap, vNormalMapUv * 1.63 + vec2(-wTime * 0.017, wTime * 0.024) ).xyz - 1.0;')
       .replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
         { float wm = texture2D(wMask, vFogW / fogMapSize + 0.5).r;

@@ -81,3 +81,17 @@ Lizenztext CC0: https://creativecommons.org/publicdomain/zero/1.0/deed.de
 - Quaternius (alle Pakete CC0): https://quaternius.com – Weitergabe via https://github.com/Touhid-HZ/shooter-asset-library (LICENSE/ATTRIBUTION.md: CC0)
 - Open Yoga Poses (Figuren CC0, Posen-Daten CC BY-SA – *nicht* verwendet): https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md
 - three.js-Addons in `vendor/three/addons/` (GLTFLoader, MeshoptDecoder u. a.): MIT-Lizenz, siehe `vendor/three/LICENSE`
+
+## HDRI-Umgebungen (Umgebungslicht/Spiegelungen, `assets/hdri/`)
+
+Alle von Poly Haven, CC0 – je in 1K (Handy) und 2K (Desktop) als Radiance-`.hdr`; Details in `assets/hdri/hdri.json`.
+
+- **day** – Kloofendal 48d Partly Cloudy (Pure Sky) – Greg Zaal, Jarod Guest (Himmel) – https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky
+- **overcast** – Kloofendal Overcast (Pure Sky) – Greg Zaal – https://polyhaven.com/a/kloofendal_overcast_puresky
+- **dusk** – Qwantani Dusk 2 (Pure Sky) – Greg Zaal (Foto), Jarod Guest (Bearbeitung) – https://polyhaven.com/a/qwantani_dusk_2_puresky
+- **night** – Shanghai Bund – Greg Zaal – https://polyhaven.com/a/shanghai_bund
+- **hangar** – Small Hangar 01 – Sergej Majboroda – https://polyhaven.com/a/small_hangar_01
+
+## Rendering-Code (MIT, three.js-Beispiele/Addons)
+
+- CSM (Cascaded Shadow Maps), SSRPass, RGBELoader aus three.js r170 (`vendor/three/addons/`), PCSS-Schatten angelehnt an das three.js-Beispiel *webgl_shadowmap_pcss* – © three.js authors, MIT-Lizenz

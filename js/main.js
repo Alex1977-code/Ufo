@@ -11,6 +11,7 @@ import { modal, toast, confirmBox, closeAllModals, el, alertBox } from './ui.js'
 import { initAudio, sfx, setVolumes, setMusicMood } from './audio.js';
 import { isTouchDevice, rand } from './util.js';
 import { makeUfo, animateCraft } from './craftmodels.js';
+import { initEnvironment, applyEnvironment } from './environment.js';
 
 const SETTINGS_KEY = 'aegis_settings_v1';
 const mobile = isTouchDevice() && Math.min(screen.width, screen.height) < 900;
@@ -20,6 +21,8 @@ const DEFAULTS = {
   // Energiesparen: Bildratenlimit (0 = aus) – Handy 30, sonst 60; Leerlauf-Drosselung an
   fpsLimit: Math.min(screen.width, screen.height) < 700 ? 30 : 60, idleSaver: true,
   bloom: true, filmGrain: !mobile, shadows: mobile ? 'med' : 'high', maxDpr: mobile ? 2 : 2,
+  // Realistisches Rendering (G1): Tonemapping, Farbstimmung, Schattenfilter, Spiegelungen, HDRI-Auflösung
+  toneMap: mobile ? 'aces' : 'agx', grading: 'filmic', shadowFilter: mobile ? 'pcf' : 'pcss', ssr: !mobile, hdri: mobile ? '1k' : '2k',
   sfx: 0.7, music: 0.35, vibration: true, animSpeed: 1, tvMode: false, showFps: false, confirmEnd: true,
 };
 let settings = { ...DEFAULTS };
@@ -27,6 +30,7 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* */ } };
 
 const engine = new Engine(document.getElementById('game'), settings);
+initEnvironment(engine);
 Input.settings = settings;
 Cast.init(engine);
 setVolumes(settings.sfx, settings.music);
@@ -68,14 +72,9 @@ function buildMenuScene() {
   beam.position.y = -3.3; ufo.add(beam);
   ufo.position.set(2.2, 1.4, 0);
   scene.add(ufo);
-  const pmrem = new THREE.PMREMGenerator(engine.renderer);
-  const env = new THREE.Scene(); env.background = new THREE.Color(0x0a1220);
-  const lamp = new THREE.Mesh(new THREE.SphereGeometry(5, 8, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 4, 4.5) })); lamp.position.set(20, 20, 10); env.add(lamp);
-  const lamp2 = new THREE.Mesh(new THREE.SphereGeometry(8, 8, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 0.6, 1.4) })); lamp2.position.set(0, -30, 0); env.add(lamp2);
-  scene.environment = pmrem.fromScene(env, 0.02).texture;
-  scene.environmentIntensity = 2.4; // nur das PBR-UFO nutzt die Umgebung
-  pmrem.dispose();
-  env.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+  // HDRI-Umgebungslicht (Poly Haven, CC0) – nur das PBR-UFO nutzt es; Sternenhimmel bleibt Hintergrund.
+  // Offline/„Aus“: prozedurale Ersatzumgebung (environment.js).
+  applyEnvironment(scene, 'night', { background: 'none', intensity: 1.6, rotation: 1.2 }).catch(() => {});
   const key = new THREE.DirectionalLight(0xffffff, 3); key.position.set(5, 6, 4); scene.add(key);
   const rimL = new THREE.DirectionalLight(0x60c0ff, 2.5); rimL.position.set(-4, -2, -3); scene.add(rimL);
   scene.add(new THREE.AmbientLight(0x223344, 1));
@@ -271,7 +270,13 @@ function openSettings() {
     ${opt('targetFps', 'Ziel-Bildrate', [[30, '30'], [60, '60'], [90, '90'], [120, '120']])}
     ${range('sharpness', 'Schärfe (RCAS)', 0, 1, 0.05)}
     <h4>Grafik</h4>
-    ${opt('shadows', 'Schatten', [['off', 'Aus'], ['low', 'Niedrig'], ['med', 'Mittel'], ['high', 'Hoch']])}
+    ${opt('toneMap', 'Tonemapping', [['agx', 'AgX'], ['aces', 'ACES'], ['neutral', 'Neutral']])}
+    ${opt('grading', 'Farbstimmung', [['neutral', 'Neutral'], ['filmic', 'Filmisch'], ['vivid', 'Kräftig']])}
+    ${opt('hdri', 'Umgebungslicht (HDRI)', [['off', 'Aus'], ['1k', '1K'], ...(mobile ? [] : [['2k', '2K']])])}
+    ${opt('shadowFilter', 'Schattenqualität', [['off', 'Aus'], ['pcf', 'Weich (PCF)'], ['vsm', 'Sehr weich (VSM)'], ...(mobile ? [] : [['pcss', 'Kontaktschatten (PCSS)']])])}
+    ${opt('shadows', 'Schattenauflösung', [['off', 'Aus'], ['low', 'Niedrig'], ['med', 'Mittel'], ['high', 'Hoch']])}
+    ${mobile ? '' : opt('ssr', 'Spiegelungen (SSR)', [[false, 'Aus'], [true, 'An']])}
+    <p class="muted">AgX: natürliche, filmische Lichter ohne Farbverschiebung; ACES: kontrastreicher. Kontaktschatten werden nahe am Objekt hart und mit Abstand weich. Spiegelungen (Bildschirmraum) wirken nur in Szenen, die sie unterstützen, und kosten deutlich Leistung. HDRI-Auflösung wirkt ab dem nächsten Szenenwechsel.</p>
     ${opt('ao', 'Umgebungsverdeckung (AO)', [['off', 'Aus'], ['low', 'Niedrig'], ['high', 'Hoch']])}
     <p class="muted">Umgebungsverdeckung (GTAO) dunkelt Ecken, Spalten und Kontaktstellen ab – im Bodenkampf. „Niedrig“ rechnet mit halber Auflösung.</p>
     ${opt('bloom', 'Bloom / Leuchten', [[true, 'An'], [false, 'Aus']])}

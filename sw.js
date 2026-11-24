@@ -12,6 +12,11 @@ const ASSETS = [
   './vendor/three/addons/shaders/CopyShader.js', './vendor/three/addons/shaders/LuminosityHighPassShader.js', './vendor/three/addons/shaders/OutputShader.js',
   './vendor/three/addons/postprocessing/GTAOPass.js', './vendor/three/addons/shaders/GTAOShader.js', './vendor/three/addons/shaders/PoissonDenoiseShader.js',
   './vendor/three/addons/math/SimplexNoise.js',
+  // Realistisches Rendering (G1): Umgebungslicht, Schatten, Spiegelungen; HDRIs in 1K (2K wird bei Bedarf nachgeladen und gecacht)
+  './js/environment.js', './vendor/three/addons/loaders/RGBELoader.js', './vendor/three/addons/csm/CSM.js', './vendor/three/addons/csm/CSMShader.js', './vendor/three/addons/csm/CSMFrustum.js',
+  './vendor/three/addons/postprocessing/SSRPass.js', './vendor/three/addons/shaders/SSRShader.js', './assets/hdri/hdri.json',
+  './assets/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr', './assets/hdri/kloofendal_overcast_puresky_1k.hdr', './assets/hdri/qwantani_dusk_2_puresky_1k.hdr',
+  './assets/hdri/shanghai_bund_1k.hdr', './assets/hdri/small_hangar_01_1k.hdr',
 ];
 // Einzeln cachen: eine fehlende Datei lässt die Installation nicht scheitern
 self.addEventListener('install', (e) => {

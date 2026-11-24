@@ -1,0 +1,179 @@
+{
+  "generated": "2026-11-24",
+  "base_path": "assets/hdri/",
+  "format": "Radiance RGBE (.hdr), equirektangular, linear; Laden: RGBELoader → PMREMGenerator (js/environment.js)",
+  "quality": {
+    "1k": "1024×512 (Handy)",
+    "2k": "2048×1024 (Desktop)"
+  },
+  "license": "CC0 1.0",
+  "license_url": "https://polyhaven.com/license",
+  "assets": [
+    {
+      "id": "hdri_day",
+      "name": "day",
+      "label": "Tag, klar (Mittag, Schönwetterwolken)",
+      "type": "hdri",
+      "polyhaven_id": "kloofendal_48d_partly_cloudy_puresky",
+      "title": "Kloofendal 48d Partly Cloudy (Pure Sky)",
+      "author": "Greg Zaal (Original), Jarod Guest (Sky edits)",
+      "license": "CC0 1.0",
+      "source_url": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+      "license_url": "https://polyhaven.com/license",
+      "categories": [
+        "outdoor",
+        "skies",
+        "nature",
+        "midday",
+        "partly cloudy",
+        "high contrast",
+        "natural light",
+        "pure skies"
+      ],
+      "files": {
+        "1k": {
+          "file": "hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr",
+          "size_bytes": 1435119,
+          "source_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloofendal_48d_partly_cloudy_puresky_1k.hdr"
+        },
+        "2k": {
+          "file": "hdri/kloofendal_48d_partly_cloudy_puresky_2k.hdr",
+          "size_bytes": 5451493,
+          "source_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloofendal_48d_partly_cloudy_puresky_2k.hdr"
+        }
+      }
+    },
+    {
+      "id": "hdri_overcast",
+      "name": "overcast",
+      "label": "Bewölkt",
+      "type": "hdri",
+      "polyhaven_id": "kloofendal_overcast_puresky",
+      "title": "Kloofendal Overcast (Pure Sky)",
+      "author": "Greg Zaal (All)",
+      "license": "CC0 1.0",
+      "source_url": "https://polyhaven.com/a/kloofendal_overcast_puresky",
+      "license_url": "https://polyhaven.com/license",
+      "categories": [
+        "outdoor",
+        "skies",
+        "nature",
+        "natural light",
+        "overcast",
+        "low contrast",
+        "morning-afternoon",
+        "pure skies"
+      ],
+      "files": {
+        "1k": {
+          "file": "hdri/kloofendal_overcast_puresky_1k.hdr",
+          "size_bytes": 1174053,
+          "source_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloofendal_overcast_puresky_1k.hdr"
+        },
+        "2k": {
+          "file": "hdri/kloofendal_overcast_puresky_2k.hdr",
+          "size_bytes": 4335717,
+          "source_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloofendal_overcast_puresky_2k.hdr"
+        }
+      }
+    },
+    {
+      "id": "hdri_dusk",
+      "name": "dusk",
+      "label": "Abend/Dämmerung",
+      "type": "hdri",
+      "polyhaven_id": "qwantani_dusk_2_puresky",
+      "title": "Qwantani Dusk 2 (Pure Sky)",
+      "author": "Greg Zaal (Photography), Jarod Guest (Processing)",
+      "license": "CC0 1.0",
+      "source_url": "https://polyhaven.com/a/qwantani_dusk_2_puresky",
+      "license_url": "https://polyhaven.com/license",
+      "categories": [
+        "outdoor",
+        "natural light",
+        "nature",
+        "skies",
+        "clear",
+        "low contrast",
+        "sunrise-sunset",
+        "partly cloudy",
+        "pure skies"
+      ],
+      "files": {
+        "1k": {
+          "file": "hdri/qwantani_dusk_2_puresky_1k.hdr",
+          "size_bytes": 1166018,
+          "source_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/qwantani_dusk_2_puresky_1k.hdr"
+        },
+        "2k": {
+          "file": "hdri/qwantani_dusk_2_puresky_2k.hdr",
+          "size_bytes": 4612798,
+          "source_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/qwantani_dusk_2_puresky_2k.hdr"
+        }
+      }
+    },
+    {
+      "id": "hdri_night",
+      "name": "night",
+      "label": "Nacht, Stadt",
+      "type": "hdri",
+      "polyhaven_id": "shanghai_bund",
+      "title": "Shanghai Bund",
+      "author": "Greg Zaal (All)",
+      "license": "CC0 1.0",
+      "source_url": "https://polyhaven.com/a/shanghai_bund",
+      "license_url": "https://polyhaven.com/license",
+      "categories": [
+        "outdoor",
+        "urban",
+        "night",
+        "partly cloudy",
+        "high contrast",
+        "artificial light"
+      ],
+      "files": {
+        "1k": {
+          "file": "hdri/shanghai_bund_1k.hdr",
+          "size_bytes": 1640377,
+          "source_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/shanghai_bund_1k.hdr"
+        },
+        "2k": {
+          "file": "hdri/shanghai_bund_2k.hdr",
+          "size_bytes": 6467753,
+          "source_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/shanghai_bund_2k.hdr"
+        }
+      }
+    },
+    {
+      "id": "hdri_hangar",
+      "name": "hangar",
+      "label": "Innenraum/Hangar",
+      "type": "hdri",
+      "polyhaven_id": "small_hangar_01",
+      "title": "Small Hangar 01",
+      "author": "Sergej Majboroda (All)",
+      "license": "CC0 1.0",
+      "source_url": "https://polyhaven.com/a/small_hangar_01",
+      "license_url": "https://polyhaven.com/license",
+      "categories": [
+        "indoor",
+        "urban",
+        "morning-afternoon",
+        "low contrast",
+        "natural light"
+      ],
+      "files": {
+        "1k": {
+          "file": "hdri/small_hangar_01_1k.hdr",
+          "size_bytes": 1697028,
+          "source_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/small_hangar_01_1k.hdr"
+        },
+        "2k": {
+          "file": "hdri/small_hangar_01_2k.hdr",
+          "size_bytes": 6684096,
+          "source_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/small_hangar_01_2k.hdr"
+        }
+      }
+    }
+  ]
+}

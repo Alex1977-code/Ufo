@@ -231,7 +231,7 @@ export class Tactical {
       for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) {
         if (!isW(x, y)) continue;
         let d = 1; while (d < 4) { let all = true; for (let dy = -d; dy <= d && all; dy++) for (let dx = -d; dx <= d; dx++) if (m.at(x + dx, y + dy) && !isW(x + dx, y + dy)) { all = false; break; } if (!all) break; d++; }
-        c.fillStyle = ['#4f5a44', '#33443e', '#1f3236', '#15262b'][d - 1];
+        c.fillStyle = ['#5e5a42', '#33443e', '#1f3236', '#15262b'][d - 1];
         c.fillRect(x * P - 6, y * P - 6, P + 12, P + 12);
       }
       c.filter = 'none';
@@ -244,7 +244,7 @@ export class Tactical {
             for (let k = 0; k < 3; k++) { c.fillStyle = 'rgba(28,20,12,0.35)'; c.beginPath(); c.ellipse(X + rand() * P, Y + rand() * P, 3 + rand() * 7, 2 + rand() * 4, rand() * 3, 0, 7); c.fill(); }
             if (rand() < 0.5) { c.fillStyle = 'rgba(90,100,105,0.45)'; c.beginPath(); c.ellipse(X + rand() * P, Y + rand() * P, 3 + rand() * 5, 2 + rand() * 3, rand() * 3, 0, 7); c.fill(); }
             const hz = m.at(x - 1, y)?.floor === 'mud' || m.at(x + 1, y)?.floor === 'mud';
-            c.fillStyle = 'rgba(25,18,10,0.4)'; if (hz) { c.fillRect(X, Y + 9, P, 3); c.fillRect(X, Y + 21, P, 3); } else { c.fillRect(X + 9, Y, 3, P); c.fillRect(X + 21, Y, 3, P); }
+            c.fillStyle = 'rgba(25,18,10,0.22)'; if (hz) { c.fillRect(X, Y + 9, P, 2); c.fillRect(X, Y + 21, P, 2); } else { c.fillRect(X + 9, Y, 2, P); c.fillRect(X + 21, Y, 2, P); }
           } else if (f === 'shore') {
             sp(X, Y, P, P, 30, ['#7a6a4a', '#b8a47c', '#8a8070', '#6a6258'], 2);
             for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (isW(x + dx, y + dy)) {
@@ -253,7 +253,7 @@ export class Tactical {
           } else if (f === 'crops') { for (let k = 2; k < P; k += 6) { c.fillStyle = 'rgba(70,100,30,0.75)'; c.fillRect(X, Y + k, P, 3); sp(X, Y + k - 1, P, 4, 10, ['#6e8e34', '#8aa040', '#a89a48', '#4e6a24'], 2); } }
           else if (f === 'vineyard') { c.fillStyle = 'rgba(80,110,40,0.35)'; c.fillRect(X, Y, P, P); c.fillStyle = '#4a3a26'; c.fillRect(X, Y + 11, P, 10); sp(X, Y + 12, P, 8, 18, ['#3a5a22', '#4a6a2a', '#2e4a1a'], 3); c.fillStyle = '#3a2a1a'; c.fillRect(X + 2, Y + 15, 2, 2); }
           else if (f === 'graveyard') {
-            if (!cell.wall) { c.fillStyle = '#8a8478'; c.fillRect(X + 4, Y + 4, P - 8, P - 8); sp(X + 4, Y + 4, P - 8, P - 8, 30, ['#a39d90', '#6e695f', '#b5afa2'], 2); }
+            if (!cell.wall) { c.fillStyle = '#8a8478'; c.fillRect(X, Y, P, P); sp(X, Y, P, P, 45, ['#a39d90', '#6e695f', '#b5afa2'], 2); }
             else sp(X, Y, P, P, 20, ['#3e5a24', '#5a7a34'], 2);
           } else if (f === 'ice') {
             sp(X, Y, P, P, 14, ['rgba(255,255,255,0.35)', 'rgba(150,180,200,0.3)'], 4);
@@ -421,7 +421,7 @@ export class Tactical {
         let main = null;
         for (const [dx, dz, a, sx] of pcs) {
           const flip = t === 'sandbag' || t === 'stonewall' || t === 'tallhedge' ? (rand() < 0.5 ? Math.PI : 0) : 0;
-          M4(p.x + dx * TILE, p.z + dz * TILE, a + flip, sx);
+          M4(p.x + dx, p.z + dz, a + flip, sx);
           const e = put(c, t, t, null, tint, null, 0, main); main ||= e;
         }
         return;
@@ -546,14 +546,14 @@ export class Tactical {
       for (const k of cover) {
         const p = this.cellPos(k % m.W, (k / m.W) | 0), x0 = p.x - TILE / 2, x1 = p.x + TILE / 2, z0 = p.z - TILE / 2, z1 = p.z + TILE / 2;
         P3.push(x0, 0, z0, x0, 0, z1, x1, 0, z1, x0, 0, z0, x1, 0, z1, x1, 0, z0);
-        for (let i = 0; i < 18; i += 3) UV.push(P3[P3.length - 18 + i] / 7, -P3[P3.length - 18 + i + 2] / 7);
+        for (let i = 0; i < 18; i += 3) UV.push(P3[P3.length - 18 + i] / 4, -P3[P3.length - 18 + i + 2] / 4);
       }
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(P3, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
       geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(P3.length).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
       const mask = new THREE.DataTexture(data, m.W, m.H, THREE.RedFormat);
       mask.magFilter = mask.minFilter = THREE.LinearFilter; mask.needsUpdate = true;
-      const wtr = makeWater(mask), mesh = new THREE.Mesh(geo, wtr.mat);
+      const wtr = makeWater(mask, this.scene.fog?.color), mesh = new THREE.Mesh(geo, wtr.mat);
       mesh.position.y = 0.04; mesh.receiveShadow = true; mesh.renderOrder = 1;
       this.scene.add(mesh);
       this.water = { mesh, mask, time: wtr.time };

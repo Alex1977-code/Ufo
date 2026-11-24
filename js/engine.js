@@ -9,7 +9,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { clamp } from './util.js';
+import { SSRPass } from 'three/addons/postprocessing/SSRPass.js';
+import { clamp, isTouchDevice } from './util.js';
 import { anyModalOpen } from './ui.js';
 
 // Qualitätsstufen analog zu DLSS / FSR (Anteil der Ausgabeauflösung pro Achse)
@@ -21,6 +22,115 @@ export const UPSCALE_MODES = {
   ultra: { label: 'Ultra-Leistung', scale: 0.5 },
 };
 
+// ---------------------------------------------------------------------------
+// Tonemapping / Farbstimmung / Schatten (Einstellungen toneMap, grading, shadowFilter, ssr)
+// ---------------------------------------------------------------------------
+export const TONEMAPS = {
+  agx: { label: 'AgX', tm: THREE.AgXToneMapping, exposure: 1.1 },
+  aces: { label: 'ACES', tm: THREE.ACESFilmicToneMapping, exposure: 1.0 },
+  neutral: { label: 'Neutral', tm: THREE.NeutralToneMapping, exposure: 0.95 },
+};
+
+// Farbstimmung im End-Shader (Ausgabeauflösung, nach Tonemapping, sRGB-Werte 0..1)
+export const GRADINGS = {
+  neutral: { label: 'Neutral', on: 0 },
+  filmic: {
+    label: 'Filmisch', on: 1, lift: [0.004, 0.007, 0.014], gamma: [1.0, 1.0, 1.0], gain: [1.02, 1.0, 0.975],
+    sat: 1.1, con: 0.2, shadowTint: [-0.012, 0.0, 0.016], highTint: [0.018, 0.006, -0.016],
+  },
+  vivid: {
+    label: 'Kräftig', on: 1, lift: [0.0, 0.002, 0.008], gamma: [1.0, 1.0, 1.02], gain: [1.04, 1.01, 0.98],
+    sat: 1.3, con: 0.32, shadowTint: [-0.016, 0.0, 0.022], highTint: [0.024, 0.008, -0.02],
+  },
+};
+
+const GRADE_UNIFORMS = () => ({
+  gOn: { value: 0 }, gLift: { value: new THREE.Vector3() }, gGamma: { value: new THREE.Vector3(1, 1, 1) }, gGain: { value: new THREE.Vector3(1, 1, 1) },
+  gSat: { value: 1 }, gCon: { value: 0 }, gShadowTint: { value: new THREE.Vector3() }, gHighTint: { value: new THREE.Vector3() },
+});
+const GRADE_GLSL = /* glsl */ `
+    uniform float gOn; uniform vec3 gLift; uniform vec3 gGamma; uniform vec3 gGain;
+    uniform float gSat; uniform float gCon; uniform vec3 gShadowTint; uniform vec3 gHighTint;
+    // Lift/Gamma/Gain, Kontrast-S-Kurve, Sättigung, Split-Toning (kühle Schatten, warme Lichter)
+    vec3 colorGrade(vec3 c) {
+      if (gOn < 0.5) return c;
+      c = clamp(c, 0.0, 1.0);
+      c = gGain * (c + gLift * (1.0 - c));
+      c = pow(max(c, vec3(0.0)), 1.0 / gGamma);
+      c = mix(c, c * c * (3.0 - 2.0 * c), gCon);
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+      c = mix(vec3(l), c, gSat);
+      float lw = smoothstep(0.0, 1.0, l);
+      c += gShadowTint * (1.0 - lw) * (1.0 - lw) + gHighTint * lw * lw;
+      return clamp(c, 0.0, 1.0);
+    }`;
+
+// Bloom nur für HDR-Spitzen: weicher Schwellwert („soft knee“) – nur der Anteil ÜBER dem Schwellwert blüht,
+// helle (diffus beleuchtete) Wände knapp über 1.0 tragen praktisch nichts bei.
+const BLOOM_HIGHPASS_FRAG = /* glsl */ `
+    uniform sampler2D tDiffuse; uniform float luminosityThreshold; uniform float smoothWidth;
+    varying vec2 vUv;
+    void main() {
+      vec3 c = min(texture2D(tDiffuse, vUv).rgb, vec3(64.0));
+      float br = max(c.r, max(c.g, c.b));
+      float knee = max(smoothWidth, 1e-4);
+      float soft = clamp(br - luminosityThreshold + knee, 0.0, 2.0 * knee);
+      soft = soft * soft / (4.0 * knee);
+      float w = max(soft, br - luminosityThreshold) / max(br, 1e-4);
+      gl_FragColor = vec4(c * w, 1.0);
+    }`;
+
+// PCSS (Kontaktschatten, nach dem three-Beispiel webgl_shadowmap_pcss, MIT) als Ersatz des PCF-Zweigs in
+// getShadow(): Blocker-Suche → Halbschattenbreite aus Tiefendifferenz → Poisson-PCF. Aktiv nur mit
+// renderer.shadowMap.type === PCFShadowMap (PCFSoft/VSM unverändert). light.shadow.radius skaliert die Weichheit.
+const PCSS_GLSL = /* glsl */ `
+	#if defined( SHADOWMAP_TYPE_PCF )
+	#define AEGIS_PCSS_BLOCKER 12
+	#define AEGIS_PCSS_PCF 20
+	#define AEGIS_PCSS_SEARCH 10.0
+	#define AEGIS_PCSS_SOFTNESS 500.0
+	vec2 aegisDisk( int i, int n, float a0 ) {
+		float r = sqrt( ( float( i ) + 0.5 ) / float( n ) );
+		float a = a0 + float( i ) * 2.39996323;
+		return vec2( cos( a ), sin( a ) ) * r;
+	}
+	float aegisPCSS( sampler2D shadowMap, vec2 shadowMapSize, float shadowRadius, vec4 sc ) {
+		vec2 texel = 1.0 / shadowMapSize;
+		float a0 = rand( sc.xy ) * PI2;
+		float blk = 0.0, nb = 0.0;
+		for ( int i = 0; i < AEGIS_PCSS_BLOCKER; i ++ ) {
+			float d = unpackRGBAToDepth( texture2D( shadowMap, sc.xy + aegisDisk( i, AEGIS_PCSS_BLOCKER, a0 ) * texel * AEGIS_PCSS_SEARCH ) );
+			if ( d < sc.z ) { blk += d; nb += 1.0; }
+		}
+		if ( nb < 0.5 ) return 1.0;
+		blk /= nb;
+		float pen = clamp( ( sc.z - blk ) * AEGIS_PCSS_SOFTNESS * max( shadowRadius, 0.05 ), 1.0, AEGIS_PCSS_SEARCH );
+		float s = 0.0;
+		for ( int i = 0; i < AEGIS_PCSS_PCF; i ++ ) {
+			s += texture2DCompare( shadowMap, sc.xy + aegisDisk( i, AEGIS_PCSS_PCF, a0 + 1.3 ) * texel * pen, sc.z );
+		}
+		return s / float( AEGIS_PCSS_PCF );
+	}
+	#endif
+`;
+function installPCSS() {
+  try {
+    const SC = THREE.ShaderChunk;
+    let s = SC.shadowmap_pars_fragment;
+    if (s.includes('aegisPCSS')) return true;
+    const a = '\tfloat getShadow( sampler2D shadowMap, vec2 shadowMapSize, float shadowIntensity, float shadowBias, float shadowRadius, vec4 shadowCoord ) {';
+    const b = '\t\t#if defined( SHADOWMAP_TYPE_PCF )\n\t\t\tvec2 texelSize = vec2( 1.0 ) / shadowMapSize;';
+    if (!s.includes(a) || !s.includes(b)) return false;
+    s = s.replace(a, PCSS_GLSL + a);
+    s = s.replace(b, '\t\t#if defined( SHADOWMAP_TYPE_PCF )\n\t\t\tshadow = aegisPCSS( shadowMap, shadowMapSize, shadowRadius, shadowCoord );\n\t\t#elif 0\n\t\t\tvec2 texelSize = vec2( 1.0 ) / shadowMapSize;');
+    SC.shadowmap_pars_fragment = s;
+    return true;
+  } catch {
+    return false;
+  }
+}
+export const PCSS_AVAILABLE = installPCSS();
+
 // Kantenrekonstruktion + kontrastadaptives Nachschärfen (angelehnt an FSR 1 EASU/RCAS)
 const SuperResShader = {
   uniforms: {
@@ -31,6 +141,7 @@ const SuperResShader = {
     time: { value: 0 },
     vignette: { value: 0.35 },
     grain: { value: 0.025 },
+    ...GRADE_UNIFORMS(),
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -38,12 +149,13 @@ const SuperResShader = {
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse; uniform vec2 srcSize; uniform float sharpness; uniform float enabled;
     uniform float time; uniform float vignette; uniform float grain;
-    varying vec2 vUv;
+    varying vec2 vUv;${GRADE_GLSL}
     vec3 tap(vec2 p) { return texture2D(tDiffuse, p).rgb; }
     float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
     float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + time) * 43758.5453); }
     // Vignette und Filmkorn erst NACH der Rekonstruktion in Ausgabeauflösung
     vec4 grade(vec3 c) {
+      c = colorGrade(c);
       vec2 d = vUv - 0.5;
       c *= 1.0 - vignette * dot(d, d) * 1.6;
       c += (hash(gl_FragCoord.xy) - 0.5) * grain;
@@ -199,12 +311,13 @@ const TSRFinalShader = {
     time: { value: 0 },
     vignette: { value: 0.35 },
     grain: { value: 0.025 },
+    ...GRADE_UNIFORMS(),
   },
   vertexShader: FSQ_VERT,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse; uniform vec2 dstSize; uniform float sharpness;
     uniform float time; uniform float vignette; uniform float grain;
-    varying vec2 vUv;
+    varying vec2 vUv;${GRADE_GLSL}
     vec3 tap(vec2 p) { return texture2D(tDiffuse, p).rgb; }
     float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + time) * 43758.5453); }
     void main() {
@@ -218,6 +331,7 @@ const TSRFinalShader = {
       vec3 wgt = -amp * mix(0.04, 0.2, sharpness);
       vec3 col = clamp((c + (n + s + e + w) * wgt) / (1.0 + 4.0 * wgt), mn, mx);
       col = mix(c, col, clamp(sharpness * 1.6, 0.0, 1.0));
+      col = colorGrade(col);
       vec2 d = vUv - 0.5;
       col *= 1.0 - vignette * dot(d, d) * 1.6;
       col += (hash(gl_FragCoord.xy) - 0.5) * grain;
@@ -320,6 +434,90 @@ class AOPass extends GTAOPass {
   }
 }
 
+// OutputPass mit Belichtungsfaktor (Tonemapper-Abgleich × mode.exposure), renderer.toneMappingExposure bleibt unberührt
+class GradedOutputPass extends OutputPass {
+  constructor() { super(); this.exposureScale = 1; }
+  render(renderer, writeBuffer, readBuffer, dt, mask) {
+    const e = renderer.toneMappingExposure;
+    renderer.toneMappingExposure = e * this.exposureScale;
+    try { super.render(renderer, writeBuffer, readBuffer, dt, mask); } finally { renderer.toneMappingExposure = e; }
+  }
+}
+
+// Bildschirmraum-Spiegelungen (three SSRPass) in interner Auflösung, ersetzt den Szenen-Pass
+// (rendert Farbe + Tiefe selbst; die Tiefe dient dann auch der TSR-Reprojektion).
+// Ohne mode.ssrSelects spiegeln nur glatte PBR-Materialien, gewichtet nach Rauheit/Metall
+// (material.userData.ssr = 0..1 überschreibt das); mit mode.ssrSelects (Mesh-Liste) wie im three-Original.
+const SSR_AUTO = [];
+const ssrHidden = (o) => o.isPoints || o.isLine || o.isSprite;
+class SceneSSRPass extends SSRPass {
+  constructor(o) {
+    super(o);
+    this.ssrMaterial.defines.MAX_STEP = Math.round(clamp(Math.hypot(o.width, o.height) * 0.4, 96, 320));
+    // Maskenwert (0..1) als Reflexionsstärke statt nur Ja/Nein
+    this.ssrMaterial.fragmentShader = this.ssrMaterial.fragmentShader.replace('gl_FragColor.a=op;', '#ifdef SELECTIVE\n op*=metalness;\n #endif\n gl_FragColor.a=op;');
+    this.ssrMaterial.needsUpdate = true;
+    this._levels = Array.from({ length: 8 }, (_, i) => new THREE.MeshBasicMaterial({ color: new THREE.Color().setScalar((i + 1) / 8) }));
+    this.selects = SSR_AUTO;
+  }
+  get autoSelect() { return this._selects === SSR_AUTO; }
+  maskFor(mat) {
+    const m = Array.isArray(mat) ? mat[0] : mat;
+    if (!m || m.transparent || m.visible === false || !m.isMeshStandardMaterial) return this.metalnessOffMaterial;
+    let r = m.userData?.ssr;
+    if (typeof r !== 'number') r = clamp((0.5 - m.roughness) / 0.45, 0, 1) * (0.55 + 0.45 * m.metalness);
+    const i = Math.round(clamp(r, 0, 1) * 8) - 1;
+    return i < 0 ? this.metalnessOffMaterial : this._levels[i];
+  }
+  dispose() { super.dispose(); for (const m of this._levels) m.dispose(); }
+  render(renderer, writeBuffer, readBuffer, dt, mask) {
+    const cam = this.camera, u = this.ssrMaterial.uniforms, d = this.ssrMaterial.defines;
+    // Matrizen jedes Bild übernehmen (Jitter, Zoom, Seitenverhältnis)
+    u.cameraProjectionMatrix.value.copy(cam.projectionMatrix);
+    u.cameraInverseProjectionMatrix.value.copy(cam.projectionMatrixInverse);
+    u.cameraNear.value = cam.near; u.cameraFar.value = cam.far;
+    const persp = !!cam.isPerspectiveCamera;
+    if (('PERSPECTIVE_CAMERA' in d) !== persp) {
+      if (persp) d.PERSPECTIVE_CAMERA = true; else delete d.PERSPECTIVE_CAMERA;
+      this.ssrMaterial.needsUpdate = true;
+    }
+    super.render(renderer, writeBuffer, readBuffer, dt, mask);
+  }
+  // Hilfsdurchläufe (Normalen/Reflexionsmaske) ohne erneutes Schattenkarten-Rendern, ohne Punkte/Linien/Sprites
+  _aux(renderer, fn) {
+    const au = renderer.shadowMap.autoUpdate, hidden = [];
+    renderer.shadowMap.autoUpdate = false;
+    this.scene.traverseVisible((o) => { if (ssrHidden(o)) hidden.push(o); });
+    for (const o of hidden) o.visible = false;
+    try { fn(); } finally {
+      for (const o of hidden) o.visible = true;
+      renderer.shadowMap.autoUpdate = au;
+    }
+  }
+  renderOverride(renderer, ...args) { this._aux(renderer, () => super.renderOverride(renderer, ...args)); }
+  renderMetalness(renderer, overrideMaterial, renderTarget, clearColor, clearAlpha) {
+    if (!this.autoSelect) { this._aux(renderer, () => super.renderMetalness(renderer, overrideMaterial, renderTarget, clearColor, clearAlpha)); return; }
+    this._aux(renderer, () => {
+      const scene = this.scene, bg = scene.background, fog = scene.fog, ac = renderer.autoClear;
+      this.originalClearColor.copy(renderer.getClearColor(this.tempColor));
+      const ca = renderer.getClearAlpha();
+      renderer.setRenderTarget(renderTarget);
+      renderer.autoClear = false;
+      renderer.setClearColor(0x000000, 0);
+      renderer.clear();
+      scene.background = null; scene.fog = null;
+      const swapped = [];
+      scene.traverseVisible((o) => { if (o.isMesh) { swapped.push(o, o.material); o.material = this.maskFor(o.material); } });
+      try { renderer.render(scene, this.camera); } finally {
+        for (let i = 0; i < swapped.length; i += 2) swapped[i].material = swapped[i + 1];
+        scene.background = bg; scene.fog = fog;
+        renderer.autoClear = ac;
+        renderer.setClearColor(this.originalClearColor, ca);
+      }
+    });
+  }
+}
+
 function halton(i, b) {
   let f = 1, r = 0;
   while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); }
@@ -343,7 +541,8 @@ export class Engine {
     this.settings = settings;
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     this.renderer.setPixelRatio(1);
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.mobile = isTouchDevice() && Math.min(screen.width, screen.height) < 900;
+    this.renderer.toneMapping = THREE.AgXToneMapping;
     this.renderer.toneMappingExposure = 1.0;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.shadowMap.enabled = true;
@@ -359,8 +558,12 @@ export class Engine {
     this.renderPass = new RenderPass(this.scene, this.camera);
     this.tsrScene = new TSRScenePass();
     this.tsrScene.scene = this.scene; this.tsrScene.camera = this.camera;
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.5, 0.82);
-    this.output = new OutputPass();
+    // Bloom: nur HDR-Spitzen (> 1.0, weiches Knie) – Emissionen/Spitzlichter, keine hellen Wände
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.8, 0.45, 1.0);
+    this.bloom.highPassUniforms.smoothWidth.value = 0.5;
+    this.bloom.materialHighPassFilter.fragmentShader = BLOOM_HIGHPASS_FRAG;
+    this.bloom.materialHighPassFilter.needsUpdate = true;
+    this.output = new GradedOutputPass();
     this.superRes = new ShaderPass(SuperResShader);
     this.tsr = new TSRResolvePass();
     this.tsr.depthTexture = this.tsrScene.rt.depthTexture;
@@ -372,6 +575,10 @@ export class Engine {
     this.composer.addPass(this.tsr);
     this.ao = null; // GTAO wird erst bei Bedarf erzeugt
     this.aoActive = false;
+    this.ssr = null; // Spiegelungen (SSR) werden erst bei Bedarf erzeugt
+    this.ssrActive = false;
+    this._shadowKey = '';
+    this._shadowVer = 0;
 
     // TSR-Zustand
     this.tsrSupported = this.probeTSR();
@@ -450,7 +657,7 @@ export class Engine {
   // Anzeigename des aktiven Verfahrens (für Leistungsanzeige/Einstellungen)
   get methodLabel() {
     const fb = (this.settings.upscaler || 'temporal') === 'temporal' && this.method !== 'temporal' ? ' (Fallback)' : '';
-    return (UPSCALERS[this.method] || UPSCALERS.spatial).short + fb + (this.aoActive ? ` · AO ${this.settings.ao === 'high' ? 'hoch' : 'niedrig'}` : '');
+    return (UPSCALERS[this.method] || UPSCALERS.spatial).short + fb + (this.aoActive ? ` · AO ${this.settings.ao === 'high' ? 'hoch' : 'niedrig'}` : '') + (this.ssrActive ? ' · SSR' : '');
   }
 
   applySettings() {
@@ -463,6 +670,21 @@ export class Engine {
     const fu = this.tsr.finalMat.uniforms;
     fu.vignette.value = vig; fu.grain.value = grain; fu.sharpness.value = s.sharpness;
     this.shadowSize = s.shadows === 'high' ? 2048 : s.shadows === 'med' ? 1024 : 512;
+    // Tonemapping (OutputPass liest renderer.toneMapping) + sRGB-Ausgabe
+    const tm = TONEMAPS[s.toneMap] || TONEMAPS.agx;
+    this.renderer.toneMapping = tm.tm;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this._tmExposure = tm.exposure;
+    // Farbstimmung
+    const g = GRADINGS[s.grading] || GRADINGS.filmic;
+    for (const u of [this.superRes.uniforms, fu]) {
+      u.gOn.value = g.on;
+      if (!g.on) continue;
+      u.gLift.value.fromArray(g.lift); u.gGamma.value.fromArray(g.gamma); u.gGain.value.fromArray(g.gain);
+      u.gSat.value = g.sat; u.gCon.value = g.con;
+      u.gShadowTint.value.fromArray(g.shadowTint); u.gHighTint.value.fromArray(g.highTint);
+    }
+    this.applyShadowFilter();
     this.configurePipeline();
     this.resize();
     this.wake();
@@ -482,13 +704,41 @@ export class Engine {
       }
       this.resetHistory();
     }
-    this.renderPass.enabled = !temporal;
     this.superRes.enabled = !temporal;
-    this.tsrScene.enabled = temporal;
     this.tsr.enabled = temporal;
 
-    // Umgebungsverdeckung: nur wenn die Szene es will (mode.ao oder Bodenkampf mit units)
+    // Spiegelungen (SSR): nur Desktop, Einstellung an UND Szene will es (mode.ssr === true)
     const m = this.active;
+    const ssrOn = !!m && m.ssr === true && s.ssr === true && !this.mobile && !this._ssrFailed;
+    if (ssrOn && !this.ssr) {
+      try {
+        const w = Math.max(2, this.internalW || 2), h = Math.max(2, this.internalH || 2);
+        this.ssr = new SceneSSRPass({ renderer: this.renderer, scene: m.scene, camera: m.camera, width: w, height: h, selects: null });
+        this.ssr.blur = true;
+        this.composer.insertPass(this.ssr, this.composer.passes.indexOf(this.tsrScene) + 1);
+      } catch (e) {
+        console.warn('AEGIS: Spiegelungen (SSR) nicht verfügbar', e);
+        this.ssr = null; this._ssrFailed = true;
+      }
+    }
+    if (this.ssr) {
+      this.ssr.enabled = ssrOn;
+      if (m) {
+        this.ssr.scene = m.scene; this.ssr.camera = m.camera;
+        this.ssr.selects = Array.isArray(m.ssrSelects) ? m.ssrSelects : SSR_AUTO;
+        this.ssr.opacity = typeof m.ssrOpacity === 'number' ? m.ssrOpacity : 0.5;
+        if (typeof m.ssrMaxDistance === 'number') this.ssr.maxDistance = m.ssrMaxDistance;
+        if (typeof m.ssrThickness === 'number') this.ssr.thickness = m.ssrThickness;
+      }
+    }
+    const ssrActive = !!(this.ssr && ssrOn);
+    if (ssrActive !== this.ssrActive) this.resetHistory();
+    this.ssrActive = ssrActive;
+    this.renderPass.enabled = !temporal && !ssrActive;
+    this.tsrScene.enabled = temporal && !ssrActive;
+    this.tsr.depthTexture = ssrActive ? this.ssr.beautyRenderTarget.depthTexture : this.tsrScene.rt.depthTexture;
+
+    // Umgebungsverdeckung: nur wenn die Szene es will (mode.ao oder Bodenkampf mit units)
     const wants = !!m && (m.ao === true || (m.ao !== false && Array.isArray(m.units)));
     const level = s.ao === 'high' || s.ao === 'low' ? s.ao : 'off';
     const on = wants && level !== 'off';
@@ -497,7 +747,7 @@ export class Engine {
         this.ao = new AOPass(m.scene, m.camera);
         this.ao.updateGtaoMaterial({ radius: 1.8, distanceExponent: 1.5, thickness: 2.5, distanceFallOff: 1, scale: 1.6 });
         this.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6 });
-        this.composer.insertPass(this.ao, this.composer.passes.indexOf(this.tsrScene) + 1);
+        this.composer.insertPass(this.ao, this.composer.passes.indexOf(this.ssr || this.tsrScene) + 1);
         this._aoLevel = null;
       } catch (e) {
         console.warn('AEGIS: Umgebungsverdeckung nicht verfügbar', e);
@@ -524,6 +774,56 @@ export class Engine {
       }
     }
     this.aoActive = !!(this.ao && on);
+  }
+
+  // Schattenqualität: off | pcf (weich, PCFSoft) | vsm (sehr weich) | pcss (Kontaktschatten, nur Desktop)
+  get shadowFilter() {
+    let f = this.settings.shadowFilter || 'pcf';
+    if (f === 'pcss' && (this.mobile || !PCSS_AVAILABLE)) f = 'pcf';
+    return ['off', 'pcf', 'vsm', 'pcss'].includes(f) ? f : 'pcf';
+  }
+
+  applyShadowFilter() {
+    const f = this.shadowFilter, sm = this.renderer.shadowMap;
+    const type = f === 'vsm' ? THREE.VSMShadowMap : f === 'pcss' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    const enabled = f !== 'off';
+    const key = `${enabled}|${type}`;
+    if (key === this._shadowKey) return;
+    const first = !this._shadowKey;
+    this._shadowKey = key;
+    sm.enabled = enabled;
+    sm.type = type;
+    sm.needsUpdate = true;
+    this._shadowVer++;
+    if (!first) {
+      // Programme hängen vom Schattentyp ab -> Materialien der aktiven Szene neu kompilieren
+      if (this.active?.scene) this.refreshMaterials(this.active.scene);
+      this.resetHistory();
+    }
+  }
+
+  // Materialien neu kompilieren (Schattentyp/-modus gewechselt) und Schattenparameter je Typ setzen.
+  // Modi rufen das nicht selbst auf: setMode() und applySettings() erledigen es für die aktive Szene.
+  refreshMaterials(root) {
+    const seen = new Set();
+    this.applyShadowParams(root);
+    root.traverse((o) => {
+      const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null;
+      if (mats) for (const m of mats) if (m && !seen.has(m)) { seen.add(m); m.needsUpdate = true; }
+    });
+    root.userData.__shadowVer = this._shadowVer;
+  }
+
+  // Schattenparameter je Filtertyp (VSM: Weichzeichnungsradius; light.userData.vsmRadius überschreibt)
+  applyShadowParams(root) {
+    const vsm = this.renderer.shadowMap.type === THREE.VSMShadowMap;
+    root.traverse((o) => {
+      if (!(o.isLight && o.shadow && o.castShadow)) return;
+      if (o.userData.__shadowRadius0 === undefined) o.userData.__shadowRadius0 = o.shadow.radius;
+      if (vsm) { o.shadow.radius = o.userData.vsmRadius ?? 3; o.shadow.blurSamples = 10; }
+      else o.shadow.radius = o.userData.__shadowRadius0;
+      o.shadow.needsUpdate = true;
+    });
   }
 
   // History verwerfen (Moduswechsel, Größenänderung, Kamerasprung, Verfahrenswechsel)
@@ -571,6 +871,10 @@ export class Engine {
     this.renderPass.camera = camera;
     this.tsrScene.scene = scene;
     this.tsrScene.camera = camera;
+    // Szene wurde mit anderem Schattentyp kompiliert (Einstellung während eines anderen Modus geändert)
+    const sv = scene.userData.__shadowVer;
+    if (sv !== undefined && sv !== this._shadowVer) this.refreshMaterials(scene);
+    else { scene.userData.__shadowVer = this._shadowVer; this.applyShadowParams(scene); }
     this.resetHistory();
     this.configurePipeline();
     this.resize();
@@ -671,6 +975,9 @@ export class Engine {
   }
 
   renderFrame(dt) {
+    // Belichtung: Tonemapper-Abgleich × optional mode.exposure (zusätzlich zu renderer.toneMappingExposure)
+    const me = this.active?.exposure;
+    this.output.exposureScale = (this._tmExposure || 1) * (typeof me === 'number' ? me : 1);
     this.superRes.uniforms.time.value = this.time % 100;
     this.tsr.finalMat.uniforms.time.value = this.time % 100;
     const temporal = this.method === 'temporal' && !!this.active.camera;
