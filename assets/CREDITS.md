@@ -13,7 +13,6 @@ Lizenztext CC0: https://creativecommons.org/publicdomain/zero/1.0/deed.de
 
 ## Aliens
 
-- **Vael (Basis):** Anny-Körpermodell (NAVER LABS Europe; Mesh aus MakeHuman/MPFB2-Daten, CC0 – https://github.com/naver/anny) in der Fassung von Open Yoga Poses; Animationen Quaternius (s. o.); Umbau zum grauen Alien: AEGIS-Projekt
 
 ## Fahrzeuge
 

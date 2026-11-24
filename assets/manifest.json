@@ -1,2221 +1,2164 @@
 {
- "generated": "2026-11-24",
- "base_path": "assets/",
- "loader": "GLTFLoader + setMeshoptDecoder(MeshoptDecoder) (vendor/three/addons/libs/meshopt_decoder.module.js); alle GLB nutzen EXT_meshopt_compression + KHR_mesh_quantization, Texturen EXT_texture_webp",
- "units": "Meter, +Y oben, glTF-Konvention",
- "assets": [
-  {
-   "id": "human_m_01",
-   "file": "characters/human_m_01.glb",
-   "type": "character",
-   "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'joe'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
-   "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/joe.glb",
-   "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
-   "license_urls_extra": [
-    "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
-    "https://quaternius.com/packs/universalanimationlibrary.html",
-    "https://github.com/makehumancommunity/mpfb2"
-   ],
-   "scale_hint_m": 1.75,
-   "sex": "m",
-   "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
-   "animations": [
-    "Idle_Loop",
-    "Walk_Loop",
-    "Jog_Fwd_Loop",
-    "Sprint_Loop",
-    "Crouch_Idle_Loop",
-    "Crouch_Fwd_Loop",
-    "Pistol_Idle_Loop",
-    "Pistol_Aim_Neutral",
-    "Pistol_Aim_Up",
-    "Pistol_Aim_Down",
-    "Pistol_Shoot",
-    "Pistol_Reload",
-    "Hit_Chest",
-    "Hit_Head",
-    "Death01",
-    "Fixing_Kneeling",
-    "Interact",
-    "Roll",
-    "Idle_Talking_Loop",
-    "Sitting_Idle_Loop",
-    "PickUp_Table"
-   ],
-   "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "size_bytes": 1097688,
-   "tech": {
-    "bbox_m": [
-     1.092,
-     1.752,
-     0.471
-    ],
-    "height_m": 1.752,
-    "triangles": 18927,
-    "materials": [
-     "skin",
-     "brows",
-     "brows.001",
-     "eyes",
-     "clothes_bottom",
-     "clothes_top",
-     "hair"
-    ],
-    "bones": 163,
-    "animation_count": 21,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "human_m_02",
-   "file": "characters/human_m_02.glb",
-   "type": "character",
-   "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'kenji'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
-   "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/kenji.glb",
-   "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
-   "license_urls_extra": [
-    "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
-    "https://quaternius.com/packs/universalanimationlibrary.html",
-    "https://github.com/makehumancommunity/mpfb2"
-   ],
-   "scale_hint_m": 1.75,
-   "sex": "m",
-   "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
-   "animations": [
-    "Idle_Loop",
-    "Walk_Loop",
-    "Jog_Fwd_Loop",
-    "Sprint_Loop",
-    "Crouch_Idle_Loop",
-    "Crouch_Fwd_Loop",
-    "Pistol_Idle_Loop",
-    "Pistol_Aim_Neutral",
-    "Pistol_Aim_Up",
-    "Pistol_Aim_Down",
-    "Pistol_Shoot",
-    "Pistol_Reload",
-    "Hit_Chest",
-    "Hit_Head",
-    "Death01",
-    "Fixing_Kneeling",
-    "Interact",
-    "Roll",
-    "Idle_Talking_Loop",
-    "Sitting_Idle_Loop",
-    "PickUp_Table"
-   ],
-   "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "size_bytes": 1119564,
-   "tech": {
-    "bbox_m": [
-     1.073,
-     1.709,
-     0.463
-    ],
-    "height_m": 1.709,
-    "triangles": 18926,
-    "materials": [
-     "skin",
-     "brows",
-     "brows.001",
-     "eyes",
-     "clothes_bottom",
-     "clothes_top",
-     "hair"
-    ],
-    "bones": 163,
-    "animation_count": 21,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "human_m_03",
-   "file": "characters/human_m_03.glb",
-   "type": "character",
-   "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'kwame'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
-   "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/kwame.glb",
-   "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
-   "license_urls_extra": [
-    "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
-    "https://quaternius.com/packs/universalanimationlibrary.html",
-    "https://github.com/makehumancommunity/mpfb2"
-   ],
-   "scale_hint_m": 1.75,
-   "sex": "m",
-   "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
-   "animations": [
-    "Idle_Loop",
-    "Walk_Loop",
-    "Jog_Fwd_Loop",
-    "Sprint_Loop",
-    "Crouch_Idle_Loop",
-    "Crouch_Fwd_Loop",
-    "Pistol_Idle_Loop",
-    "Pistol_Aim_Neutral",
-    "Pistol_Aim_Up",
-    "Pistol_Aim_Down",
-    "Pistol_Shoot",
-    "Pistol_Reload",
-    "Hit_Chest",
-    "Hit_Head",
-    "Death01",
-    "Fixing_Kneeling",
-    "Interact",
-    "Roll",
-    "Idle_Talking_Loop",
-    "Sitting_Idle_Loop",
-    "PickUp_Table"
-   ],
-   "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "size_bytes": 932256,
-   "tech": {
-    "bbox_m": [
-     1.146,
-     1.773,
-     0.49
-    ],
-    "height_m": 1.773,
-    "triangles": 18926,
-    "materials": [
-     "skin",
-     "hair",
-     "brows",
-     "brows.001",
-     "eyes",
-     "clothes_bottom",
-     "clothes_top"
-    ],
-    "bones": 163,
-    "animation_count": 21,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "human_f_01",
-   "file": "characters/human_f_01.glb",
-   "type": "character",
-   "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'mia'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
-   "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/mia.glb",
-   "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
-   "license_urls_extra": [
-    "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
-    "https://quaternius.com/packs/universalanimationlibrary.html",
-    "https://github.com/makehumancommunity/mpfb2"
-   ],
-   "scale_hint_m": 1.7,
-   "sex": "f",
-   "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
-   "animations": [
-    "Idle_Loop",
-    "Walk_Loop",
-    "Jog_Fwd_Loop",
-    "Sprint_Loop",
-    "Crouch_Idle_Loop",
-    "Crouch_Fwd_Loop",
-    "Pistol_Idle_Loop",
-    "Pistol_Aim_Neutral",
-    "Pistol_Aim_Up",
-    "Pistol_Aim_Down",
-    "Pistol_Shoot",
-    "Pistol_Reload",
-    "Hit_Chest",
-    "Hit_Head",
-    "Death01",
-    "Fixing_Kneeling",
-    "Interact",
-    "Roll",
-    "Idle_Talking_Loop",
-    "Sitting_Idle_Loop",
-    "PickUp_Table"
-   ],
-   "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "size_bytes": 1229032,
-   "tech": {
-    "bbox_m": [
-     1.03,
-     1.714,
-     0.47
-    ],
-    "height_m": 1.714,
-    "triangles": 18925,
-    "materials": [
-     "skin",
-     "brows",
-     "brows.001",
-     "clothes_bottom",
-     "clothes_top",
-     "eyes",
-     "hair"
-    ],
-    "bones": 163,
-    "animation_count": 21,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "human_f_02",
-   "file": "characters/human_f_02.glb",
-   "type": "character",
-   "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'lucia'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
-   "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/lucia.glb",
-   "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
-   "license_urls_extra": [
-    "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
-    "https://quaternius.com/packs/universalanimationlibrary.html",
-    "https://github.com/makehumancommunity/mpfb2"
-   ],
-   "scale_hint_m": 1.7,
-   "sex": "f",
-   "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
-   "animations": [
-    "Idle_Loop",
-    "Walk_Loop",
-    "Jog_Fwd_Loop",
-    "Sprint_Loop",
-    "Crouch_Idle_Loop",
-    "Crouch_Fwd_Loop",
-    "Pistol_Idle_Loop",
-    "Pistol_Aim_Neutral",
-    "Pistol_Aim_Up",
-    "Pistol_Aim_Down",
-    "Pistol_Shoot",
-    "Pistol_Reload",
-    "Hit_Chest",
-    "Hit_Head",
-    "Death01",
-    "Fixing_Kneeling",
-    "Interact",
-    "Roll",
-    "Idle_Talking_Loop",
-    "Sitting_Idle_Loop",
-    "PickUp_Table"
-   ],
-   "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "size_bytes": 1014884,
-   "tech": {
-    "bbox_m": [
-     1.039,
-     1.715,
-     0.441
-    ],
-    "height_m": 1.715,
-    "triangles": 18928,
-    "materials": [
-     "skin",
-     "brows",
-     "brows.001",
-     "clothes_bottom",
-     "clothes_top",
-     "hair",
-     "eyes"
-    ],
-    "bones": 163,
-    "animation_count": 21,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "human_f_03",
-   "file": "characters/human_f_03.glb",
-   "type": "character",
-   "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'amara'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
-   "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/amara.glb",
-   "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
-   "license_urls_extra": [
-    "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
-    "https://quaternius.com/packs/universalanimationlibrary.html",
-    "https://github.com/makehumancommunity/mpfb2"
-   ],
-   "scale_hint_m": 1.7,
-   "sex": "f",
-   "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
-   "animations": [
-    "Idle_Loop",
-    "Walk_Loop",
-    "Jog_Fwd_Loop",
-    "Sprint_Loop",
-    "Crouch_Idle_Loop",
-    "Crouch_Fwd_Loop",
-    "Pistol_Idle_Loop",
-    "Pistol_Aim_Neutral",
-    "Pistol_Aim_Up",
-    "Pistol_Aim_Down",
-    "Pistol_Shoot",
-    "Pistol_Reload",
-    "Hit_Chest",
-    "Hit_Head",
-    "Death01",
-    "Fixing_Kneeling",
-    "Interact",
-    "Roll",
-    "Idle_Talking_Loop",
-    "Sitting_Idle_Loop",
-    "PickUp_Table"
-   ],
-   "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "size_bytes": 932016,
-   "tech": {
-    "bbox_m": [
-     1.047,
-     1.728,
-     0.447
-    ],
-    "height_m": 1.728,
-    "triangles": 18925,
-    "materials": [
-     "skin",
-     "hair",
-     "brows",
-     "brows.001",
-     "clothes_bottom",
-     "clothes_top",
-     "eyes"
-    ],
-    "bones": 163,
-    "animation_count": 21,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "alien_vael",
-   "file": "aliens/vael.glb",
-   "type": "alien",
-   "author": "Anny-Körpermodell (NAVER LABS, Mesh aus MakeHuman/MPFB2-Daten) via Open Yoga Poses ('kenji', light); Animationen: Quaternius UAL; Umbau (grau, Kopf x1.6) für AEGIS",
-   "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/kenji.glb",
-   "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
-   "license_urls_extra": [
-    "https://github.com/naver/anny#license",
-    "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE"
-   ],
-   "scale_hint_m": 1.75,
-   "rig": "MakeHuman 'default' ohne Gesichtsbones (104 Joints)",
-   "animations": [
-    "Idle_Loop",
-    "Walk_Loop",
-    "Jog_Fwd_Loop",
-    "Sprint_Loop",
-    "Crouch_Idle_Loop",
-    "Crouch_Fwd_Loop",
-    "Pistol_Idle_Loop",
-    "Pistol_Aim_Neutral",
-    "Pistol_Aim_Up",
-    "Pistol_Aim_Down",
-    "Pistol_Shoot",
-    "Pistol_Reload",
-    "Hit_Chest",
-    "Hit_Head",
-    "Death01",
-    "Fixing_Kneeling",
-    "Interact",
-    "Roll",
-    "Idle_Talking_Loop",
-    "Sitting_Idle_Loop",
-    "PickUp_Table"
-   ],
-   "notes": "Experimentelle Vael-Basis: glatter grauer Körper, Kopf-Bone skaliert 1.6. Keine Augen/Details -> große schwarze Augen o.ä. prozedural an Bone 'head' hängen. Material 'alien_skin' (tintable). Benötigt MeshoptDecoder.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "size_bytes": 532400,
-   "tech": {
-    "bbox_m": [
-     1.085,
-     1.797,
-     0.448
-    ],
-    "height_m": 1.797,
-    "triangles": 9000,
-    "materials": [
-     "alien_skin"
-    ],
-    "bones": 104,
-    "animation_count": 21,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "vehicle_sedan",
-   "file": "vehicles/sedan.glb",
-   "type": "vehicle",
-   "author": "Quaternius (Low Poly Cars Pack)",
-   "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/vehicles/q-cars-normalcar1.glb",
-   "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
-   "license_urls_extra": [
-    "https://quaternius.com/packs/cars.html",
-    "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
-   ],
-   "scale_hint_m": 4.22,
-   "notes": "Limousine, Low-Poly mit Flat-Farben (kein Textur-Download). Material 'car_paint' einfärbbar; 'car_headlight'/'car_taillight' mit Emissive. Maßstab bereits in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 52812,
-   "tech": {
-    "bbox_m": [
-     1.807,
-     1.177,
-     4.221
-    ],
-    "height_m": 1.177,
-    "triangles": 2954,
-    "materials": [
-     "car_taillight",
-     "car_headlight",
-     "car_chrome_rims",
-     "car_tyre_trim",
-     "car_glass",
-     "car_paint"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "front_measured": "+Z",
-    "parts": [
-     "TailLights",
-     "Headlights",
-     "Grey",
-     "Black",
-     "Windows",
-     "Blue"
-    ]
-   }
-  },
-  {
-   "id": "vehicle_hatchback",
-   "file": "vehicles/hatchback.glb",
-   "type": "vehicle",
-   "author": "Quaternius (Low Poly Cars Pack)",
-   "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/vehicles/q-cars-normalcar2.glb",
-   "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
-   "license_urls_extra": [
-    "https://quaternius.com/packs/cars.html",
-    "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
-   ],
-   "scale_hint_m": 3.31,
-   "notes": "Kompaktwagen/Kombi, Low-Poly mit Flat-Farben (kein Textur-Download). Material 'car_paint' einfärbbar; 'car_headlight'/'car_taillight' mit Emissive. Maßstab bereits in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 57420,
-   "tech": {
-    "bbox_m": [
-     1.639,
-     1.146,
-     3.31
-    ],
-    "height_m": 1.146,
-    "triangles": 3124,
-    "materials": [
-     "car_taillight",
-     "car_trim",
-     "car_headlight",
-     "car_chrome_rims",
-     "car_tyre_trim",
-     "car_glass",
-     "car_paint"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "front_measured": "+Z",
-    "parts": [
-     "TailLights",
-     "Material.007",
-     "Headlights",
-     "Grey",
-     "Black",
-     "Windows",
-     "LightBlue"
-    ]
-   }
-  },
-  {
-   "id": "vehicle_suv",
-   "file": "vehicles/suv.glb",
-   "type": "vehicle",
-   "author": "Quaternius (Low Poly Cars Pack)",
-   "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/vehicles/q-cars-suv.glb",
-   "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
-   "license_urls_extra": [
-    "https://quaternius.com/packs/cars.html",
-    "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
-   ],
-   "scale_hint_m": 4.21,
-   "notes": "SUV/Van, Low-Poly mit Flat-Farben (kein Textur-Download). Material 'car_paint' einfärbbar; 'car_headlight'/'car_taillight' mit Emissive. Maßstab bereits in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 58424,
-   "tech": {
-    "bbox_m": [
-     2.111,
-     1.528,
-     4.209
-    ],
-    "height_m": 1.528,
-    "triangles": 3294,
-    "materials": [
-     "car_taillight",
-     "car_headlight",
-     "car_chrome_rims",
-     "car_tyre_trim",
-     "car_glass",
-     "car_paint"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "front_measured": "+Z",
-    "parts": [
-     "TailLights",
-     "Headlights",
-     "Grey",
-     "Black",
-     "Windows",
-     "White"
-    ]
-   }
-  },
-  {
-   "id": "vehicle_police",
-   "file": "vehicles/police.glb",
-   "type": "vehicle",
-   "author": "Quaternius (Low Poly Cars Pack)",
-   "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/vehicles/q-cars-cop.glb",
-   "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
-   "license_urls_extra": [
-    "https://quaternius.com/packs/cars.html",
-    "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
-   ],
-   "scale_hint_m": 3.73,
-   "notes": "Polizeiwagen, Low-Poly mit Flat-Farben (kein Textur-Download). Material 'car_paint' einfärbbar; 'car_headlight'/'car_taillight' mit Emissive. Maßstab bereits in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 60240,
-   "tech": {
-    "bbox_m": [
-     1.778,
-     1.239,
-     3.73
-    ],
-    "height_m": 1.239,
-    "triangles": 3232,
-    "materials": [
-     "bluelights",
-     "whitelights",
-     "car_taillight",
-     "car_tyre_trim",
-     "car_headlight",
-     "car_chrome_rims",
-     "car_glass",
-     "car_paint"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "front_measured": "+Z",
-    "parts": [
-     "BlueLights",
-     "WhiteLights",
-     "TailLights",
-     "Black",
-     "Headlights",
-     "Grey",
-     "Windows",
-     "White"
-    ]
-   }
-  },
-  {
-   "id": "vehicle_covered_car",
-   "file": "vehicles/covered_car.glb",
-   "type": "vehicle",
-   "author": "MP (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/covered_car",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 4.38,
-   "notes": "Abgedecktes Auto (Plane), fotorealistisch – gutes Deckungs-Hindernis. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 366296,
-   "tech": {
-    "bbox_m": [
-     1.788,
-     1.411,
-     4.38
-    ],
-    "height_m": 1.411,
-    "triangles": 7996,
-    "materials": [
-     "covered_car"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "covered_car_wheel_01",
-     "covered_car_wheel_02",
-     "covered_car_wheel_03",
-     "covered_car_wheel_04",
-     "covered_car"
-    ]
-   }
-  },
-  {
-   "id": "prop_barrel",
-   "file": "props/barrel.glb",
-   "type": "prop",
-   "author": "Jorge Camacho (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/Barrel_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.88,
-   "notes": "Ölfass (rot, 'explosive'-Variante). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 142940,
-   "tech": {
-    "bbox_m": [
-     0.563,
-     0.88,
-     0.563
-    ],
-    "height_m": 0.88,
-    "triangles": 2682,
-    "materials": [
-     "Barrel_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_wooden_crate_01",
-   "file": "props/wooden_crate_01.glb",
-   "type": "prop",
-   "author": "James Ray Cock (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/wooden_crate_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.83,
-   "notes": "Holzkiste. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 129752,
-   "tech": {
-    "bbox_m": [
-     0.824,
-     0.349,
-     0.407
-    ],
-    "height_m": 0.349,
-    "triangles": 2496,
-    "materials": [
-     "wooden_crate_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "wooden_crate_01_lid",
-     "wooden_crate_01",
-     "wooden_crate_01_latch"
-    ]
-   }
-  },
-  {
-   "id": "prop_wooden_crate_02",
-   "file": "props/wooden_crate_02.glb",
-   "type": "prop",
-   "author": "James Ray Cock, Jurita Burger (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/wooden_crate_02",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.17,
-   "notes": "Holzkiste 2. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 134156,
-   "tech": {
-    "bbox_m": [
-     0.529,
-     0.464,
-     1.166
-    ],
-    "height_m": 0.464,
-    "triangles": 2499,
-    "materials": [
-     "wooden_crate_02"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "wooden_crate_02_crate",
-     "wooden_crate_02_lid"
-    ]
-   }
-  },
-  {
-   "id": "prop_cardboard_box",
-   "file": "props/cardboard_box.glb",
-   "type": "prop",
-   "author": "Rahul Chaudhary (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/cardboard_box_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.52,
-   "notes": "Pappkarton. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 98300,
-   "tech": {
-    "bbox_m": [
-     0.387,
-     0.341,
-     0.516
-    ],
-    "height_m": 0.341,
-    "triangles": 1500,
-    "materials": [
-     "cardboard_box_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_trash_can",
-   "file": "props/trash_can.glb",
-   "type": "prop",
-   "author": "GurJas Studios (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/metal_trash_can",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.85,
-   "notes": "Metall-Mülltonne. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 315120,
-   "tech": {
-    "bbox_m": [
-     1.777,
-     0.906,
-     0.553
-    ],
-    "height_m": 0.906,
-    "triangles": 2994,
-    "materials": [
-     "metal_trash_can",
-     "metal_trash_can_rust"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "metal_trash_can_handle_left",
-     "metal_trash_can_lid",
-     "metal_trash_can",
-     "metal_trash_can_handle_right",
-     "metal_trash_can_rust",
-     "metal_trash_can_rust_handle_left",
-     "metal_trash_can_rust_handle_right",
-     "metal_trash_can_rust_lid"
-    ]
-   }
-  },
-  {
-   "id": "prop_street_lamp_01",
-   "file": "props/street_lamp_01.glb",
-   "type": "prop",
-   "author": "Josh Dean (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/street_lamp_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 3.87,
-   "notes": "Straßenlaterne. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 93856,
-   "tech": {
-    "bbox_m": [
-     0.702,
-     3.87,
-     0.385
-    ],
-    "height_m": 3.87,
-    "triangles": 3163,
-    "materials": [
-     "street_lamp_01",
-     "street_lamp_01_glass"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_street_lamp_02",
-   "file": "props/street_lamp_02.glb",
-   "type": "prop",
-   "author": "Josh Dean (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/street_lamp_02",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.68,
-   "notes": "Straßenlaterne 2. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 105324,
-   "tech": {
-    "bbox_m": [
-     0.385,
-     1.671,
-     0.805
-    ],
-    "height_m": 1.671,
-    "triangles": 3151,
-    "materials": [
-     "street_lamp_02",
-     "street_lamp_02_glass"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_fire_hydrant",
-   "file": "props/fire_hydrant.glb",
-   "type": "prop",
-   "author": "Gonçalo Felício (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/fire_hydrant",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.87,
-   "notes": "Hydrant (stark vereinfacht 86k->1.5k Dreiecke). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 207128,
-   "tech": {
-    "bbox_m": [
-     0.873,
-     0.799,
-     0.316
-    ],
-    "height_m": 0.799,
-    "triangles": 1518,
-    "materials": [
-     "fire_hydrant",
-     "fire_hydrant_aged"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "fire_hydrant",
-     "fire_hydrant_cap_01",
-     "fire_hydrant_cap_02",
-     "fire_hydrant_cap_03",
-     "fire_hydrant_chain",
-     "fire_hydrant_aged",
-     "fire_hydrant_cap_01_aged",
-     "fire_hydrant_cap_02_aged",
-     "fire_hydrant_cap_03_aged",
-     "fire_hydrant_chain_aged"
-    ]
-   }
-  },
-  {
-   "id": "prop_bench_wooden",
-   "file": "props/bench_wooden.glb",
-   "type": "prop",
-   "author": "Kirill Sannikov (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/painted_wooden_bench",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.16,
-   "notes": "Holzbank. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 75060,
-   "tech": {
-    "bbox_m": [
-     1.165,
-     0.889,
-     0.496
-    ],
-    "height_m": 0.889,
-    "triangles": 630,
-    "materials": [
-     "painted_wooden_bench"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_street_seating",
-   "file": "props/street_seating.glb",
-   "type": "prop",
-   "author": "Stuart Attenborrow (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/modular_street_seating",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 4.34,
-   "notes": "Modulare Stadtbänke (mehrere Teile in einer Datei). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 426820,
-   "tech": {
-    "bbox_m": [
-     4.34,
-     0.95,
-     0.77
-    ],
-    "height_m": 0.95,
-    "triangles": 8027,
-    "materials": [
-     "modular_street_seating_supports",
-     "modular_street_seating_armrests",
-     "modular_street_seating_timber",
-     "modular_street_seating_connectors"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "legs_double",
-     "legs_single",
-     "suspended_support_01",
-     "suspended_support_02",
-     "back_support_r",
-     "back_support_l",
-     "arm_rest_01",
-     "arm_rest_02",
-     "seat",
-     "seat_back",
-     "connector_60",
-     "connector_45",
-     "connector_90",
-     "connector_30",
-     "seat_bench"
-    ]
-   }
-  },
-  {
-   "id": "prop_road_barrier",
-   "file": "props/road_barrier.glb",
-   "type": "prop",
-   "author": "Amal Kumar (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/concrete_road_barrier",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.55,
-   "notes": "Beton-Straßensperre. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 133036,
-   "tech": {
-    "bbox_m": [
-     1.544,
-     0.83,
-     0.639
-    ],
-    "height_m": 0.83,
-    "triangles": 2498,
-    "materials": [
-     "concrete_road_barrier"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_chainlink_fence",
-   "file": "props/chainlink_fence.glb",
-   "type": "prop",
-   "author": "James Ray Cock, Amal Kumar (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/modular_chainlink_fence",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 8.12,
-   "notes": "Maschendrahtzaun-Baukasten (mehrere Teile in einer Datei; Draht als Alpha-Textur). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 497884,
-   "tech": {
-    "bbox_m": [
-     8.109,
-     2.5,
-     2.148
-    ],
-    "height_m": 2.5,
-    "triangles": 10146,
-    "materials": [
-     "modular_chainlink_fence_posts",
-     "modular_chainlink_fence_wire"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "modular_chainlink_fence_door_latch",
-     "modular_chainlink_fence_door_gate",
-     "modular_chainlink_fence_corner_outer",
-     "modular_chainlink_fence_start_01_corner_01",
-     "modular_chainlink_post_middle",
-     "modular_chainlink_fence_end_01",
-     "modular_chainlink_fence_end_02",
-     "modular_chainlink_fence_door_frame",
-     "modular_chainlink_fence_bar_bracket_01",
-     "modular_chainlink_fence_post_bracket_02",
-     "modular_chainlink_fence_bar_bracket_02",
-     "modular_chainlink_fence_post_bracket_01",
-     "modular_chainlink_fence_double",
-     "modular_chainlink_fence",
-     "modular_chainlink_fence_post_bracket_03",
-     "modular_chainlink_fence_bar_bracket_03",
-     "modular_chainlink_fence_post",
-     "modular_chainlink_fence_corner_support",
-     "modular_chainlink_fence_corner_inner",
-     "modular_chainlink_fence_start_01_corner_02"
-    ]
-   }
-  },
-  {
-   "id": "prop_utility_box",
-   "file": "props/utility_box.glb",
-   "type": "prop",
-   "author": "James Ray Cock (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/utility_box_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.12,
-   "notes": "Verteilerkasten. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 103576,
-   "tech": {
-    "bbox_m": [
-     0.52,
-     1.12,
-     0.432
-    ],
-    "height_m": 1.12,
-    "triangles": 2500,
-    "materials": [
-     "utility_box_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_old_tyre",
-   "file": "props/old_tyre.glb",
-   "type": "prop",
-   "author": "MP (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/old_tyre",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.6,
-   "notes": "Alter Reifen. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 130388,
-   "tech": {
-    "bbox_m": [
-     0.6,
-     0.6,
-     0.165
-    ],
-    "height_m": 0.6,
-    "triangles": 2000,
-    "materials": [
-     "old_tyre"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_military_crate",
-   "file": "props/military_crate.glb",
-   "type": "prop",
-   "author": "Jack Mava (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/old_military_crate",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.82,
-   "notes": "Militärkiste. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 135144,
-   "tech": {
-    "bbox_m": [
-     1.812,
-     0.301,
-     0.974
-    ],
-    "height_m": 0.301,
-    "triangles": 5994,
-    "materials": [
-     "military_crate_m_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "old_military_crate_lid_a",
-     "old_military_crate_loop_a",
-     "old_military_crate_latch_a",
-     "old_military_crate_cloth_a",
-     "old_military_crate_a",
-     "old_military_crate_lid_b",
-     "old_military_crate_loop_b",
-     "old_military_crate_latch_b",
-     "old_military_crate_cloth_b",
-     "old_military_crate_b"
-    ]
-   }
-  },
-  {
-   "id": "prop_jerrycan",
-   "file": "props/jerrycan.glb",
-   "type": "prop",
-   "author": "Ulan Cabanilla (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/metal_jerrycan_green",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.5,
-   "notes": "Kanister. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 176404,
-   "tech": {
-    "bbox_m": [
-     0.36,
-     0.5,
-     0.171
-    ],
-    "height_m": 0.5,
-    "triangles": 2496,
-    "materials": [
-     "metal_jerrycan_green"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "metal_jerrycan_green_pin",
-     "metal_jerrycan_green_cap",
-     "metal_jerrycan_green_body",
-     "metal_jerrycan_green_latch",
-     "metal_jerrycan_green_fastener"
-    ]
-   }
-  },
-  {
-   "id": "prop_propane_tank",
-   "file": "props/propane_tank.glb",
-   "type": "prop",
-   "author": "Slinc (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/propane_tank",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.55,
-   "notes": "Propangasflasche. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 119728,
-   "tech": {
-    "bbox_m": [
-     0.337,
-     0.554,
-     0.337
-    ],
-    "height_m": 0.554,
-    "triangles": 2999,
-    "materials": [
-     "propane_tank"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_aircon_unit",
-   "file": "props/aircon_unit.glb",
-   "type": "prop",
-   "author": "Monsta3D (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/exterior_aircon_unit",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.8,
-   "notes": "Klima-Außengerät. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 443376,
-   "tech": {
-    "bbox_m": [
-     1.796,
-     0.928,
-     0.374
-    ],
-    "height_m": 0.928,
-    "triangles": 4004,
-    "materials": [
-     "exterior_aircon_unit_01",
-     "exterior_aircon_unit_02",
-     "exterior_aircon_unit_rusted_01",
-     "exterior_aircon_unit_rusted_02"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "exterior_aircon_unit",
-     "exterior_aircon_unit_rusted"
-    ]
-   }
-  },
-  {
-   "id": "prop_shrub_03",
-   "file": "props/shrub_03.glb",
-   "type": "prop",
-   "author": "Rico Cilliers (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/shrub_03",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.37,
-   "notes": "Busch. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 160648,
-   "tech": {
-    "bbox_m": [
-     1.367,
-     0.403,
-     0.151
-    ],
-    "height_m": 0.403,
-    "triangles": 5998,
-    "materials": [
-     "shrub_03"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "shrub_03_a",
-     "shrub_03_b",
-     "shrub_03_c",
-     "shrub_03_d"
-    ]
-   }
-  },
-  {
-   "id": "prop_shrub_04",
-   "file": "props/shrub_04.glb",
-   "type": "prop",
-   "author": "Rico Cilliers (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/shrub_04",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.75,
-   "notes": "Busch 2. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 175916,
-   "tech": {
-    "bbox_m": [
-     0.584,
-     0.219,
-     0.146
-    ],
-    "height_m": 0.219,
-    "triangles": 7899,
-    "materials": [
-     "shrub_04"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_tree_stump",
-   "file": "props/tree_stump.glb",
-   "type": "prop",
-   "author": "Rob Tuytel (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/tree_stump_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.59,
-   "notes": "Baumstumpf. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 255448,
-   "tech": {
-    "bbox_m": [
-     1.426,
-     0.571,
-     1.589
-    ],
-    "height_m": 0.571,
-    "triangles": 2997,
-    "materials": [
-     "tree_stump_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_sofa",
-   "file": "props/sofa.glb",
-   "type": "prop",
-   "author": "Kirill Sannikov (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/Sofa_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.57,
-   "notes": "Sofa (Innenraum). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 104180,
-   "tech": {
-    "bbox_m": [
-     1.571,
-     0.797,
-     0.658
-    ],
-    "height_m": 0.797,
-    "triangles": 3499,
-    "materials": [
-     "Sofa_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_table_wooden",
-   "file": "props/table_wooden.glb",
-   "type": "prop",
-   "author": "Ethan Place (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/WoodenTable_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.8,
-   "notes": "Holztisch (Innenraum). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 98464,
-   "tech": {
-    "bbox_m": [
-     1.8,
-     0.549,
-     0.657
-    ],
-    "height_m": 0.549,
-    "triangles": 952,
-    "materials": [
-     "WoodenTable_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_chair_wooden",
-   "file": "props/chair_wooden.glb",
-   "type": "prop",
-   "author": "Kuutti Siitonen (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/painted_wooden_chair_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.96,
-   "notes": "Holzstuhl (Innenraum). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 87416,
-   "tech": {
-    "bbox_m": [
-     0.432,
-     0.956,
-     0.54
-    ],
-    "height_m": 0.956,
-    "triangles": 724,
-    "materials": [
-     "painted_wooden_chair_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_shelves_steel",
-   "file": "props/shelves_steel.glb",
-   "type": "prop",
-   "author": "James Ray Cock (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/steel_frame_shelves_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 2.14,
-   "notes": "Stahlregal. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 90348,
-   "tech": {
-    "bbox_m": [
-     1.097,
-     2.14,
-     0.502
-    ],
-    "height_m": 2.14,
-    "triangles": 2999,
-    "materials": [
-     "steel_frame_shelves_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_office_desk",
-   "file": "props/office_desk.glb",
-   "type": "prop",
-   "author": "Ulan Cabanilla (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/metal_office_desk",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 2.0,
-   "notes": "Bürotisch. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 116084,
-   "tech": {
-    "bbox_m": [
-     2,
-     0.787,
-     0.947
-    ],
-    "height_m": 0.787,
-    "triangles": 3991,
-    "materials": [
-     "metal_office_desk"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "metal_office_desk_drawer_06",
-     "metal_office_desk_tray_01",
-     "metal_office_desk",
-     "metal_office_desk_drawer_04",
-     "metal_office_desk_drawer_03",
-     "metal_office_desk_drawer_05",
-     "metal_office_desk_drawer_02",
-     "metal_office_desk_drawer_01",
-     "metal_office_desk_tray_02"
-    ]
-   }
-  },
-  {
-   "id": "prop_armchair",
-   "file": "props/armchair.glb",
-   "type": "prop",
-   "author": "Kirill Sannikov (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/ArmChair_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.07,
-   "notes": "Sessel. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 148432,
-   "tech": {
-    "bbox_m": [
-     0.848,
-     1.065,
-     0.766
-    ],
-    "height_m": 1.065,
-    "triangles": 4000,
-    "materials": [
-     "Armchair_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_television",
-   "file": "props/television.glb",
-   "type": "prop",
-   "author": "Gabriel Radić (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/Television_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.6,
-   "notes": "Röhrenfernseher. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 99128,
-   "tech": {
-    "bbox_m": [
-     0.6,
-     0.457,
-     0.471
-    ],
-    "height_m": 0.457,
-    "triangles": 1918,
-    "materials": [
-     "Television_01"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_day_bed",
-   "file": "props/day_bed.glb",
-   "type": "prop",
-   "author": "Aron Łyczek (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/vintage_day_bed",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.97,
-   "notes": "Liege/Bett. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 165820,
-   "tech": {
-    "bbox_m": [
-     1.973,
-     1.127,
-     0.855
-    ],
-    "height_m": 1.127,
-    "triangles": 2715,
-    "materials": [
-     "vintage_day_bed"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_bookshelf",
-   "file": "props/bookshelf.glb",
-   "type": "prop",
-   "author": "Ulan Cabanilla (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/wooden_bookshelf_worn",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 2.06,
-   "notes": "Bücherregal. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 178516,
-   "tech": {
-    "bbox_m": [
-     1.374,
-     2.063,
-     0.581
-    ],
-    "height_m": 2.063,
-    "triangles": 4000,
-    "materials": [
-     "wooden_bookshelf_worn"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
-   }
-  },
-  {
-   "id": "prop_traffic_light",
-   "file": "props/traffic_light.glb",
-   "type": "prop",
-   "author": "Quaternius (Low Poly Modular Street Pack)",
-   "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/buildings/q-street-trafficlight.glb",
-   "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
-   "license_urls_extra": [
-    "https://quaternius.com",
-    "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
-   ],
-   "scale_hint_m": 3.0,
-   "notes": "Ampel (Low-Poly, auf 3,0 m skaliert). Materialien lamp_red/lamp_yellow/lamp_green (emissive schaltbar), pole_*.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 12580,
-   "tech": {
-    "bbox_m": [
-     0.424,
-     3,
-     0.309
-    ],
-    "height_m": 3,
-    "triangles": 352,
-    "materials": [
-     "lamp_green",
-     "lamp_yellow",
-     "lamp_red",
-     "pole_darkgrey",
-     "pole_grey"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "Green.003",
-     "Yellow.001",
-     "Red.002",
-     "DarkGrey",
-     "Grey"
-    ]
-   }
-  },
-  {
-   "id": "prop_traffic_light_arm",
-   "file": "props/traffic_light_arm.glb",
-   "type": "prop",
-   "author": "Quaternius (Low Poly Modular Street Pack)",
-   "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/buildings/q-street-trafficlight-2.glb",
-   "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
-   "license_urls_extra": [
-    "https://quaternius.com",
-    "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
-   ],
-   "scale_hint_m": 4.6,
-   "notes": "Ampel mit Ausleger (Low-Poly, auf 4,6 m skaliert). Materialien lamp_red/lamp_yellow/lamp_green (emissive schaltbar), pole_*.",
-   "license": "CC0-1.0",
-   "up_axis": "+Y",
-   "forward": "+Z",
-   "animations": [],
-   "size_bytes": 11972,
-   "tech": {
-    "bbox_m": [
-     0.499,
-     4.6,
-     2.721
-    ],
-    "height_m": 4.6,
-    "triangles": 398,
-    "materials": [
-     "lamp_green",
-     "lamp_yellow",
-     "lamp_red",
-     "pole_darkgrey",
-     "pole_grey"
-    ],
-    "bones": 0,
-    "animation_count": 0,
-    "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
-    "parts": [
-     "Green.004",
-     "Yellow.002",
-     "Red.003",
-     "DarkGrey.001",
-     "Grey.001"
-    ]
-   }
-  },
-  {
-   "id": "tex_brick_red",
-   "file": "textures/brick_red/",
-   "type": "texture",
-   "author": "Rob Tuytel (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/red_brick",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.4,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Ziegelwand. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 275660,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_plaster_white",
-   "file": "textures/plaster_white/",
-   "type": "texture",
-   "author": "Rob Tuytel (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/white_plaster_rough_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.0,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Putz weiß. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 353818,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_plaster_grey",
-   "file": "textures/plaster_grey/",
-   "type": "texture",
-   "author": "Rob Tuytel (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/grey_plaster",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.0,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Putz grau. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 402298,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_concrete",
-   "file": "textures/concrete/",
-   "type": "texture",
-   "author": "Dimitrios Savva (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/rough_concrete",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.23,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Beton. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 673696,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_roof_tiles_clay",
-   "file": "textures/roof_tiles_clay/",
-   "type": "texture",
-   "author": "Amal Kumar (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/clay_roof_tiles",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 4.0,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Dachziegel (Ton). scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 348802,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_wood_planks",
-   "file": "textures/wood_planks/",
-   "type": "texture",
-   "author": "Amal Kumar (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/wood_planks",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.5,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Holzbretter (Wand/Scheune). scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 89818,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_wood_floor",
-   "file": "textures/wood_floor/",
-   "type": "texture",
-   "author": "Dimitrios Savva (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/wood_floor",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.7,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Holzboden innen. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 113036,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_asphalt",
-   "file": "textures/asphalt/",
-   "type": "texture",
-   "author": "Rob Tuytel (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/asphalt_02",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 3.0,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Asphalt. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 687442,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_sidewalk_pavers",
-   "file": "textures/sidewalk_pavers/",
-   "type": "texture",
-   "author": "Amal Kumar (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/square_concrete_pavers",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.8,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Gehwegplatten. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 270842,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_grass",
-   "file": "textures/grass/",
-   "type": "texture",
-   "author": "Charlotte Baglioni (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/leafy_grass",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 2.0,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Gras. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 696282,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_dirt",
-   "file": "textures/dirt/",
-   "type": "texture",
-   "author": "Charlotte Baglioni (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/dirt",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 2.0,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Erde. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 356282,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_sand",
-   "file": "textures/sand/",
-   "type": "texture",
-   "author": "Rob Tuytel (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/sand_01",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.5,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Sand/Wüste. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 297266,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_snow",
-   "file": "textures/snow/",
-   "type": "texture",
-   "author": "Rob Tuytel (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/snow_02",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 2.0,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Schnee. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 274396,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_metal_corrugated",
-   "file": "textures/metal_corrugated/",
-   "type": "texture",
-   "author": "Jenelle van Heerden, Dimitrios Savva (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/corrugated_iron",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 1.12,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Wellblech. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 177240,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  },
-  {
-   "id": "tex_metal_plate",
-   "file": "textures/metal_plate/",
-   "type": "texture",
-   "author": "Rob Tuytel (Poly Haven)",
-   "source_url": "https://polyhaven.com/a/metal_plate",
-   "license_url": "https://polyhaven.com/license",
-   "scale_hint_m": 0.5,
-   "up_axis": null,
-   "forward": null,
-   "maps": {
-    "albedo": "albedo.webp (1024, sRGB)",
-    "normal": "normal.webp (1024, OpenGL/+Y)",
-    "roughness": "roughness.webp (512, linear)"
-   },
-   "notes": "Metallplatte (UFO/Industrie). scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
-   "license": "CC0-1.0",
-   "animations": [],
-   "size_bytes": 192460,
-   "tech": {
-    "texture_sizes": [
-     "1024x1024",
-     "1024x1024",
-     "512x512"
-    ],
-    "loaded_with": "three r170 TextureLoader, fehlerfrei"
-   }
-  }
- ]
+  "generated": "2026-11-24",
+  "base_path": "assets/",
+  "loader": "GLTFLoader + setMeshoptDecoder(MeshoptDecoder) (vendor/three/addons/libs/meshopt_decoder.module.js); alle GLB nutzen EXT_meshopt_compression + KHR_mesh_quantization, Texturen EXT_texture_webp",
+  "units": "Meter, +Y oben, glTF-Konvention",
+  "assets": [
+    {
+      "id": "human_m_01",
+      "file": "characters/human_m_01.glb",
+      "type": "character",
+      "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'joe'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
+      "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/joe.glb",
+      "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
+      "license_urls_extra": [
+        "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
+        "https://quaternius.com/packs/universalanimationlibrary.html",
+        "https://github.com/makehumancommunity/mpfb2"
+      ],
+      "scale_hint_m": 1.75,
+      "sex": "m",
+      "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
+      "animations": [
+        "Idle_Loop",
+        "Walk_Loop",
+        "Jog_Fwd_Loop",
+        "Sprint_Loop",
+        "Crouch_Idle_Loop",
+        "Crouch_Fwd_Loop",
+        "Pistol_Idle_Loop",
+        "Pistol_Aim_Neutral",
+        "Pistol_Aim_Up",
+        "Pistol_Aim_Down",
+        "Pistol_Shoot",
+        "Pistol_Reload",
+        "Hit_Chest",
+        "Hit_Head",
+        "Death01",
+        "Fixing_Kneeling",
+        "Interact",
+        "Roll",
+        "Idle_Talking_Loop",
+        "Sitting_Idle_Loop",
+        "PickUp_Table"
+      ],
+      "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "size_bytes": 1097688,
+      "tech": {
+        "bbox_m": [
+          1.092,
+          1.752,
+          0.471
+        ],
+        "height_m": 1.752,
+        "triangles": 18927,
+        "materials": [
+          "skin",
+          "brows",
+          "brows.001",
+          "eyes",
+          "clothes_bottom",
+          "clothes_top",
+          "hair"
+        ],
+        "bones": 163,
+        "animation_count": 21,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "human_m_02",
+      "file": "characters/human_m_02.glb",
+      "type": "character",
+      "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'kenji'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
+      "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/kenji.glb",
+      "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
+      "license_urls_extra": [
+        "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
+        "https://quaternius.com/packs/universalanimationlibrary.html",
+        "https://github.com/makehumancommunity/mpfb2"
+      ],
+      "scale_hint_m": 1.75,
+      "sex": "m",
+      "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
+      "animations": [
+        "Idle_Loop",
+        "Walk_Loop",
+        "Jog_Fwd_Loop",
+        "Sprint_Loop",
+        "Crouch_Idle_Loop",
+        "Crouch_Fwd_Loop",
+        "Pistol_Idle_Loop",
+        "Pistol_Aim_Neutral",
+        "Pistol_Aim_Up",
+        "Pistol_Aim_Down",
+        "Pistol_Shoot",
+        "Pistol_Reload",
+        "Hit_Chest",
+        "Hit_Head",
+        "Death01",
+        "Fixing_Kneeling",
+        "Interact",
+        "Roll",
+        "Idle_Talking_Loop",
+        "Sitting_Idle_Loop",
+        "PickUp_Table"
+      ],
+      "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "size_bytes": 1119564,
+      "tech": {
+        "bbox_m": [
+          1.073,
+          1.709,
+          0.463
+        ],
+        "height_m": 1.709,
+        "triangles": 18926,
+        "materials": [
+          "skin",
+          "brows",
+          "brows.001",
+          "eyes",
+          "clothes_bottom",
+          "clothes_top",
+          "hair"
+        ],
+        "bones": 163,
+        "animation_count": 21,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "human_m_03",
+      "file": "characters/human_m_03.glb",
+      "type": "character",
+      "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'kwame'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
+      "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/kwame.glb",
+      "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
+      "license_urls_extra": [
+        "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
+        "https://quaternius.com/packs/universalanimationlibrary.html",
+        "https://github.com/makehumancommunity/mpfb2"
+      ],
+      "scale_hint_m": 1.75,
+      "sex": "m",
+      "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
+      "animations": [
+        "Idle_Loop",
+        "Walk_Loop",
+        "Jog_Fwd_Loop",
+        "Sprint_Loop",
+        "Crouch_Idle_Loop",
+        "Crouch_Fwd_Loop",
+        "Pistol_Idle_Loop",
+        "Pistol_Aim_Neutral",
+        "Pistol_Aim_Up",
+        "Pistol_Aim_Down",
+        "Pistol_Shoot",
+        "Pistol_Reload",
+        "Hit_Chest",
+        "Hit_Head",
+        "Death01",
+        "Fixing_Kneeling",
+        "Interact",
+        "Roll",
+        "Idle_Talking_Loop",
+        "Sitting_Idle_Loop",
+        "PickUp_Table"
+      ],
+      "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "size_bytes": 932256,
+      "tech": {
+        "bbox_m": [
+          1.146,
+          1.773,
+          0.49
+        ],
+        "height_m": 1.773,
+        "triangles": 18926,
+        "materials": [
+          "skin",
+          "hair",
+          "brows",
+          "brows.001",
+          "eyes",
+          "clothes_bottom",
+          "clothes_top"
+        ],
+        "bones": 163,
+        "animation_count": 21,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "human_f_01",
+      "file": "characters/human_f_01.glb",
+      "type": "character",
+      "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'mia'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
+      "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/mia.glb",
+      "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
+      "license_urls_extra": [
+        "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
+        "https://quaternius.com/packs/universalanimationlibrary.html",
+        "https://github.com/makehumancommunity/mpfb2"
+      ],
+      "scale_hint_m": 1.7,
+      "sex": "f",
+      "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
+      "animations": [
+        "Idle_Loop",
+        "Walk_Loop",
+        "Jog_Fwd_Loop",
+        "Sprint_Loop",
+        "Crouch_Idle_Loop",
+        "Crouch_Fwd_Loop",
+        "Pistol_Idle_Loop",
+        "Pistol_Aim_Neutral",
+        "Pistol_Aim_Up",
+        "Pistol_Aim_Down",
+        "Pistol_Shoot",
+        "Pistol_Reload",
+        "Hit_Chest",
+        "Hit_Head",
+        "Death01",
+        "Fixing_Kneeling",
+        "Interact",
+        "Roll",
+        "Idle_Talking_Loop",
+        "Sitting_Idle_Loop",
+        "PickUp_Table"
+      ],
+      "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "size_bytes": 1229032,
+      "tech": {
+        "bbox_m": [
+          1.03,
+          1.714,
+          0.47
+        ],
+        "height_m": 1.714,
+        "triangles": 18925,
+        "materials": [
+          "skin",
+          "brows",
+          "brows.001",
+          "clothes_bottom",
+          "clothes_top",
+          "eyes",
+          "hair"
+        ],
+        "bones": 163,
+        "animation_count": 21,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "human_f_02",
+      "file": "characters/human_f_02.glb",
+      "type": "character",
+      "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'lucia'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
+      "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/lucia.glb",
+      "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
+      "license_urls_extra": [
+        "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
+        "https://quaternius.com/packs/universalanimationlibrary.html",
+        "https://github.com/makehumancommunity/mpfb2"
+      ],
+      "scale_hint_m": 1.7,
+      "sex": "f",
+      "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
+      "animations": [
+        "Idle_Loop",
+        "Walk_Loop",
+        "Jog_Fwd_Loop",
+        "Sprint_Loop",
+        "Crouch_Idle_Loop",
+        "Crouch_Fwd_Loop",
+        "Pistol_Idle_Loop",
+        "Pistol_Aim_Neutral",
+        "Pistol_Aim_Up",
+        "Pistol_Aim_Down",
+        "Pistol_Shoot",
+        "Pistol_Reload",
+        "Hit_Chest",
+        "Hit_Head",
+        "Death01",
+        "Fixing_Kneeling",
+        "Interact",
+        "Roll",
+        "Idle_Talking_Loop",
+        "Sitting_Idle_Loop",
+        "PickUp_Table"
+      ],
+      "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "size_bytes": 1014884,
+      "tech": {
+        "bbox_m": [
+          1.039,
+          1.715,
+          0.441
+        ],
+        "height_m": 1.715,
+        "triangles": 18928,
+        "materials": [
+          "skin",
+          "brows",
+          "brows.001",
+          "clothes_bottom",
+          "clothes_top",
+          "hair",
+          "eyes"
+        ],
+        "bones": 163,
+        "animation_count": 21,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "human_f_03",
+      "file": "characters/human_f_03.glb",
+      "type": "character",
+      "author": "MakeHuman Community / MPFB2 (Körper, Haut, Haare, Kleidung; Build: Open Yoga Poses, Figur 'amara'); Animationen: Quaternius (Universal Animation Library), retargetet für AEGIS",
+      "source_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/characters/hd/amara.glb",
+      "license_url": "https://github.com/syntithenai/open-yoga-poses/blob/main/ATTRIBUTION.md",
+      "license_urls_extra": [
+        "https://github.com/J-Ponzo/gltf-universal-animation-library/blob/main/LICENSE",
+        "https://quaternius.com/packs/universalanimationlibrary.html",
+        "https://github.com/makehumancommunity/mpfb2"
+      ],
+      "scale_hint_m": 1.7,
+      "sex": "f",
+      "rig": "MakeHuman 'default' (163 Joints, Wurzel-Bone 'root' = Hüfte)",
+      "animations": [
+        "Idle_Loop",
+        "Walk_Loop",
+        "Jog_Fwd_Loop",
+        "Sprint_Loop",
+        "Crouch_Idle_Loop",
+        "Crouch_Fwd_Loop",
+        "Pistol_Idle_Loop",
+        "Pistol_Aim_Neutral",
+        "Pistol_Aim_Up",
+        "Pistol_Aim_Down",
+        "Pistol_Shoot",
+        "Pistol_Reload",
+        "Hit_Chest",
+        "Hit_Head",
+        "Death01",
+        "Fixing_Kneeling",
+        "Interact",
+        "Roll",
+        "Idle_Talking_Loop",
+        "Sitting_Idle_Loop",
+        "PickUp_Table"
+      ],
+      "notes": "Rigged, 21 Clips (Namen wie Quaternius UAL). Kleidung: Materialien 'clothes_top'/'clothes_bottom' mit grauer Albedo -> per material.color einfärben (extras.tintable). Barfuß, T-Shirt + kurze Hose (m) bzw. lange Hose (f). Benötigt MeshoptDecoder.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "size_bytes": 932016,
+      "tech": {
+        "bbox_m": [
+          1.047,
+          1.728,
+          0.447
+        ],
+        "height_m": 1.728,
+        "triangles": 18925,
+        "materials": [
+          "skin",
+          "hair",
+          "brows",
+          "brows.001",
+          "clothes_bottom",
+          "clothes_top",
+          "eyes"
+        ],
+        "bones": 163,
+        "animation_count": 21,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "vehicle_sedan",
+      "file": "vehicles/sedan.glb",
+      "type": "vehicle",
+      "author": "Quaternius (Low Poly Cars Pack)",
+      "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/vehicles/q-cars-normalcar1.glb",
+      "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
+      "license_urls_extra": [
+        "https://quaternius.com/packs/cars.html",
+        "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
+      ],
+      "scale_hint_m": 4.22,
+      "notes": "Limousine, Low-Poly mit Flat-Farben (kein Textur-Download). Material 'car_paint' einfärbbar; 'car_headlight'/'car_taillight' mit Emissive. Maßstab bereits in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 52812,
+      "tech": {
+        "bbox_m": [
+          1.807,
+          1.177,
+          4.221
+        ],
+        "height_m": 1.177,
+        "triangles": 2954,
+        "materials": [
+          "car_taillight",
+          "car_headlight",
+          "car_chrome_rims",
+          "car_tyre_trim",
+          "car_glass",
+          "car_paint"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "front_measured": "+Z",
+        "parts": [
+          "TailLights",
+          "Headlights",
+          "Grey",
+          "Black",
+          "Windows",
+          "Blue"
+        ]
+      }
+    },
+    {
+      "id": "vehicle_hatchback",
+      "file": "vehicles/hatchback.glb",
+      "type": "vehicle",
+      "author": "Quaternius (Low Poly Cars Pack)",
+      "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/vehicles/q-cars-normalcar2.glb",
+      "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
+      "license_urls_extra": [
+        "https://quaternius.com/packs/cars.html",
+        "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
+      ],
+      "scale_hint_m": 3.31,
+      "notes": "Kompaktwagen/Kombi, Low-Poly mit Flat-Farben (kein Textur-Download). Material 'car_paint' einfärbbar; 'car_headlight'/'car_taillight' mit Emissive. Maßstab bereits in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 57420,
+      "tech": {
+        "bbox_m": [
+          1.639,
+          1.146,
+          3.31
+        ],
+        "height_m": 1.146,
+        "triangles": 3124,
+        "materials": [
+          "car_taillight",
+          "car_trim",
+          "car_headlight",
+          "car_chrome_rims",
+          "car_tyre_trim",
+          "car_glass",
+          "car_paint"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "front_measured": "+Z",
+        "parts": [
+          "TailLights",
+          "Material.007",
+          "Headlights",
+          "Grey",
+          "Black",
+          "Windows",
+          "LightBlue"
+        ]
+      }
+    },
+    {
+      "id": "vehicle_suv",
+      "file": "vehicles/suv.glb",
+      "type": "vehicle",
+      "author": "Quaternius (Low Poly Cars Pack)",
+      "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/vehicles/q-cars-suv.glb",
+      "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
+      "license_urls_extra": [
+        "https://quaternius.com/packs/cars.html",
+        "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
+      ],
+      "scale_hint_m": 4.21,
+      "notes": "SUV/Van, Low-Poly mit Flat-Farben (kein Textur-Download). Material 'car_paint' einfärbbar; 'car_headlight'/'car_taillight' mit Emissive. Maßstab bereits in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 58424,
+      "tech": {
+        "bbox_m": [
+          2.111,
+          1.528,
+          4.209
+        ],
+        "height_m": 1.528,
+        "triangles": 3294,
+        "materials": [
+          "car_taillight",
+          "car_headlight",
+          "car_chrome_rims",
+          "car_tyre_trim",
+          "car_glass",
+          "car_paint"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "front_measured": "+Z",
+        "parts": [
+          "TailLights",
+          "Headlights",
+          "Grey",
+          "Black",
+          "Windows",
+          "White"
+        ]
+      }
+    },
+    {
+      "id": "vehicle_police",
+      "file": "vehicles/police.glb",
+      "type": "vehicle",
+      "author": "Quaternius (Low Poly Cars Pack)",
+      "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/vehicles/q-cars-cop.glb",
+      "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
+      "license_urls_extra": [
+        "https://quaternius.com/packs/cars.html",
+        "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
+      ],
+      "scale_hint_m": 3.73,
+      "notes": "Polizeiwagen, Low-Poly mit Flat-Farben (kein Textur-Download). Material 'car_paint' einfärbbar; 'car_headlight'/'car_taillight' mit Emissive. Maßstab bereits in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 60240,
+      "tech": {
+        "bbox_m": [
+          1.778,
+          1.239,
+          3.73
+        ],
+        "height_m": 1.239,
+        "triangles": 3232,
+        "materials": [
+          "bluelights",
+          "whitelights",
+          "car_taillight",
+          "car_tyre_trim",
+          "car_headlight",
+          "car_chrome_rims",
+          "car_glass",
+          "car_paint"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "front_measured": "+Z",
+        "parts": [
+          "BlueLights",
+          "WhiteLights",
+          "TailLights",
+          "Black",
+          "Headlights",
+          "Grey",
+          "Windows",
+          "White"
+        ]
+      }
+    },
+    {
+      "id": "vehicle_covered_car",
+      "file": "vehicles/covered_car.glb",
+      "type": "vehicle",
+      "author": "MP (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/covered_car",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 4.38,
+      "notes": "Abgedecktes Auto (Plane), fotorealistisch – gutes Deckungs-Hindernis. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 366296,
+      "tech": {
+        "bbox_m": [
+          1.788,
+          1.411,
+          4.38
+        ],
+        "height_m": 1.411,
+        "triangles": 7996,
+        "materials": [
+          "covered_car"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "covered_car_wheel_01",
+          "covered_car_wheel_02",
+          "covered_car_wheel_03",
+          "covered_car_wheel_04",
+          "covered_car"
+        ]
+      }
+    },
+    {
+      "id": "prop_barrel",
+      "file": "props/barrel.glb",
+      "type": "prop",
+      "author": "Jorge Camacho (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/Barrel_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.88,
+      "notes": "Ölfass (rot, 'explosive'-Variante). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 142940,
+      "tech": {
+        "bbox_m": [
+          0.563,
+          0.88,
+          0.563
+        ],
+        "height_m": 0.88,
+        "triangles": 2682,
+        "materials": [
+          "Barrel_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_wooden_crate_01",
+      "file": "props/wooden_crate_01.glb",
+      "type": "prop",
+      "author": "James Ray Cock (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/wooden_crate_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.83,
+      "notes": "Holzkiste. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 129752,
+      "tech": {
+        "bbox_m": [
+          0.824,
+          0.349,
+          0.407
+        ],
+        "height_m": 0.349,
+        "triangles": 2496,
+        "materials": [
+          "wooden_crate_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "wooden_crate_01_lid",
+          "wooden_crate_01",
+          "wooden_crate_01_latch"
+        ]
+      }
+    },
+    {
+      "id": "prop_wooden_crate_02",
+      "file": "props/wooden_crate_02.glb",
+      "type": "prop",
+      "author": "James Ray Cock, Jurita Burger (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/wooden_crate_02",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.17,
+      "notes": "Holzkiste 2. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 134156,
+      "tech": {
+        "bbox_m": [
+          0.529,
+          0.464,
+          1.166
+        ],
+        "height_m": 0.464,
+        "triangles": 2499,
+        "materials": [
+          "wooden_crate_02"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "wooden_crate_02_crate",
+          "wooden_crate_02_lid"
+        ]
+      }
+    },
+    {
+      "id": "prop_cardboard_box",
+      "file": "props/cardboard_box.glb",
+      "type": "prop",
+      "author": "Rahul Chaudhary (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/cardboard_box_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.52,
+      "notes": "Pappkarton. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 98300,
+      "tech": {
+        "bbox_m": [
+          0.387,
+          0.341,
+          0.516
+        ],
+        "height_m": 0.341,
+        "triangles": 1500,
+        "materials": [
+          "cardboard_box_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_trash_can",
+      "file": "props/trash_can.glb",
+      "type": "prop",
+      "author": "GurJas Studios (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/metal_trash_can",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.85,
+      "notes": "Metall-Mülltonne. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 315120,
+      "tech": {
+        "bbox_m": [
+          1.777,
+          0.906,
+          0.553
+        ],
+        "height_m": 0.906,
+        "triangles": 2994,
+        "materials": [
+          "metal_trash_can",
+          "metal_trash_can_rust"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "metal_trash_can_handle_left",
+          "metal_trash_can_lid",
+          "metal_trash_can",
+          "metal_trash_can_handle_right",
+          "metal_trash_can_rust",
+          "metal_trash_can_rust_handle_left",
+          "metal_trash_can_rust_handle_right",
+          "metal_trash_can_rust_lid"
+        ]
+      }
+    },
+    {
+      "id": "prop_street_lamp_01",
+      "file": "props/street_lamp_01.glb",
+      "type": "prop",
+      "author": "Josh Dean (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/street_lamp_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 3.87,
+      "notes": "Straßenlaterne. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 93856,
+      "tech": {
+        "bbox_m": [
+          0.702,
+          3.87,
+          0.385
+        ],
+        "height_m": 3.87,
+        "triangles": 3163,
+        "materials": [
+          "street_lamp_01",
+          "street_lamp_01_glass"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_street_lamp_02",
+      "file": "props/street_lamp_02.glb",
+      "type": "prop",
+      "author": "Josh Dean (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/street_lamp_02",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.68,
+      "notes": "Straßenlaterne 2. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 105324,
+      "tech": {
+        "bbox_m": [
+          0.385,
+          1.671,
+          0.805
+        ],
+        "height_m": 1.671,
+        "triangles": 3151,
+        "materials": [
+          "street_lamp_02",
+          "street_lamp_02_glass"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_fire_hydrant",
+      "file": "props/fire_hydrant.glb",
+      "type": "prop",
+      "author": "Gonçalo Felício (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/fire_hydrant",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.87,
+      "notes": "Hydrant (stark vereinfacht 86k->1.5k Dreiecke). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 207128,
+      "tech": {
+        "bbox_m": [
+          0.873,
+          0.799,
+          0.316
+        ],
+        "height_m": 0.799,
+        "triangles": 1518,
+        "materials": [
+          "fire_hydrant",
+          "fire_hydrant_aged"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "fire_hydrant",
+          "fire_hydrant_cap_01",
+          "fire_hydrant_cap_02",
+          "fire_hydrant_cap_03",
+          "fire_hydrant_chain",
+          "fire_hydrant_aged",
+          "fire_hydrant_cap_01_aged",
+          "fire_hydrant_cap_02_aged",
+          "fire_hydrant_cap_03_aged",
+          "fire_hydrant_chain_aged"
+        ]
+      }
+    },
+    {
+      "id": "prop_bench_wooden",
+      "file": "props/bench_wooden.glb",
+      "type": "prop",
+      "author": "Kirill Sannikov (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/painted_wooden_bench",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.16,
+      "notes": "Holzbank. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 75060,
+      "tech": {
+        "bbox_m": [
+          1.165,
+          0.889,
+          0.496
+        ],
+        "height_m": 0.889,
+        "triangles": 630,
+        "materials": [
+          "painted_wooden_bench"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_street_seating",
+      "file": "props/street_seating.glb",
+      "type": "prop",
+      "author": "Stuart Attenborrow (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/modular_street_seating",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 4.34,
+      "notes": "Modulare Stadtbänke (mehrere Teile in einer Datei). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 426820,
+      "tech": {
+        "bbox_m": [
+          4.34,
+          0.95,
+          0.77
+        ],
+        "height_m": 0.95,
+        "triangles": 8027,
+        "materials": [
+          "modular_street_seating_supports",
+          "modular_street_seating_armrests",
+          "modular_street_seating_timber",
+          "modular_street_seating_connectors"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "legs_double",
+          "legs_single",
+          "suspended_support_01",
+          "suspended_support_02",
+          "back_support_r",
+          "back_support_l",
+          "arm_rest_01",
+          "arm_rest_02",
+          "seat",
+          "seat_back",
+          "connector_60",
+          "connector_45",
+          "connector_90",
+          "connector_30",
+          "seat_bench"
+        ]
+      }
+    },
+    {
+      "id": "prop_road_barrier",
+      "file": "props/road_barrier.glb",
+      "type": "prop",
+      "author": "Amal Kumar (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/concrete_road_barrier",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.55,
+      "notes": "Beton-Straßensperre. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 133036,
+      "tech": {
+        "bbox_m": [
+          1.544,
+          0.83,
+          0.639
+        ],
+        "height_m": 0.83,
+        "triangles": 2498,
+        "materials": [
+          "concrete_road_barrier"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_chainlink_fence",
+      "file": "props/chainlink_fence.glb",
+      "type": "prop",
+      "author": "James Ray Cock, Amal Kumar (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/modular_chainlink_fence",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 8.12,
+      "notes": "Maschendrahtzaun-Baukasten (mehrere Teile in einer Datei; Draht als Alpha-Textur). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 497884,
+      "tech": {
+        "bbox_m": [
+          8.109,
+          2.5,
+          2.148
+        ],
+        "height_m": 2.5,
+        "triangles": 10146,
+        "materials": [
+          "modular_chainlink_fence_posts",
+          "modular_chainlink_fence_wire"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "modular_chainlink_fence_door_latch",
+          "modular_chainlink_fence_door_gate",
+          "modular_chainlink_fence_corner_outer",
+          "modular_chainlink_fence_start_01_corner_01",
+          "modular_chainlink_post_middle",
+          "modular_chainlink_fence_end_01",
+          "modular_chainlink_fence_end_02",
+          "modular_chainlink_fence_door_frame",
+          "modular_chainlink_fence_bar_bracket_01",
+          "modular_chainlink_fence_post_bracket_02",
+          "modular_chainlink_fence_bar_bracket_02",
+          "modular_chainlink_fence_post_bracket_01",
+          "modular_chainlink_fence_double",
+          "modular_chainlink_fence",
+          "modular_chainlink_fence_post_bracket_03",
+          "modular_chainlink_fence_bar_bracket_03",
+          "modular_chainlink_fence_post",
+          "modular_chainlink_fence_corner_support",
+          "modular_chainlink_fence_corner_inner",
+          "modular_chainlink_fence_start_01_corner_02"
+        ]
+      }
+    },
+    {
+      "id": "prop_utility_box",
+      "file": "props/utility_box.glb",
+      "type": "prop",
+      "author": "James Ray Cock (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/utility_box_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.12,
+      "notes": "Verteilerkasten. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 103576,
+      "tech": {
+        "bbox_m": [
+          0.52,
+          1.12,
+          0.432
+        ],
+        "height_m": 1.12,
+        "triangles": 2500,
+        "materials": [
+          "utility_box_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_old_tyre",
+      "file": "props/old_tyre.glb",
+      "type": "prop",
+      "author": "MP (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/old_tyre",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.6,
+      "notes": "Alter Reifen. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 130388,
+      "tech": {
+        "bbox_m": [
+          0.6,
+          0.6,
+          0.165
+        ],
+        "height_m": 0.6,
+        "triangles": 2000,
+        "materials": [
+          "old_tyre"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_military_crate",
+      "file": "props/military_crate.glb",
+      "type": "prop",
+      "author": "Jack Mava (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/old_military_crate",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.82,
+      "notes": "Militärkiste. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 135144,
+      "tech": {
+        "bbox_m": [
+          1.812,
+          0.301,
+          0.974
+        ],
+        "height_m": 0.301,
+        "triangles": 5994,
+        "materials": [
+          "military_crate_m_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "old_military_crate_lid_a",
+          "old_military_crate_loop_a",
+          "old_military_crate_latch_a",
+          "old_military_crate_cloth_a",
+          "old_military_crate_a",
+          "old_military_crate_lid_b",
+          "old_military_crate_loop_b",
+          "old_military_crate_latch_b",
+          "old_military_crate_cloth_b",
+          "old_military_crate_b"
+        ]
+      }
+    },
+    {
+      "id": "prop_jerrycan",
+      "file": "props/jerrycan.glb",
+      "type": "prop",
+      "author": "Ulan Cabanilla (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/metal_jerrycan_green",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.5,
+      "notes": "Kanister. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 176404,
+      "tech": {
+        "bbox_m": [
+          0.36,
+          0.5,
+          0.171
+        ],
+        "height_m": 0.5,
+        "triangles": 2496,
+        "materials": [
+          "metal_jerrycan_green"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "metal_jerrycan_green_pin",
+          "metal_jerrycan_green_cap",
+          "metal_jerrycan_green_body",
+          "metal_jerrycan_green_latch",
+          "metal_jerrycan_green_fastener"
+        ]
+      }
+    },
+    {
+      "id": "prop_propane_tank",
+      "file": "props/propane_tank.glb",
+      "type": "prop",
+      "author": "Slinc (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/propane_tank",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.55,
+      "notes": "Propangasflasche. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 119728,
+      "tech": {
+        "bbox_m": [
+          0.337,
+          0.554,
+          0.337
+        ],
+        "height_m": 0.554,
+        "triangles": 2999,
+        "materials": [
+          "propane_tank"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_aircon_unit",
+      "file": "props/aircon_unit.glb",
+      "type": "prop",
+      "author": "Monsta3D (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/exterior_aircon_unit",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.8,
+      "notes": "Klima-Außengerät. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 443376,
+      "tech": {
+        "bbox_m": [
+          1.796,
+          0.928,
+          0.374
+        ],
+        "height_m": 0.928,
+        "triangles": 4004,
+        "materials": [
+          "exterior_aircon_unit_01",
+          "exterior_aircon_unit_02",
+          "exterior_aircon_unit_rusted_01",
+          "exterior_aircon_unit_rusted_02"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "exterior_aircon_unit",
+          "exterior_aircon_unit_rusted"
+        ]
+      }
+    },
+    {
+      "id": "prop_shrub_03",
+      "file": "props/shrub_03.glb",
+      "type": "prop",
+      "author": "Rico Cilliers (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/shrub_03",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.37,
+      "notes": "Busch. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 160648,
+      "tech": {
+        "bbox_m": [
+          1.367,
+          0.403,
+          0.151
+        ],
+        "height_m": 0.403,
+        "triangles": 5998,
+        "materials": [
+          "shrub_03"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "shrub_03_a",
+          "shrub_03_b",
+          "shrub_03_c",
+          "shrub_03_d"
+        ]
+      }
+    },
+    {
+      "id": "prop_shrub_04",
+      "file": "props/shrub_04.glb",
+      "type": "prop",
+      "author": "Rico Cilliers (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/shrub_04",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.75,
+      "notes": "Busch 2. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 175916,
+      "tech": {
+        "bbox_m": [
+          0.584,
+          0.219,
+          0.146
+        ],
+        "height_m": 0.219,
+        "triangles": 7899,
+        "materials": [
+          "shrub_04"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_tree_stump",
+      "file": "props/tree_stump.glb",
+      "type": "prop",
+      "author": "Rob Tuytel (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/tree_stump_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.59,
+      "notes": "Baumstumpf. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 255448,
+      "tech": {
+        "bbox_m": [
+          1.426,
+          0.571,
+          1.589
+        ],
+        "height_m": 0.571,
+        "triangles": 2997,
+        "materials": [
+          "tree_stump_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_sofa",
+      "file": "props/sofa.glb",
+      "type": "prop",
+      "author": "Kirill Sannikov (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/Sofa_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.57,
+      "notes": "Sofa (Innenraum). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 104180,
+      "tech": {
+        "bbox_m": [
+          1.571,
+          0.797,
+          0.658
+        ],
+        "height_m": 0.797,
+        "triangles": 3499,
+        "materials": [
+          "Sofa_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_table_wooden",
+      "file": "props/table_wooden.glb",
+      "type": "prop",
+      "author": "Ethan Place (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/WoodenTable_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.8,
+      "notes": "Holztisch (Innenraum). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 98464,
+      "tech": {
+        "bbox_m": [
+          1.8,
+          0.549,
+          0.657
+        ],
+        "height_m": 0.549,
+        "triangles": 952,
+        "materials": [
+          "WoodenTable_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_chair_wooden",
+      "file": "props/chair_wooden.glb",
+      "type": "prop",
+      "author": "Kuutti Siitonen (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/painted_wooden_chair_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.96,
+      "notes": "Holzstuhl (Innenraum). Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 87416,
+      "tech": {
+        "bbox_m": [
+          0.432,
+          0.956,
+          0.54
+        ],
+        "height_m": 0.956,
+        "triangles": 724,
+        "materials": [
+          "painted_wooden_chair_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_shelves_steel",
+      "file": "props/shelves_steel.glb",
+      "type": "prop",
+      "author": "James Ray Cock (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/steel_frame_shelves_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 2.14,
+      "notes": "Stahlregal. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 90348,
+      "tech": {
+        "bbox_m": [
+          1.097,
+          2.14,
+          0.502
+        ],
+        "height_m": 2.14,
+        "triangles": 2999,
+        "materials": [
+          "steel_frame_shelves_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_office_desk",
+      "file": "props/office_desk.glb",
+      "type": "prop",
+      "author": "Ulan Cabanilla (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/metal_office_desk",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 2.0,
+      "notes": "Bürotisch. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 116084,
+      "tech": {
+        "bbox_m": [
+          2,
+          0.787,
+          0.947
+        ],
+        "height_m": 0.787,
+        "triangles": 3991,
+        "materials": [
+          "metal_office_desk"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "metal_office_desk_drawer_06",
+          "metal_office_desk_tray_01",
+          "metal_office_desk",
+          "metal_office_desk_drawer_04",
+          "metal_office_desk_drawer_03",
+          "metal_office_desk_drawer_05",
+          "metal_office_desk_drawer_02",
+          "metal_office_desk_drawer_01",
+          "metal_office_desk_tray_02"
+        ]
+      }
+    },
+    {
+      "id": "prop_armchair",
+      "file": "props/armchair.glb",
+      "type": "prop",
+      "author": "Kirill Sannikov (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/ArmChair_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.07,
+      "notes": "Sessel. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 148432,
+      "tech": {
+        "bbox_m": [
+          0.848,
+          1.065,
+          0.766
+        ],
+        "height_m": 1.065,
+        "triangles": 4000,
+        "materials": [
+          "Armchair_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_television",
+      "file": "props/television.glb",
+      "type": "prop",
+      "author": "Gabriel Radić (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/Television_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.6,
+      "notes": "Röhrenfernseher. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 99128,
+      "tech": {
+        "bbox_m": [
+          0.6,
+          0.457,
+          0.471
+        ],
+        "height_m": 0.457,
+        "triangles": 1918,
+        "materials": [
+          "Television_01"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_day_bed",
+      "file": "props/day_bed.glb",
+      "type": "prop",
+      "author": "Aron Łyczek (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/vintage_day_bed",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.97,
+      "notes": "Liege/Bett. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 165820,
+      "tech": {
+        "bbox_m": [
+          1.973,
+          1.127,
+          0.855
+        ],
+        "height_m": 1.127,
+        "triangles": 2715,
+        "materials": [
+          "vintage_day_bed"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_bookshelf",
+      "file": "props/bookshelf.glb",
+      "type": "prop",
+      "author": "Ulan Cabanilla (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/wooden_bookshelf_worn",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 2.06,
+      "notes": "Bücherregal. Texturen max. 512 px WebP, Pivot unten mittig, echte Maße in Metern.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 178516,
+      "tech": {
+        "bbox_m": [
+          1.374,
+          2.063,
+          0.581
+        ],
+        "height_m": 2.063,
+        "triangles": 4000,
+        "materials": [
+          "wooden_bookshelf_worn"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei"
+      }
+    },
+    {
+      "id": "prop_traffic_light",
+      "file": "props/traffic_light.glb",
+      "type": "prop",
+      "author": "Quaternius (Low Poly Modular Street Pack)",
+      "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/buildings/q-street-trafficlight.glb",
+      "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
+      "license_urls_extra": [
+        "https://quaternius.com",
+        "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
+      ],
+      "scale_hint_m": 3.0,
+      "notes": "Ampel (Low-Poly, auf 3,0 m skaliert). Materialien lamp_red/lamp_yellow/lamp_green (emissive schaltbar), pole_*.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 12580,
+      "tech": {
+        "bbox_m": [
+          0.424,
+          3,
+          0.309
+        ],
+        "height_m": 3,
+        "triangles": 352,
+        "materials": [
+          "lamp_green",
+          "lamp_yellow",
+          "lamp_red",
+          "pole_darkgrey",
+          "pole_grey"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "Green.003",
+          "Yellow.001",
+          "Red.002",
+          "DarkGrey",
+          "Grey"
+        ]
+      }
+    },
+    {
+      "id": "prop_traffic_light_arm",
+      "file": "props/traffic_light_arm.glb",
+      "type": "prop",
+      "author": "Quaternius (Low Poly Modular Street Pack)",
+      "source_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/assets/buildings/q-street-trafficlight-2.glb",
+      "license_url": "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/LICENSE",
+      "license_urls_extra": [
+        "https://quaternius.com",
+        "https://github.com/Touhid-HZ/shooter-asset-library/blob/main/ATTRIBUTION.md"
+      ],
+      "scale_hint_m": 4.6,
+      "notes": "Ampel mit Ausleger (Low-Poly, auf 4,6 m skaliert). Materialien lamp_red/lamp_yellow/lamp_green (emissive schaltbar), pole_*.",
+      "license": "CC0-1.0",
+      "up_axis": "+Y",
+      "forward": "+Z",
+      "animations": [],
+      "size_bytes": 11972,
+      "tech": {
+        "bbox_m": [
+          0.499,
+          4.6,
+          2.721
+        ],
+        "height_m": 4.6,
+        "triangles": 398,
+        "materials": [
+          "lamp_green",
+          "lamp_yellow",
+          "lamp_red",
+          "pole_darkgrey",
+          "pole_grey"
+        ],
+        "bones": 0,
+        "animation_count": 0,
+        "loaded_with": "three r170 GLTFLoader + MeshoptDecoder (Chromium/SwiftShader), fehlerfrei",
+        "parts": [
+          "Green.004",
+          "Yellow.002",
+          "Red.003",
+          "DarkGrey.001",
+          "Grey.001"
+        ]
+      }
+    },
+    {
+      "id": "tex_brick_red",
+      "file": "textures/brick_red/",
+      "type": "texture",
+      "author": "Rob Tuytel (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/red_brick",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.4,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Ziegelwand. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 275660,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_plaster_white",
+      "file": "textures/plaster_white/",
+      "type": "texture",
+      "author": "Rob Tuytel (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/white_plaster_rough_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.0,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Putz weiß. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 353818,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_plaster_grey",
+      "file": "textures/plaster_grey/",
+      "type": "texture",
+      "author": "Rob Tuytel (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/grey_plaster",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.0,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Putz grau. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 402298,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_concrete",
+      "file": "textures/concrete/",
+      "type": "texture",
+      "author": "Dimitrios Savva (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/rough_concrete",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.23,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Beton. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 673696,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_roof_tiles_clay",
+      "file": "textures/roof_tiles_clay/",
+      "type": "texture",
+      "author": "Amal Kumar (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/clay_roof_tiles",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 4.0,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Dachziegel (Ton). scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 348802,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_wood_planks",
+      "file": "textures/wood_planks/",
+      "type": "texture",
+      "author": "Amal Kumar (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/wood_planks",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.5,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Holzbretter (Wand/Scheune). scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 89818,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_wood_floor",
+      "file": "textures/wood_floor/",
+      "type": "texture",
+      "author": "Dimitrios Savva (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/wood_floor",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.7,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Holzboden innen. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 113036,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_asphalt",
+      "file": "textures/asphalt/",
+      "type": "texture",
+      "author": "Rob Tuytel (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/asphalt_02",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 3.0,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Asphalt. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 687442,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_sidewalk_pavers",
+      "file": "textures/sidewalk_pavers/",
+      "type": "texture",
+      "author": "Amal Kumar (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/square_concrete_pavers",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.8,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Gehwegplatten. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 270842,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_grass",
+      "file": "textures/grass/",
+      "type": "texture",
+      "author": "Charlotte Baglioni (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/leafy_grass",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 2.0,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Gras. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 696282,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_dirt",
+      "file": "textures/dirt/",
+      "type": "texture",
+      "author": "Charlotte Baglioni (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/dirt",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 2.0,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Erde. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 356282,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_sand",
+      "file": "textures/sand/",
+      "type": "texture",
+      "author": "Rob Tuytel (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/sand_01",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.5,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Sand/Wüste. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 297266,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_snow",
+      "file": "textures/snow/",
+      "type": "texture",
+      "author": "Rob Tuytel (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/snow_02",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 2.0,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Schnee. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 274396,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_metal_corrugated",
+      "file": "textures/metal_corrugated/",
+      "type": "texture",
+      "author": "Jenelle van Heerden, Dimitrios Savva (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/corrugated_iron",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 1.12,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Wellblech. scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 177240,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    },
+    {
+      "id": "tex_metal_plate",
+      "file": "textures/metal_plate/",
+      "type": "texture",
+      "author": "Rob Tuytel (Poly Haven)",
+      "source_url": "https://polyhaven.com/a/metal_plate",
+      "license_url": "https://polyhaven.com/license",
+      "scale_hint_m": 0.5,
+      "up_axis": null,
+      "forward": null,
+      "maps": {
+        "albedo": "albedo.webp (1024, sRGB)",
+        "normal": "normal.webp (1024, OpenGL/+Y)",
+        "roughness": "roughness.webp (512, linear)"
+      },
+      "notes": "Metallplatte (UFO/Industrie). scale_hint_m = reale Kachelbreite der Textur (RepeatWrapping: repeat = Flächenbreite / scale_hint_m).",
+      "license": "CC0-1.0",
+      "animations": [],
+      "size_bytes": 192460,
+      "tech": {
+        "texture_sizes": [
+          "1024x1024",
+          "1024x1024",
+          "512x512"
+        ],
+        "loaded_with": "three r170 TextureLoader, fehlerfrei"
+      }
+    }
+  ]
 }
