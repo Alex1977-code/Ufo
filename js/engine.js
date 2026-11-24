@@ -350,13 +350,38 @@ export class Engine {
     const rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(this.renderer, rt);
     this.renderPass = new RenderPass(this.scene, this.camera);
+    this.tsrScene = new TSRScenePass();
+    this.tsrScene.scene = this.scene; this.tsrScene.camera = this.camera;
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.55, 0.5, 0.82);
     this.output = new OutputPass();
     this.superRes = new ShaderPass(SuperResShader);
+    this.tsr = new TSRResolvePass();
+    this.tsr.depthTexture = this.tsrScene.rt.depthTexture;
     this.composer.addPass(this.renderPass);
+    this.composer.addPass(this.tsrScene);
     this.composer.addPass(this.bloom);
     this.composer.addPass(this.output);
     this.composer.addPass(this.superRes);
+    this.composer.addPass(this.tsr);
+    this.ao = null; // GTAO wird erst bei Bedarf erzeugt
+    this.aoActive = false;
+
+    // TSR-Zustand
+    this.tsrSupported = this.probeTSR();
+    this.tsrFailed = false;
+    this.method = 'spatial';
+    this._jitterIndex = 0;
+    this._historyValid = false;
+    this._tsrFrames = 0;
+    this._prevVP = new THREE.Matrix4();
+    this._curVP = new THREE.Matrix4();
+    this._savedP = new THREE.Matrix4();
+    this._savedPI = new THREE.Matrix4();
+    this._jm = new THREE.Matrix4();
+    this._prevFwd = new THREE.Vector3();
+    this._fwd = new THREE.Vector3();
+    this._jCam = null;
+    this._jitterOn = false;
 
     this.dynScale = 1; // Faktor der dynamischen Auflösung
     this.fpsSamples = [];
@@ -376,6 +401,23 @@ export class Engine {
     this.resize();
   }
 
+  // Prüft, ob Float-Renderziele mit Tiefentextur verfügbar sind (sonst räumlicher Fallback)
+  probeTSR() {
+    try {
+      const r = this.renderer, gl = r.getContext();
+      if (!(gl instanceof WebGL2RenderingContext)) return false;
+      if (!r.extensions.has('EXT_color_buffer_float') && !r.extensions.has('EXT_color_buffer_half_float')) return false;
+      const probe = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthTexture: new THREE.DepthTexture(4, 4) });
+      r.setRenderTarget(probe);
+      const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      r.setRenderTarget(null);
+      probe.dispose();
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
   get internalScale() {
     const mode = UPSCALE_MODES[this.settings.upscale] || UPSCALE_MODES.quality;
     let s = mode.scale;
@@ -383,22 +425,98 @@ export class Engine {
     return clamp(s, 0.33, 1);
   }
 
+  // Anzeigename des aktiven Verfahrens (für Leistungsanzeige/Einstellungen)
+  get methodLabel() {
+    const fb = (this.settings.upscaler || 'temporal') === 'temporal' && this.method !== 'temporal' ? ' (Fallback)' : '';
+    return (UPSCALERS[this.method] || UPSCALERS.spatial).short + fb + (this.aoActive ? ` · AO ${this.settings.ao === 'high' ? 'hoch' : 'niedrig'}` : '');
+  }
+
   applySettings() {
     const s = this.settings;
     this.bloom.enabled = s.bloom;
-    this.superRes.uniforms.vignette.value = s.filmGrain ? 0.35 : 0;
-    this.superRes.uniforms.grain.value = s.filmGrain ? 0.025 : 0;
+    const vig = s.filmGrain ? 0.35 : 0, grain = s.filmGrain ? 0.025 : 0;
+    this.superRes.uniforms.vignette.value = vig;
+    this.superRes.uniforms.grain.value = grain;
     this.superRes.uniforms.sharpness.value = s.sharpness;
+    const fu = this.tsr.finalMat.uniforms;
+    fu.vignette.value = vig; fu.grain.value = grain; fu.sharpness.value = s.sharpness;
     this.shadowSize = s.shadows === 'high' ? 2048 : s.shadows === 'med' ? 1024 : 512;
+    this.configurePipeline();
     this.resize();
+  }
+
+  // Wählt temporalen oder räumlichen Weg und schaltet AO je nach Szene/Einstellung
+  configurePipeline() {
+    const s = this.settings;
+    const temporal = (s.upscaler || 'temporal') === 'temporal' && this.tsrSupported && !this.tsrFailed;
+    const method = temporal ? 'temporal' : 'spatial';
+    if (method !== this.method) {
+      this.method = method;
+      // TSR braucht kein MSAA (Jitter + Akkumulation glätten); räumlich behält 4× MSAA
+      const samples = temporal ? 0 : 4;
+      for (const rt of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+        if (rt.samples !== samples) { rt.samples = samples; rt.dispose(); }
+      }
+      this.resetHistory();
+    }
+    this.renderPass.enabled = !temporal;
+    this.superRes.enabled = !temporal;
+    this.tsrScene.enabled = temporal;
+    this.tsr.enabled = temporal;
+
+    // Umgebungsverdeckung: nur wenn die Szene es will (mode.ao oder Bodenkampf mit units)
+    const m = this.active;
+    const wants = !!m && (m.ao === true || (m.ao !== false && Array.isArray(m.units)));
+    const level = s.ao === 'high' || s.ao === 'low' ? s.ao : 'off';
+    const on = wants && level !== 'off';
+    if (on && !this.ao) {
+      try {
+        this.ao = new AOPass(m.scene, m.camera);
+        this.ao.updateGtaoMaterial({ radius: 1.1, distanceExponent: 1.6, thickness: 1.5, distanceFallOff: 1, scale: 1.15 });
+        this.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6 });
+        this.composer.insertPass(this.ao, this.composer.passes.indexOf(this.tsrScene) + 1);
+        this._aoLevel = null;
+      } catch (e) {
+        console.warn('AEGIS: Umgebungsverdeckung nicht verfügbar', e);
+        this.ao = null;
+      }
+    }
+    if (this.ao) {
+      this.ao.enabled = on;
+      if (m) {
+        this.ao.scene = m.scene; this.ao.camera = m.camera;
+        const persp = m.camera.isPerspectiveCamera ? 1 : 0;
+        if (this.ao.gtaoMaterial.defines.PERSPECTIVE_CAMERA !== persp) {
+          this.ao.gtaoMaterial.defines.PERSPECTIVE_CAMERA = persp;
+          this.ao.gtaoMaterial.needsUpdate = true;
+        }
+      }
+      if (on && this._aoLevel !== level) {
+        this._aoLevel = level;
+        const high = level === 'high';
+        this.ao.resScale = high ? 1 : 0.5;
+        this.ao.updateGtaoMaterial({ samples: high ? 16 : 8 });
+        this.ao.updatePdMaterial({ samples: high ? 16 : 8, rings: 2, radiusExponent: 2 });
+        if (this.ao._fullW) this.ao.setSize(this.ao._fullW, this.ao._fullH);
+      }
+    }
+    this.aoActive = !!(this.ao && on);
+  }
+
+  // History verwerfen (Moduswechsel, Größenänderung, Kamerasprung, Verfahrenswechsel)
+  resetHistory() {
+    this._historyValid = false;
+    this._jCam = null;
   }
 
   resize() {
     const w = Math.max(1, this.container.clientWidth);
     const h = Math.max(1, this.container.clientHeight);
     const dpr = Math.min(window.devicePixelRatio || 1, this.settings.maxDpr || 2);
-    this.outW = Math.floor(w * dpr);
-    this.outH = Math.floor(h * dpr);
+    const outW = Math.floor(w * dpr), outH = Math.floor(h * dpr);
+    if (outW !== this.outW || outH !== this.outH) this.resetHistory();
+    this.outW = outW;
+    this.outH = outH;
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, true);
     const scale = this.internalScale;
@@ -409,6 +527,9 @@ export class Engine {
     this.internalH = this.composer.renderTarget1.height | 0;
     this.superRes.uniforms.srcSize.value.set(this.internalW, this.internalH);
     this.superRes.uniforms.enabled.value = scale < 0.999 ? 1.0 : 0.0;
+    // History liegt in Ausgabeauflösung – dynamische Auflösung verwirft sie daher nicht
+    this.tsr.setOutputSize(this.outW, this.outH);
+    this.tsr.resolveMat.uniforms.srcSize.value.set(this.tsrScene.rt.width, this.tsrScene.rt.height);
     this.pendingResize = false;
     this.lastResize = performance.now();
     if (this.active?.camera) {
@@ -420,8 +541,77 @@ export class Engine {
 
   setMode(mode) {
     this.active = mode;
-    this.renderPass.scene = mode ? mode.scene : this.scene;
-    this.renderPass.camera = mode ? mode.camera : this.camera;
+    const scene = mode ? mode.scene : this.scene, camera = mode ? mode.camera : this.camera;
+    this.renderPass.scene = scene;
+    this.renderPass.camera = camera;
+    this.tsrScene.scene = scene;
+    this.tsrScene.camera = camera;
+    this.resetHistory();
+    this.configurePipeline();
+    this.resize();
+  }
+
+  // Subpixel-Jitter (Halton 2,3) auf die Projektionsmatrix legen; unverjitterte Matrizen merken
+  beginJitter() {
+    const cam = this.active.camera, u = this.tsr.resolveMat.uniforms;
+    cam.updateMatrixWorld();
+    this._curVP.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    cam.getWorldDirection(this._fwd);
+    // Kamerawechsel oder harter Schnitt (große Drehung) -> History verwerfen
+    if (this._jCam !== cam || this._fwd.dot(this._prevFwd) < 0.7) this._historyValid = false;
+    this._jCam = cam;
+    this._prevFwd.copy(this._fwd);
+    const iw = this.tsrScene.rt.width, ih = this.tsrScene.rt.height;
+    const ratio = Math.max(this.outW / iw, this.outH / ih);
+    const phases = clamp(Math.ceil(8 * ratio * ratio), 8, 32);
+    this._jitterIndex = (this._jitterIndex % phases) + 1;
+    const jx = halton(this._jitterIndex, 2) - 0.5, jy = halton(this._jitterIndex, 3) - 0.5;
+    this._savedP.copy(cam.projectionMatrix);
+    this._savedPI.copy(cam.projectionMatrixInverse);
+    this._jm.makeTranslation(2 * jx / iw, 2 * jy / ih, 0);
+    cam.projectionMatrix.premultiply(this._jm);
+    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+    this._jitterOn = true;
+    u.jitter.value.set(jx, jy);
+    u.srcSize.value.set(iw, ih);
+    u.curInvVP.value.copy(this._curVP).invert();
+    u.prevVP.value.copy(this._historyValid ? this._prevVP : this._curVP);
+    u.historyValid.value = this._historyValid ? 1 : 0;
+    // Szenen ohne vollständige Tiefe (Globus-Atmosphäre, Menü) bekommen kürzere History
+    const m = this.active;
+    u.maxAccum.value = typeof m.tsrHistory === 'number' ? m.tsrHistory : Array.isArray(m.units) ? 12 : 7;
+  }
+
+  endJitter() {
+    if (!this._jitterOn) return;
+    const cam = this._jCam;
+    cam.projectionMatrix.copy(this._savedP);
+    cam.projectionMatrixInverse.copy(this._savedPI);
+    this._prevVP.copy(this._curVP);
+    this._jitterOn = false;
+  }
+
+  // Bei Shader-/Framebuffer-Problemen still auf den räumlichen Weg zurückfallen
+  checkTSRHealth() {
+    try {
+      for (const mat of [this.tsr.resolveMat, this.tsr.finalMat, this.tsrScene.copy.material]) {
+        const prog = this.renderer.properties.get(mat).currentProgram;
+        if (prog?.diagnostics && prog.diagnostics.runnable === false) return false;
+      }
+      const gl = this.renderer.getContext();
+      this.renderer.setRenderTarget(this.tsr.history[0]);
+      const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+      this.renderer.setRenderTarget(null);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+
+  tsrFallback(err) {
+    console.warn('AEGIS: Temporales Upscaling nicht verfügbar – räumlicher Fallback aktiv.', err || '');
+    this.tsrFailed = true;
+    this.configurePipeline();
     this.resize();
   }
 
@@ -449,6 +639,24 @@ export class Engine {
     if (ns !== this.dynScale) { this.dynScale = ns; this.resize(); }
   }
 
+  renderFrame(dt) {
+    this.superRes.uniforms.time.value = this.time % 100;
+    this.tsr.finalMat.uniforms.time.value = this.time % 100;
+    const temporal = this.method === 'temporal' && !!this.active.camera;
+    if (!temporal) { this.composer.render(dt); return; }
+    try {
+      this.beginJitter();
+      this.composer.render(dt);
+    } catch (e) {
+      this.endJitter();
+      this.tsrFallback(e);
+      return;
+    }
+    this.endJitter();
+    this._historyValid = true;
+    if (++this._tsrFrames === 3 && !this.checkTSRHealth()) this.tsrFallback();
+  }
+
   start() {
     const loop = (now) => {
       requestAnimationFrame(loop);
@@ -461,8 +669,7 @@ export class Engine {
       this.onFrame?.(dt);
       if (this.active) {
         this.active.update?.(dt);
-        this.superRes.uniforms.time.value = this.time % 100;
-        this.composer.render(dt);
+        this.renderFrame(dt);
       }
     };
     requestAnimationFrame(loop);

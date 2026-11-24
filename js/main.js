@@ -14,7 +14,8 @@ import { isTouchDevice, rand } from './util.js';
 const SETTINGS_KEY = 'aegis_settings_v1';
 const mobile = isTouchDevice() && Math.min(screen.width, screen.height) < 900;
 const DEFAULTS = {
-  upscale: mobile ? 'performance' : 'quality', dynamicRes: true, targetFps: 60, sharpness: 0.5,
+  upscaler: 'temporal', upscale: mobile ? 'performance' : 'quality', dynamicRes: true, targetFps: 60, sharpness: 0.5,
+  ao: mobile ? 'off' : 'high',
   bloom: true, filmGrain: !mobile, shadows: mobile ? 'med' : 'high', maxDpr: mobile ? 2 : 2,
   sfx: 0.7, music: 0.35, vibration: true, animSpeed: 1, tvMode: false, showFps: false, confirmEnd: true,
 };
@@ -266,12 +267,16 @@ function openSettings() {
   const render = () => `
     <div class="set-tabs-info">Grafik-Pipeline: interne Auflösung <b id="s-res">${engine.internalW}×${engine.internalH}</b> → Ausgabe <b>${engine.outW}×${engine.outH}</b></div>
     <h4>Super-Resolution (DLSS-Stil)</h4>
+    ${opt('upscaler', 'Upscaler-Verfahren', [['temporal', 'Temporal (DLSS-artig)'], ['spatial', 'Räumlich (FSR1-artig)']])}
+    <p class="muted">Temporal: Jedes Bild wird um Bruchteile eines Pixels versetzt gerendert und über mehrere Bilder in voller Ausgabeauflösung zusammengesetzt (Bewegungsausgleich über die Kamera, Schutz gegen Geisterbilder) – deutlich ruhigere Kanten und mehr Details. Räumlich: rekonstruiert nur aus dem aktuellen Bild, minimal schneller.${(settings.upscaler || 'temporal') === 'temporal' && engine.method !== 'temporal' ? ' <b>Temporal wird von diesem Gerät nicht unterstützt – räumlicher Fallback aktiv.</b>' : ''}</p>
     ${opt('upscale', 'Upscaling-Modus', Object.entries(UPSCALE_MODES).map(([k, m]) => [k, m.label]))}
     ${opt('dynamicRes', 'Dynamische Auflösung', [[true, 'An'], [false, 'Aus']])}
     ${opt('targetFps', 'Ziel-Bildrate', [[30, '30'], [60, '60'], [90, '90'], [120, '120']])}
     ${range('sharpness', 'Schärfe (RCAS)', 0, 1, 0.05)}
     <h4>Grafik</h4>
     ${opt('shadows', 'Schatten', [['off', 'Aus'], ['low', 'Niedrig'], ['med', 'Mittel'], ['high', 'Hoch']])}
+    ${opt('ao', 'Umgebungsverdeckung (AO)', [['off', 'Aus'], ['low', 'Niedrig'], ['high', 'Hoch']])}
+    <p class="muted">Umgebungsverdeckung (GTAO) dunkelt Ecken, Spalten und Kontaktstellen ab – im Bodenkampf. „Niedrig“ rechnet mit halber Auflösung.</p>
     ${opt('bloom', 'Bloom / Leuchten', [[true, 'An'], [false, 'Aus']])}
     ${opt('filmGrain', 'Filmkorn & Vignette', [[true, 'An'], [false, 'Aus']])}
     ${opt('maxDpr', 'Max. Pixeldichte', [[1, '1×'], [1.5, '1,5×'], [2, '2×'], [3, '3×']])}
@@ -284,7 +289,7 @@ function openSettings() {
     <h4>Audio</h4>
     ${range('sfx', 'Effekte', 0, 1, 0.05)}
     ${range('music', 'Musik', 0, 1, 0.05)}
-    <p class="muted">Hinweis: NVIDIA DLSS selbst ist nur in nativen Windows-Spielen mit RTX-Grafikkarte verfügbar. AEGIS nutzt einen eigenen, plattformunabhängigen Upscaler (Kantenrekonstruktion + kontrastadaptives Schärfen + dynamische Auflösung), der auf PC, Handy und TV läuft. Schattenqualität wirkt ab dem nächsten Einsatz.</p>`;
+    <p class="muted">Hinweis: NVIDIA DLSS selbst ist nur in nativen Windows-Spielen mit RTX-Grafikkarte verfügbar. AEGIS nutzt eigene, plattformunabhängige Upscaler (temporal: Subpixel-Jitter + Bildhistorie mit Reprojektion; räumlich: Kantenrekonstruktion; jeweils mit kontrastadaptivem Schärfen und dynamischer Auflösung), die auf PC, Handy und TV laufen – ohne KI-Netz und ohne spezielle Grafikkarte. Schattenqualität wirkt ab dem nächsten Einsatz.</p>`;
   const h = modal({ title: '⚙ Einstellungen', wide: true, html: `<div id="set-body">${render()}</div>`, buttons: [{ label: 'Standard', close: false, action: () => { settings = Object.assign(settings, DEFAULTS); apply(); return false; } }, { label: 'Fertig', primary: true }] });
   const body = h.el.querySelector('#set-body');
   const apply = (focusSel) => {
@@ -375,7 +380,7 @@ engine.onFrame = (dt) => {
   fpsT -= dt;
   if (fpsT <= 0 && settings.showFps) {
     fpsT = 0.5;
-    fpsEl.innerHTML = `${Math.round(engine.fps)} FPS · ${engine.frameMs.toFixed(1)} ms<br>${engine.internalW}×${engine.internalH} → ${engine.outW}×${engine.outH}<br>${UPSCALE_MODES[settings.upscale].label}${settings.dynamicRes ? ` · DRS ${Math.round(engine.dynScale * 100)}%` : ''}`;
+    fpsEl.innerHTML = `${Math.round(engine.fps)} FPS · ${engine.frameMs.toFixed(1)} ms<br>${engine.internalW}×${engine.internalH} → ${engine.outW}×${engine.outH}<br>${UPSCALE_MODES[settings.upscale].label} · ${engine.methodLabel}${settings.dynamicRes ? ` · DRS ${Math.round(engine.dynScale * 100)}%` : ''}`;
   }
 };
 
