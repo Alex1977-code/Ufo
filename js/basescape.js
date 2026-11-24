@@ -205,7 +205,7 @@ function makeMaterials(T) {
     screen: new THREE.MeshBasicMaterial({ map: T.screen, color: new THREE.Color(1.5, 1.5, 1.5) }),
     map: new THREE.MeshBasicMaterial({ map: T.map, color: new THREE.Color(1.6, 1.6, 1.6) }),
     rack: new THREE.MeshBasicMaterial({ map: T.rack, color: new THREE.Color(1.8, 1.8, 1.8) }),
-    holo: new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3fe0ff).multiplyScalar(2.2), wireframe: true, transparent: true, opacity: 0.75, depthWrite: false }),
+    holo: new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3fe0ff).multiplyScalar(0.9), wireframe: true, transparent: true, opacity: 0.45, depthWrite: false }),
     sky: new THREE.MeshBasicMaterial({ map: T.sky, side: THREE.BackSide, fog: false, depthWrite: false }),
   };
   m.ground.userData.noCast = m.rock.userData.noCast = m.road.userData.noCast = true;

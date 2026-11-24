@@ -120,9 +120,10 @@ class GameState extends Emitter {
   tickDays(days) {
     const c = this.c;
     // Forschung
+    const rs = c.research && RESEARCH.find((x) => x.id === c.research.id);
+    if (c.research && (!rs || this.has(rs.id))) c.research = null; // ungültiges Projekt verwerfen, Rest des Tages läuft weiter
     if (c.research) {
-      const r = RESEARCH.find((x) => x.id === c.research.id);
-      if (!r || this.has(r.id)) { c.research = null; return; }
+      const r = rs;
       const speed = this.cheats.instantResearch ? 9999 : 1;
       c.research.progress += c.scientists * days * speed;
       if (c.research.progress >= r.cost) this.completeResearch(r.id);
