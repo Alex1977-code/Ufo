@@ -419,31 +419,6 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     setMusicMood('geo');
   };
 
-  try {
-    geo.deactivate();
-    hud.style.display = 'none';
-    buildScene();
-    buildHud();
-    bindInput();
-    view.update = update;
-    view.onResize = onResize;
-    engine.setMode(view);
-    engine.resetHistory?.();
-    setMusicMood('tac');
-    sfx('launch');
-  } catch (e) {
-    restore();
-    geo.active = true;
-    throw e;
-  }
-
-  // Wächter: wird der Modus von außen ersetzt (z. B. neuer Spielstand), Kampf still beenden
-  const watchdog = setInterval(() => {
-    if (finished) { clearInterval(watchdog); return; }
-    if (engine.active !== view) { clearInterval(watchdog); restore(); onEnd?.({ result: 'flee' }); }
-  }, 600);
-  unsubs.push(() => clearInterval(watchdog));
-
   // ================= Szene =================
   let sky, ground, cloudLow, cloudHigh, jet, ufoObj, smoke, fire, puffs, flashLight, sunLight, preset;
   function buildScene() {
@@ -1335,6 +1310,32 @@ export function runAirCombat({ engine, geo, craft, ufo, craftSpec, ufoSpec, over
     $.bracket.className = 'ac-bracket' + (inOwn ? ' lock' : '') + (inUfo ? ' danger' : '');
     $.bracketTxt.textContent = `${km(d)} km${inOwn ? ' · IM ZIEL' : ''}`;
   }
+
+  // ================= Start (nach allen Deklarationen) =================
+  try {
+    geo.deactivate();
+    hud.style.display = 'none';
+    buildScene();
+    buildHud();
+    bindInput();
+    view.update = update;
+    view.onResize = onResize;
+    engine.setMode(view);
+    engine.resetHistory?.();
+    setMusicMood('tac');
+    sfx('launch');
+  } catch (e) {
+    restore();
+    geo.active = true;
+    throw e;
+  }
+
+  // Wächter: wird der Modus von außen ersetzt (z. B. neuer Spielstand), Kampf still beenden
+  const watchdog = setInterval(() => {
+    if (finished) { clearInterval(watchdog); return; }
+    if (engine.active !== view) { clearInterval(watchdog); restore(); onEnd?.({ result: 'flee' }); }
+  }, 600);
+  unsubs.push(() => clearInterval(watchdog));
 
   return { end: (r = 'flee') => endCombat(r, 'Gefecht beendet.'), get state() { return S; } };
 }

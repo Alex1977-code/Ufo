@@ -201,7 +201,7 @@ function makeMaterials(T) {
     cyan: glow(0x3fe0ff), warm: glow(0xffa64a), green: glow(0x3dffb0), teal: glow(0x40ffe0, 2.6), amber: glow(0xffc94a, 2.6),
     white2: glow(0xdfefff, 2.2), red: glow(0xff3048, 3.2), purple: glow(0xc45cff, 3.2), blue: glow(0x5a8cff, 3.4),
     blink: new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff8a1a).multiplyScalar(4) }),
-    sel: new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3fe0ff).multiplyScalar(3), transparent: true, opacity: 0.9, depthWrite: false }),
+    sel: new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3fe0ff).multiplyScalar(1.4), transparent: true, opacity: 0.8, depthWrite: false }),
     screen: new THREE.MeshBasicMaterial({ map: T.screen, color: new THREE.Color(1.5, 1.5, 1.5) }),
     map: new THREE.MeshBasicMaterial({ map: T.map, color: new THREE.Color(1.6, 1.6, 1.6) }),
     rack: new THREE.MeshBasicMaterial({ map: T.rack, color: new THREE.Color(1.8, 1.8, 1.8) }),
@@ -796,8 +796,8 @@ class BaseView {
     const c = Game.c;
     this.dom = el('div', 'bs-ui');
     this.dom.innerHTML = `<div class="bs-top panel"><b>⬢ BASIS-ANSICHT</b><span>${esc(c.base.name)}</span><small class="bs-stats"></small></div>
-      <div class="bs-info panel" hidden></div>
       <div class="bs-labels"></div>
+      <div class="bs-info panel" hidden></div>
       <div class="bs-bar"><span class="bs-hint"></span>
         <button class="btn" data-act="build">🏗 Bauen <kbd data-pad="X"></kbd></button>
         <button class="btn primary" data-act="close">✕ Schließen <kbd data-pad="B"></kbd></button></div>`;
@@ -885,7 +885,7 @@ class BaseView {
     this.sel = i;
     const m = this.mods[i];
     // Leuchtrahmen um das Modul
-    const g = new THREE.Group(), y0 = FLOOR + 0.05, y1 = TOP + 0.45, t = 0.12, w = m.w + 0.5, d = m.d + 0.5;
+    const g = new THREE.Group(), y0 = FLOOR + 0.05, y1 = TOP + 0.45, t = 0.08, w = m.w + 0.5, d = m.d + 0.5;
     for (const sg of [-1, 1]) {
       box(g, w, t, t, null, 0, y1, sg * d / 2); box(g, t, t, d, null, sg * w / 2, y1, 0);
       box(g, w, t, t, null, 0, y0, sg * d / 2); box(g, t, t, d, null, sg * w / 2, y0, 0);
@@ -1063,7 +1063,7 @@ class BaseView {
     this.holo.children[1].rotation.z = this.t * 1.3;
     const on = (this.t * 1.6) % 1 < 0.5;
     this.mt.blink.color.setRGB(1, 0.42, 0.05).multiplyScalar(on ? 4.5 : 0.25);
-    this.mt.sel.opacity = 0.6 + Math.sin(this.t * 5) * 0.3;
+    this.mt.sel.opacity = 0.55 + Math.sin(this.t * 5) * 0.25;
     // Datenstand prüfen (z. B. nach Bauauftrag)
     if ((this.sigT -= dt) <= 0) { this.sigT = 0.5; if (this.sig() !== this.lastSig) this.rebuild(); }
     this.updateLabels();
