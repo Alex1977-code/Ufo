@@ -675,6 +675,17 @@ export const FACADES = {
   concrete: { tile: 3, up: 5, tint: ['#e2e2de', '#d2d5d9', '#e6e0d4'], trim: '#c2c6ca', roof: ['#6a6a6a'] },
   adobe: { tile: 2, up: 6, tint: ['#dca878', '#cd9a68', '#e4bc8e'], trim: '#6a4a2e', roof: ['#b08a60'] },
   prefab: { tile: 7, up: 7, tint: ['#c0452f', '#e0dccf', '#4a7a98', '#d1922e'], trim: '#9aa0a6', roof: ['#eef3f6', '#e4ebf0'] },
+  // Stile der Kartenmodule (Wände meist aus stone/plaster/concrete/metalsheet/glass → Tönung dieser Module)
+  farmhouse: { tile: 2, up: 6, tint: ['#f6f0e4', '#efe2c8', '#e8e4dc', '#f2e6d8'], trim: '#ffffff', roof: ['#8a4632', '#6e3a2a', '#5a5452'] },
+  barn: { tile: 1, up: 1, tint: ['#a8382a', '#8a2e22', '#d8d4cc', '#7a5634'], trim: '#f4f1ea', roof: ['#4a4a4e', '#6e6a64', '#5d3a2a'] },
+  warehouse: { tile: 7, up: 7, tint: ['#e8ecef', '#c8d4dc', '#e0dcd0', '#d0dcd0'], trim: '#9aa0a6', roof: ['#8a8e92', '#6a6e72'] },
+  church: { tile: 2, up: 6, tint: ['#f4eee4', '#e8e0d2', '#ffffff'], trim: '#f0ece4', roof: ['#4a4e56', '#5a5452'] },
+  gasstation: { tile: 3, up: 5, tint: ['#f4f4f2', '#e8ecf0'], trim: '#c42a1e', roof: ['#d8dadc', '#c8ccd0'] },
+  bunker: { tile: 3, up: 3, tint: ['#d8d8d4', '#c4c4be', '#cfd2c8'], trim: '#a8a8a2', roof: ['#6a6a6a', '#5f625a'] },
+  cabin: { tile: 1, up: 1, tint: ['#7a5634', '#6b4a2e', '#8a6440'], trim: '#3d2a1a', roof: ['#3e4a3a', '#4a3a2e', '#55524c'] },
+  ruin: { tile: 2, up: 6, tint: ['#e0d8c8', '#d0c8b8'], trim: '#c8c0b0', roof: ['#5a5452'] },
+  greenhouse: { tile: 7, up: 7, tint: ['#ffffff'], trim: '#e8eae6', roof: ['#e4ecee', '#d8e4e8'] },
+  motel: { tile: 2, up: 6, tint: ['#f2d4c4', '#efe0b8', '#d8e4ec', '#e4efd8'], trim: '#ffffff', roof: ['#6e6a64', '#8a8e92'] },
 };
 
 // ---------- Hindernis-Definitionen: Teile für InstancedMesh ----------
@@ -918,7 +929,7 @@ export function propParts() {
     'deco:ice': () => [{ geo: mergeGeos([new THREE.DodecahedronGeometry(0.38, 0).scale(1, 0.8, 1).translate(0, 0.2, 0), new THREE.DodecahedronGeometry(0.24, 0).translate(0.38, 0.12, 0.15), new THREE.OctahedronGeometry(0.2, 0).translate(-0.28, 0.12, -0.25)]), mat: M.ice }],
     'deco:rug': () => [{ geo: mergeGeos([[bx(1.5, 0.012, 1.0), '#ffffff'], [bx(1.3, 0.014, 0.8), '#d8d0c4']]), mat: M.furnSoft, tint: true, shadow: false }],
   };
-  Object.assign(defs, mapDefs(M));
+  Object.assign(defs, mapDefs(M, P));
   for (const [k, f] of Object.entries(defs)) { let v = null; Object.defineProperty(P, k, { get: () => (v ||= f()), enumerable: true, configurable: true }); }
   return { parts: P, mats: M };
 }
@@ -926,7 +937,7 @@ export function propParts() {
 // ---------- Karten-Hindernisse (Vertrag orchestrator/karten): Wandmodule, Deckung, Vegetation, Fahrzeuge, Bauwerke ----------
 // Lokales Koordinatensystem: Feld = x/z ∈ [-1, 1], Boden y = 0; lineare Objekte entlang x; Fahrzeuge/Container: vorne = +z.
 // Materialien werden erst erzeugt, wenn ein Typ auf der Karte vorkommt (Teile sind Lazy-Getter).
-function mapDefs(M) {
+function mapDefs(M, P) {
   const T = TILE, L = {}, t0 = textures();
   const mk = (k, f) => L[k] ||= f();
   const W = {
@@ -983,6 +994,14 @@ function mapDefs(M) {
     { geo: F(bx(T, H, T)), mat: W.plaster() },
     { geo: mergeGeos([[bx(T + 0.05, 0.4, T + 0.05), '#7a756e'], [bx(T + 0.1, 0.1, T + 0.1, 0, H - 0.22), '#ffffff'], [bx(T + 0.16, 0.14, T + 0.16, 0, H - 0.12), '#ffffff']]), mat: M.trim, shadow: false },
   ];
+  // ===== Gebäude-Wandmodule aus neuen Materialien: Außenwand / Fenster / Türrahmen, je mit Obergeschossen (bit 1/2), Höhe 2,8 m =====
+  const BM = { stone: W.stone, concrete: W.concrete, metalsheet: W.corr, plaster: W.plaster };
+  for (const [k, mf] of Object.entries(BM)) {
+    const up = (n) => ({ geo: planarUV(bx(T, H, T, 0, n * H), H, n * H), mat: mf(), bit: n });
+    D[k + ':out'] = () => [{ geo: F(bx(T, H, T)), mat: mf() }, { geo: mergeGeos([[bx(T + 0.06, 0.32, T + 0.06), '#6f6a64'], [bx(T + 0.1, 0.1, T + 0.1, 0, H - 0.22), '#ffffff'], [bx(T + 0.16, 0.16, T + 0.16, 0, H - 0.12), '#ffffff']]), mat: M.trim, shadow: false }, up(1), up(2)];
+    D[k + ':win'] = () => { const w = P.window; return [{ geo: mergeGeos([F(bx(T, 0.95, T)), F(bx(T, 0.6, T, 0, 2.2)), F(bx(0.32, 1.25, T, -0.84, 0.95)), F(bx(0.32, 1.25, T, 0.84, 0.95))]), mat: mf() }, w[1], w[2], up(1), up(2)]; };
+    D[k + ':door'] = () => { const d = P.door; return [{ geo: mergeGeos([F(bx(T, 0.6, T, 0, 2.2)), F(bx(0.36, 2.2, T, -0.82)), F(bx(0.36, 2.2, T, 0.82))]), mat: mf() }, d[1], up(1), up(2)]; };
+  }
   // ===== Glaswand: Sockel, Sprossen, zwei Scheiben =====
   D.glass = () => {
     const fr = '#e9ebe8';

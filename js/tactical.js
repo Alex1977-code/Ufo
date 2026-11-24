@@ -2,7 +2,7 @@
 // zerstörbare Umgebung, Alien-KI – steuerbar per Maus, Touch, Tastatur und Controller.
 import * as THREE from 'three';
 import { generateMap, WALLS } from './tacmap.js';
-import { TILE, propParts, patchFog, fogUniforms, makeSoldier, makeAlien, makeCivilian, makeTransport, textures, FACADES, atlasTile, makeRoof, releaseTextures } from './models.js';
+import { TILE, propParts, patchFog, fogUniforms, makeSoldier, makeAlien, makeCivilian, makeTransport, textures, FACADES, atlasTile, makeRoof, releaseTextures, makeWater } from './models.js';
 import { canvasTexture } from './engine.js';
 import { WEAPONS, ARMORS, ALIENS, ITEMS, BELT_SLOTS, RANKS, UFOS } from './data.js';
 import { Game } from './game.js';
@@ -296,11 +296,106 @@ export class Tactical {
     const plan = [], counts = {};
     const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), pos = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0);
     const same = (x, y, t) => m.at(x, y)?.wall?.type === t;
+    // ---- Karten-Hindernisse aus dem Vertrag (orchestrator/karten/vertrag.md) ----
+    // wall.rot = Blickrichtung in Vierteldrehungen (0 Süd/+z, 1 West, 2 Nord, 3 Ost) → Winkel -rot·90°; wall.variant 0..3
+    const BMAT = new Set(['stone', 'concrete', 'metalsheet', 'plaster']);
+    const WALLISH = new Set(['brick', 'wood', 'window', 'metal', 'stone', 'concrete', 'metalsheet', 'plaster', 'glass']);
+    const LINE = new Set(['glass', 'stonewall', 'sandbag', 'tallhedge', 'chainlink']);
+    const RUN = new Set(['bus', 'truck', 'container']);
+    const TREE = new Set(['birch', 'oak', 'palm', 'deadtree']), ORG = new Set(['bush', 'stump', 'rockpile', ...TREE]);
+    const FREE = new Set(['barrel', 'fuelbarrel', 'well', 'fountain']);
+    const NEWT = new Set(['stone', 'concrete', 'metalsheet', 'plaster', 'glass', 'stonewall', 'sandbag', 'woodpile', 'bush', 'tallhedge', 'birch', 'oak', 'palm', 'deadtree', 'stump', 'rockpile', 'container', 'pallet', 'barrel', 'fuelbarrel', 'fuelpump', 'bus', 'truck', 'milwreck', 'well', 'fountain', 'gravestone', 'statue', 'pylon', 'watertank', 'silo', 'scaffold', 'tent', 'milcrate', 'chainlink']);
+    const biome = this.opts.biome;
+    const FOL = biome === 'desert' ? ['#eae4b4', '#dcd6a4', '#cfd0a4', '#f2e2b0'] : biome === 'arctic' ? ['#dfe8e2', '#cfdcd6', '#e6eee8', '#c8d4cc'] : ['#ffffff', '#e4f2c8', '#c8dcb0', '#f6dc98'];
+    const PAL = {
+      stone: ['#ffffff', '#efe4d2', '#dcdfe2', '#f2e2c4'], concrete: ['#ffffff', '#e6e8ec', '#f2ede2', '#d6d6d2'], metalsheet: ['#eef2f4', '#b8483a', '#6a947a', '#6a8cb4'], plaster: ['#f6efe2', '#f2dcb8', '#e0ead8', '#f2d6c6'],
+      rockpile: ['#ffffff', '#e8c8a8', '#c8ccd0', '#a8a098'], barrel: ['#3a6aa8', '#4a7a40', '#9a9ea2', '#d8b43a'], tent: ['#e8742a', '#4a8a46', '#3466b0', '#c83a32', '#e2c234'],
+      bus: ['#f0c020', '#ececea', '#c83a2a', '#2f62a2'], cab: ['#c8302a', '#2a4a8a', '#ececea', '#2f6e3e'], trailer: ['#f2f2f0', '#c8ccd0', '#3a5a9a', '#b03a2a'], grave: ['#a8a8a6', '#5a5a5e', '#a88478', '#d4c8ac'], tank: ['#f2f2f2', '#cfe0ee', '#c4c8cc', '#c27a5c'],
+    };
+    const col = (h) => (h ? new THREE.Color(h) : null);
+    const eul = new THREE.Euler();
+    const water = [];
+    const put = (c, t, v, B = null, colors = null, tiles = null, mask = 0, extraOf = null) => {
+      const e = { c, t, v, m: mtx.clone(), colors, tiles, mask, B, extraOf };
+      plan.push(e); (counts[t] ||= {})[v] = (counts[t][v] || 0) + 1; return e;
+    };
+    const M4 = (px, pz, ang, sx = 1, sy = 1, sz = 1, tx = 0, tz = 0) => mtx.compose(pos.set(px, 0, pz), q.setFromEuler(eul.set(tx, ang, tz)), s.set(sx, sy, sz));
+    const addNew = (c, x, y, t, p) => {
+      const w = c.wall, vr = Number.isInteger(w.variant) ? w.variant & 3 : (x * 7 + y * 13) & 3, rr = Number.isInteger(w.rot) ? w.rot & 3 : null;
+      const qa = rr == null ? randInt(0, 3) * T2 : -rr * T2, hash = (x * 31 + y * 17) >>> 0;
+      const bld = c.bld != null ? this.bInfo[c.bld] : null;
+      // Gebäudewände aus neuen Materialien: wie brick/wood mit Obergeschossen, Fenstern und Innenwänden
+      if (bld && (BMAT.has(t) || (t === 'window' && BMAT.has(bld.b.mat)))) {
+        const b = bld.b, edge = x === b.x0 || y === b.y0 || x === b.x0 + b.w - 1 || y === b.y0 + b.h - 1;
+        if (t === 'window') { M4(p.x, p.z, w.vert ? T2 : 0); put(c, t, b.mat + ':win', bld, [bld.tint, bld.trim, null, bld.tint, bld.tint], null, bld.perm); }
+        else if (edge) { M4(p.x, p.z, randInt(0, 3) * T2); put(c, t, t + ':out', bld, [bld.tint, bld.trim, bld.tint, bld.tint], null, bld.perm); }
+        else { M4(p.x, p.z, 0); put(c, t, 'wallIn', null, [inner, white], [atlasTile(2), null]); }
+        return;
+      }
+      if (!parts[t] && !LINE.has(t) && !RUN.has(t) && !['gravestone', 'tent'].includes(t)) {
+        // Unbekannter Typ (noch ohne Modell): Platzhalter-Kiste in Typhöhe, damit nichts abstürzt
+        M4(p.x, p.z, rand() * 6.28, 1, (WALLS[t]?.h || 1.15) / 1.15, 1); put(c, t, 'crate'); return;
+      }
+      if (BMAT.has(t)) { M4(p.x, p.z, randInt(0, 3) * T2); put(c, t, t, null, [col(PAL[t][vr]), null]); return; }
+      if (LINE.has(t)) {
+        // An Nachbarn ausrichten; Ecken/T-Stöße aus Halbstücken (Instanz in Achsrichtung halb skaliert)
+        const conn = (xx, yy) => { const o = m.at(xx, yy)?.wall?.type; return !!o && (o === t || (t === 'glass' && WALLISH.has(o)) || (t === 'chainlink' && o === 'fence')); };
+        const E = conn(x + 1, y), Wn = conn(x - 1, y), S = conn(x, y + 1), N = conn(x, y - 1), pcs = [];
+        if (E && Wn) pcs.push([0, 0, 0, 1]); else if (E || Wn) pcs.push(S || N ? [E ? 0.5 : -0.5, 0, 0, 0.5] : [0, 0, 0, 1]);
+        if (S && N) pcs.push([0, 0, T2, 1]); else if (S || N) pcs.push(E || Wn ? [0, S ? 0.5 : -0.5, T2, 0.5] : [0, 0, T2, 1]);
+        if (!pcs.length) pcs.push([0, 0, w.vert != null ? (w.vert ? T2 : 0) : rr != null ? (rr % 2 ? 0 : T2) : randInt(0, 1) * T2, 1]);
+        const tint = t === 'tallhedge' ? [col(FOL[vr]).lerp(white, 0.3)] : null;
+        let main = null;
+        for (const [dx, dz, a, sx] of pcs) {
+          const flip = t === 'sandbag' || t === 'stonewall' || t === 'tallhedge' ? (rand() < 0.5 ? Math.PI : 0) : 0;
+          M4(p.x + dx * TILE, p.z + dz * TILE, a + flip, sx);
+          const e = put(c, t, t, null, tint, null, 0, main); main ||= e;
+        }
+        return;
+      }
+      if (RUN.has(t)) {
+        // Fahrzeuge/Container über mehrere Felder: Reihe entlang einer Achse → Segmente vorne/Mitte/hinten bzw. einzeln
+        const run = (dx, dy) => { let a = 0, b = 0; while (same(x - dx * (a + 1), y - dy * (a + 1), t)) a++; while (same(x + dx * (b + 1), y + dy * (b + 1), t)) b++; return [a, b]; };
+        const rx = run(1, 0), ry = run(0, 1), lx = rx[0] + rx[1] + 1, ly = ry[0] + ry[1] + 1;
+        const axis = lx > 1 && ly === 1 ? 0 : ly > 1 && lx === 1 ? 1 : rr != null ? (rr % 2 ? 0 : 1) : lx > 1 ? (lx >= ly ? 0 : 1) : hash & 1;
+        const [a, b] = axis === 0 ? rx : ry, L = a + b + 1, sx0 = axis === 0 ? x - a : x, sy0 = axis === 0 ? y : y - a, sw = m.at(sx0, sy0).wall;
+        const r0 = Number.isInteger(sw.rot) ? sw.rot & 3 : rr, v0 = Number.isInteger(sw.variant) ? sw.variant & 3 : (sx0 * 7 + sy0 * 13) & 3;
+        const fwd = r0 != null && (r0 % 2 === 1) === (axis === 0) ? (r0 === 0 || r0 === 3 ? 1 : -1) : ((sx0 * 31 + sy0 * 17) >>> 2) & 1 ? 1 : -1;
+        const f = fwd > 0 ? L - 1 - a : a, role = L === 1 ? 'single' : f === 0 ? 'front' : f === L - 1 ? 'rear' : 'mid';
+        const ang = L === 1 && r0 == null ? randInt(0, 3) * T2 : axis === 0 ? (fwd > 0 ? T2 : -T2) : fwd > 0 ? 0 : Math.PI;
+        M4(p.x, p.z, ang);
+        const v = t + ':' + role;
+        if (t === 'container') put(c, t, v, null, null, [atlasTile(v0)]);
+        else put(c, t, v, null, [col(t === 'bus' ? PAL.bus[v0] : role === 'front' || role === 'single' ? PAL.cab[v0] : PAL.trailer[(v0 + (sx0 + sy0)) & 3]), null]);
+        return;
+      }
+      if (ORG.has(t)) {
+        const tree = TREE.has(t), j = tree ? 0.3 : 0.15, sc = randRange(0.85, 1.15);
+        M4(p.x + randRange(-j, j), p.z + randRange(-j, j), (rr == null ? 0 : -rr * T2) + rand() * 6.28, sc, sc * (tree ? randRange(0.9, 1.15) : 1), sc);
+        const fol = col(FOL[vr]).multiplyScalar(randRange(0.9, 1.05));
+        put(c, t, t, null, t === 'bush' ? [fol] : t === 'birch' || t === 'oak' || t === 'palm' ? [null, fol] : t === 'rockpile' ? [col(PAL.rockpile[vr])] : null);
+        return;
+      }
+      // Einzelobjekte: Drehung aus rot (sonst zufällige Vierteldrehung) + leichte Zufallsdrehung
+      let v = t, ang = qa + randRange(-0.06, 0.06), colors = null, tx = 0, tz = 0;
+      if (FREE.has(t)) ang = rand() * 6.28;
+      if (t === 'gravestone') { v = 'gravestone:' + vr; ang = (rr == null ? 0 : -rr * T2) + randRange(-0.05, 0.05); colors = [col(PAL.grave[(vr + hash) & 3])]; }
+      if (t === 'tent') { v = vr < 2 ? 'tent:dome' : 'tent:ridge'; colors = [col(PAL.tent[hash % 5])]; }
+      if (t === 'pallet') v = vr & 1 ? 'pallet:load' : 'pallet';
+      if (t === 'barrel') colors = [col(PAL.barrel[vr])];
+      if (t === 'watertank') colors = [col(PAL.tank[vr]), null];
+      if (t === 'milwreck') { tx = randRange(-0.04, 0.04); tz = randRange(-0.05, 0.05); }
+      if (t === 'scaffold') ang = same(x - 1, y, t) || same(x + 1, y, t) ? 0 : same(x, y - 1, t) || same(x, y + 1, t) ? T2 : rr != null ? (rr % 2 ? 0 : T2) : 0;
+      M4(p.x, p.z, ang, 1, 1, 1, tx, tz);
+      put(c, t, v, null, colors);
+    };
     for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) {
       const c = m.at(x, y); if (!c.wall) continue;
       const t = c.wall.type;
       const p = this.cellPos(x, y);
       pos.set(p.x, 0, p.z);
+      if (t === 'water') { water.push([x, y]); continue; }
+      if (!(t in parts) || NEWT.has(t) || (t === 'window' && c.bld != null && BMAT.has(m.buildings[c.bld]?.mat))) { addNew(c, x, y, t, p); continue; }
       let v = t, rot = 0, scl = 1, colors = null, tiles = null, mask = 0, B = null;
       if (['tree', 'pine', 'rock', 'bigrock', 'hivewall', 'wreck', 'pod', 'crate'].includes(t)) { rot = rand() * Math.PI * 2; scl = randRange(0.85, 1.2); }
       if (t === 'crate') { scl = 1; rot = randInt(0, 3) * T2 + randRange(-0.2, 0.2); if (c.wall.furn) { v = choice(FURNITURE); rot = (c.wall.rot || 0) + randRange(-0.04, 0.04); } }
@@ -340,22 +435,55 @@ export class Tactical {
       for (const [v, n] of Object.entries(vs)) sets[v] = new PropSet(this.scene, parts[v], n, shadows);
       this.props[t] = new VariantSet(sets);
     }
+    const links = {};
     for (const e of plan) {
-      e.c.wall.idx = this.props[e.t].add(e.m, e.colors, e.tiles, e.mask, e.v);
+      const i = this.props[e.t].add(e.m, e.colors, e.tiles, e.mask, e.v);
+      if (e.extraOf) { ((links[e.t] ||= {})[e.extraOf.c.wall.idx] ||= []).push(i); continue; }
+      e.c.wall.idx = i;
       if (e.B) e.B.inst.push([this.props[e.t], e.c.wall.idx, e.mask]);
     }
-    // Türrahmen samt Sturz und Obergeschoss über der Türöffnung (Deko ohne Kollision, erscheint mit dem Feld)
+    // Typen mit mehreren Instanzen je Feld (Ecken linearer Objekte): Ein-/Ausblenden und Zerstören wirken auf alle Teile
+    for (const [t, lk] of Object.entries(links)) {
+      const vs = this.props[t];
+      this.props[t] = { sets: vs.sets, ref: vs.ref, base: vs.base, zero: vs.zero, add: (...a) => vs.add(...a), setMask: (i, b) => vs.setMask(i, b),
+        show: (i, on) => { on = on && vs.base[i] !== vs.zero; vs.show(i, on); for (const j of lk[i] || []) vs.show(j, on); } };
+    }
+    // Türrahmen samt Sturz und Obergeschoss über der Türöffnung (Deko ohne Kollision, erscheint mit dem Feld); Material je Gebäude
     const doors = [];
     for (const B of this.bInfo) for (const d of B.b.doors) { const c = m.at(d.x, d.y); if (c && !c.wall && !c.ufo && c.indoor) doors.push([B, d]); }
     if (doors.length) {
-      this.doorSet = new PropSet(this.scene, parts.door, doors.length, shadows);
-      for (const [B, d] of doors) {
-        const p = this.cellPos(d.x, d.y);
-        q.setFromAxisAngle(Y, { n: 0, s: Math.PI, w: T2, e: -T2 }[d.side]);
-        mtx.compose(pos.set(p.x, 0, p.z), q, s.set(1, 1, 1));
-        const i = this.doorSet.add(mtx, [B.tint, B.trim, B.tint, B.tint], [atlasTile(B.f.tile), null, atlasTile(B.f.up), atlasTile(B.f.up)], B.perm);
-        B.inst.push([this.doorSet, i, B.perm]); B.doors.push({ i, k: d.y * m.W + d.x, on: false });
+      const byV = {}, refs = [];
+      for (const bd of doors) (byV[BMAT.has(bd[0].b.mat) ? bd[0].b.mat + ':door' : 'door'] ||= []).push(bd);
+      for (const [v, list] of Object.entries(byV)) {
+        const set = new PropSet(this.scene, parts[v], list.length, shadows);
+        for (const [B, d] of list) {
+          const p = this.cellPos(d.x, d.y);
+          q.setFromAxisAngle(Y, { n: 0, s: Math.PI, w: T2, e: -T2 }[d.side]);
+          mtx.compose(pos.set(p.x, 0, p.z), q, s.set(1, 1, 1));
+          const i = set.add(mtx, [B.tint, B.trim, B.tint, B.tint], v === 'door' ? [atlasTile(B.f.tile), null, atlasTile(B.f.up), atlasTile(B.f.up)] : null, B.perm);
+          B.inst.push([set, i, B.perm]); B.doors.push({ i: refs.length, k: d.y * m.W + d.x, on: false }); refs.push([set, i]);
+        }
       }
+      this.doorSet = { show: (i, on) => refs[i][0].show(refs[i][1], on) };
+    }
+    // Tiefes Wasser: eine gemeinsame, animierte Fläche über allen Wasserfeldern (+ Uferrand zum Ausblenden)
+    if (water.length) {
+      const data = new Uint8Array(m.W * m.H), cover = new Set(), P3 = [], UV = [];
+      for (const [x, y] of water) { data[y * m.W + x] = 255; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (m.at(x + dx, y + dy)) cover.add((y + dy) * m.W + x + dx); }
+      for (const k of cover) {
+        const p = this.cellPos(k % m.W, (k / m.W) | 0), x0 = p.x - TILE / 2, x1 = p.x + TILE / 2, z0 = p.z - TILE / 2, z1 = p.z + TILE / 2;
+        P3.push(x0, 0, z0, x0, 0, z1, x1, 0, z1, x0, 0, z0, x1, 0, z1, x1, 0, z0);
+        for (let i = 0; i < 18; i += 3) UV.push(P3[P3.length - 18 + i] / 7, -P3[P3.length - 18 + i + 2] / 7);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(P3, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(P3.length).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+      const mask = new THREE.DataTexture(data, m.W, m.H, THREE.RedFormat);
+      mask.magFilter = mask.minFilter = THREE.LinearFilter; mask.needsUpdate = true;
+      const wtr = makeWater(mask), mesh = new THREE.Mesh(geo, wtr.mat);
+      mesh.position.y = 0.04; mesh.receiveShadow = true; mesh.renderOrder = 1;
+      this.scene.add(mesh);
+      this.water = { mesh, mask, time: wtr.time };
     }
     // Dächer: je Gebäude ein Objekt, ausgeblendet solange man hineinsehen muss (updateBuildings)
     for (const B of this.bInfo) {
@@ -1190,6 +1318,7 @@ export class Tactical {
 
   damageWall(x, y, amount) {
     const c = this.map.at(x, y); if (!c?.wall) return;
+    if (WALLS[c.wall.type]?.indestructible) return; // tiefes Wasser u. ä. ist nicht zerstörbar
     c.wall.hp -= amount;
     if (c.wall.hp <= 0) {
       const t = c.wall.type;
@@ -2308,6 +2437,7 @@ export class Tactical {
       p.sp.material.opacity = (p.smoke ? 0.6 : 1) * (1 - k);
     }
     this.fx = this.fx.filter((f) => f(dt));
+    if (this.water) this.water.time.value += dt; // Wellen der Wasserflächen
     if (this.smokes.length || this.flares.length) this.updateEffects(dt, time);
     this.updateBuildings();
     this.placePathLabels();
@@ -2334,7 +2464,7 @@ export class Tactical {
     this.deactivate();
     this.unsub.forEach((f) => f());
     this.scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
-    this.envRT?.dispose(); this.fogTex.dispose(); this.groundTex.dispose(); this.particleTex?.dispose(); this.smokeTex?.dispose();
+    this.envRT?.dispose(); this.fogTex.dispose(); this.water?.mask.dispose(); this.groundTex.dispose(); this.particleTex?.dispose(); this.smokeTex?.dispose();
     this.smokePool?.forEach((s) => s.material.dispose());
     this.sun?.dispose?.();
     this.scene.traverse((o) => { if (o.isInstancedMesh) o.dispose(); if (o.material && !o.isSprite) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (!m.userData.shared) m.dispose(); }); });
