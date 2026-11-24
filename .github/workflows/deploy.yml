@@ -1,0 +1,62 @@
+name: Deploy (gh-pages)
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch/Tag/Commit, der veröffentlicht wird
+        default: claude/gallant-cray-8s8udi
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntaxcheck js/*.js
+        run: |
+          for f in js/*.js; do node --experimental-default-type=module --check "$f" || exit 1; done
+      - working-directory: tests
+        run: npm install --no-audit --no-fund
+      - working-directory: tests
+        run: npx playwright install --with-deps chromium
+      - working-directory: tests
+        run: npm test
+      - name: Screenshots hochladen
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: tests/screenshots/
+          if-no-files-found: ignore
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Auslieferungsordner bauen
+        run: |
+          SHA=$(git rev-parse --short=8 HEAD)
+          mkdir ../site
+          tar --exclude=./.git --exclude=./tests --exclude=./orchestrator --exclude=./.github -cf - . | tar -xf - -C ../site
+          touch ../site/.nojekyll
+          sed -i "s/^const CACHE = .*/const CACHE = 'aegis-${SHA}';/" ../site/sw.js
+          grep -n "^const CACHE" ../site/sw.js
+      - uses: peaceiris/actions-gh-pages@v4.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ../site
+          enable_jekyll: false
+          force_orphan: false
+          commit_message: "Deploy ${{ inputs.ref }}"

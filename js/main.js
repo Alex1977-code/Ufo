@@ -16,6 +16,8 @@ const mobile = isTouchDevice() && Math.min(screen.width, screen.height) < 900;
 const DEFAULTS = {
   upscaler: 'temporal', upscale: mobile ? 'performance' : 'quality', dynamicRes: true, targetFps: 60, sharpness: 0.5,
   ao: mobile ? 'off' : 'high',
+  // Energiesparen: Bildratenlimit (0 = aus) – Handy 30, sonst 60; Leerlauf-Drosselung an
+  fpsLimit: Math.min(screen.width, screen.height) < 700 ? 30 : 60, idleSaver: true,
   bloom: true, filmGrain: !mobile, shadows: mobile ? 'med' : 'high', maxDpr: mobile ? 2 : 2,
   sfx: 0.7, music: 0.35, vibration: true, animSpeed: 1, tvMode: false, showFps: false, confirmEnd: true,
 };
@@ -281,6 +283,10 @@ function openSettings() {
     ${opt('filmGrain', 'Filmkorn & Vignette', [[true, 'An'], [false, 'Aus']])}
     ${opt('maxDpr', 'Max. Pixeldichte', [[1, '1×'], [1.5, '1,5×'], [2, '2×'], [3, '3×']])}
     ${opt('showFps', 'Leistungsanzeige', [[true, 'An'], [false, 'Aus']])}
+    <h4>Energie &amp; Akku</h4>
+    ${opt('fpsLimit', 'Bildrate begrenzen', [[0, 'Aus'], [30, '30'], [60, '60']])}
+    ${opt('idleSaver', 'Energiesparen im Leerlauf', [[true, 'An'], [false, 'Aus']])}
+    <p class="muted">Das Bildratenlimit spart Strom und Wärme auf Handy und Laptop; die Ziel-Bildrate der dynamischen Auflösung liegt nie darüber. Energiesparen im Leerlauf: Ohne Eingabe für einige Sekunden und bei ruhiger Szene (pausierte Weltkarte, eigener Zug im Bodenkampf) wird die Bildrate stark gesenkt; ein ruhendes Bild wird noch scharf auskonvergiert und dann nicht mehr neu gezeichnet. Jede Eingabe stellt sofort die volle Bildrate wieder her.</p>
     <h4>Spiel</h4>
     ${opt('animSpeed', 'Animationstempo', [[1, 'Normal'], [1.5, 'Schnell'], [2.5, 'Sehr schnell']])}
     ${opt('confirmEnd', 'Zugende bestätigen', [[true, 'An'], [false, 'Aus']])}
@@ -370,7 +376,7 @@ function openHelp() {
       ['Waffe, Rüstung, Gürtel ändern', 'Platz anklicken, Gegenstand wählen', 'Tab / Enter', `Steuerkreuz, ${P('A')}`],
       ['Schließen / Zurück', 'Button „Fertig“ · ✕', 'Esc', P('B')],
     ])],
-    ['Begriffe', () => `<p class="muted">Werte stammen aus dem aktuellen Spielstand der Regeln und können sich durch Balancing ändern.</p>` + dl([
+    ['Begriffe', () => `<p class="muted">Werte stammen aus den aktuellen Spielregeln und können sich durch Balancing ändern.</p>` + dl([
       ['Zeiteinheiten (ZE)', 'Dein Aktionsbudget pro Zug. Gehen kostet 4 ZE je Feld (diagonal 6), Knien 4 ZE, Aufstehen 6 ZE. Schüsse und Gürtel-Gegenstände kosten einen Anteil deiner Maximal-ZE.'],
       ['Schnellschuss / Gezielt / Salve', 'Schnellschuss: billig (Gewehr 25 % der ZE), mittlere Treffsicherheit. Gezielt: teurer (50 %), aber deutlich genauer. Salve: 3 Schüsse (35 %), jeder einzelne ungenauer.'],
       ['Trefferchance', 'Treffsicherheit des Soldaten × Waffenwert. Besser durch: Knien (+15 %), Forschung „Autopsie“ (+5 % je Alienart). Schlechter durch: große Entfernung (ab 12 Feldern −1,5 % je Feld, außerhalb der Reichweite halbiert), Ziel in halber Deckung (−30 %), Ziel kniend (−8 %), Ziel im Rauch (−40 %). Immer zwischen 5 und 95 %. Bei Nacht sehen Soldaten nur 10 statt 20 Felder weit.'],

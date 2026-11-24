@@ -79,3 +79,9 @@ js/cheats.js        Cheat-Menü
 js/audio.js         Prozedurale Soundeffekte & Musik
 js/game.js, data.js Kampagnenzustand & Spieldaten
 ```
+
+## Tests & Veröffentlichung
+
+- Tests (Node 20+): `cd tests && npm install && npm test`. `npm run test:unit` prüft Kartengenerator (alle Biome × 200 Seeds), Kampagnenlogik, Ausrüstung und Spieldaten; `npm run test:e2e` startet Chromium (Playwright, headless, SwiftShader) gegen einen lokalen Server und spielt Menü → Weltkarte → Mission → Zug → Sieg → Weltkarte durch. Einmalig `npx playwright install chromium`.
+- CI: `.github/workflows/ci.yml` läuft bei jedem Push/Pull Request (Syntaxcheck, Unit-, E2E-Tests; Screenshots bei Fehlern als Artefakt).
+- Veröffentlichung: Actions → „Deploy (gh-pages)“ → Run workflow (Eingabe `ref`, Standard `claude/gallant-cray-8s8udi`). Nach grünen Tests wird der Spielinhalt (ohne `tests/`, `orchestrator/`, `.github/`) auf den Branch `gh-pages` gepusht; der Service-Worker-Cache wird dabei auf `aegis-<Commit>` gesetzt, damit Spieler Updates erhalten.

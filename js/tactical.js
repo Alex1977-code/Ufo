@@ -2,7 +2,7 @@
 // zerstörbare Umgebung, Alien-KI – steuerbar per Maus, Touch, Tastatur und Controller.
 import * as THREE from 'three';
 import { generateMap, WALLS } from './tacmap.js';
-import { TILE, propParts, patchFog, fogUniforms, makeSoldier, makeAlien, makeCivilian, makeTransport, textures } from './models.js';
+import { TILE, propParts, patchFog, fogUniforms, makeSoldier, makeAlien, makeCivilian, makeTransport, textures, FACADES, atlasTile, makeRoof, releaseTextures } from './models.js';
 import { canvasTexture } from './engine.js';
 import { WEAPONS, ARMORS, ALIENS, ITEMS, BELT_SLOTS, RANKS, UFOS } from './data.js';
 import { Game } from './game.js';
@@ -31,33 +31,55 @@ class Heap {
   get size() { return this.a.length; }
 }
 
-// Instanzierte Hindernis-Gruppe (ein InstancedMesh pro Bauteil)
+// Instanzierte Hindernis-Gruppe (ein InstancedMesh pro Bauteil).
+// Teile mit atlas: Fassadenkachel je Instanz; Teile mit bit: per Maske ausblendbar (Obergeschosse)
 class PropSet {
   constructor(scene, parts, count, shadows) {
     this.meshes = parts.map((p) => {
-      const m = new THREE.InstancedMesh(p.geo, p.mat, count);
-      m.castShadow = shadows; m.receiveShadow = true;
+      let geo = p.geo;
+      if (p.atlas) { geo = geo.clone(); geo.setAttribute('aTile', new THREE.InstancedBufferAttribute(new Float32Array(count * 2), 2)); }
+      const m = new THREE.InstancedMesh(geo, p.mat, count);
+      m.castShadow = shadows && p.shadow !== false; m.receiveShadow = true;
       m.count = 0; m.frustumCulled = false;
+      m.userData.bit = p.bit || 0;
       scene.add(m);
       return m;
     });
     this.base = [];
+    this.mask = []; this.shown = [];
     this.zero = new THREE.Matrix4().makeScale(0, 0, 0);
   }
-  add(mtx, colors) {
+  add(mtx, colors, tiles, mask = 0) {
     const i = this.base.length;
     this.base.push(mtx.clone());
+    this.mask.push(mask); this.shown.push(false);
     this.meshes.forEach((m, k) => {
       m.count = i + 1;
       m.setMatrixAt(i, this.zero);
       if (colors) m.setColorAt(i, colors[k] || new THREE.Color(1, 1, 1));
+      const at = m.geometry.attributes.aTile;
+      if (at && tiles?.[k]) { at.setXY(i, tiles[k][0], tiles[k][1]); at.needsUpdate = true; }
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
     });
     return i;
   }
-  show(i, on) { this.meshes.forEach((m) => { m.setMatrixAt(i, on ? this.base[i] : this.zero); m.instanceMatrix.needsUpdate = true; }); }
+  show(i, on) {
+    this.shown[i] = on;
+    this.meshes.forEach((m) => { m.setMatrixAt(i, on && !(m.userData.bit & this.mask[i]) ? this.base[i] : this.zero); m.instanceMatrix.needsUpdate = true; });
+  }
+  setMask(i, bits) { if (this.mask[i] === bits) return; this.mask[i] = bits; if (this.shown[i]) this.show(i, true); }
 }
+// Mehrere Optik-Varianten eines Wandtyps (z. B. Fahrzeugmodelle, Möbel, Außen-/Innenwand) mit gemeinsamer Indexierung
+class VariantSet {
+  constructor(sets) { this.sets = sets; this.ref = []; this.base = []; this.zero = new THREE.Matrix4().makeScale(0, 0, 0); }
+  add(mtx, colors, tiles, mask, v) { const s = this.sets[v]; this.ref.push([s, s.add(mtx, colors, tiles, mask)]); this.base.push(mtx.clone()); return this.ref.length - 1; }
+  show(i, on) { const [s, li] = this.ref[i]; s.show(li, on && this.base[i] !== this.zero); }
+  setMask(i, bits) { const [s, li] = this.ref[i]; s.setMask(li, bits); }
+}
+const FURNITURE = ['furn:table', 'furn:table', 'furn:bed', 'furn:shelf', 'furn:cabinet', 'furn:sofa', 'furn:counter'];
+const CAR_PAINT = ['#e8e8e6', '#c8ccd0', '#2a2c30', '#1e2e4a', '#8a1a1a', '#2e4a34', '#d8ccb0', '#4a5a6a', '#b04a1a', '#e0c040', '#3a6a9a', '#6a6e72'];
+const DECO_TINT = { flowers: ['#ff4a6a', '#ffd040', '#ffffff', '#c070ff', '#ff8a30'], bush: ['#ffffff', '#e0ffd0', '#c8e8b0', '#f0f4d0'], rug: ['#a83a32', '#3a5a8a', '#c8a050', '#5a7a4a', '#8a6a9a'] };
 
 export class Tactical {
   constructor(engine, opts, hooks) {
@@ -117,6 +139,7 @@ export class Tactical {
     this.buildEnvironment();
     this.buildGround();
     this.buildProps();
+    this.buildDeco();
     this.buildHelpers();
     this.spawnUnits();
     this.buildHud();
@@ -171,12 +194,7 @@ export class Tactical {
       const pl = new THREE.PointLight(l.color, l.intensity, 18, 1.6);
       pl.position.set(p.x, l.h, p.z);
       this.scene.add(pl);
-      if (l.lamp) {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 4.2, 8), patchFog(new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8, roughness: 0.4 })));
-        pole.position.set(p.x + 0.8, 2.1, p.z); pole.castShadow = true; this.scene.add(pole);
-        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshStandardMaterial({ color: 0, emissive: 0xffc27a, emissiveIntensity: 5 }));
-        bulb.position.set(p.x + 0.8, 4.2, p.z); this.scene.add(bulb);
-      }
+      if (l.lamp) { const d = l.dir || [1, 0]; pl.position.x += d[0] * 0.9; pl.position.z += d[1] * 0.9; } // Mast als instanzierte Deko (buildDeco)
     }
     // Lichtpool für Mündungsfeuer/Explosionen
     for (let i = 0; i < 3; i++) { const l = new THREE.PointLight(0xffaa55, 0, 14, 2); this.scene.add(l); this.lightPool.push(l); }
@@ -214,6 +232,7 @@ export class Tactical {
         if (f === 'wood') { c.fillStyle = 'rgba(0,0,0,0.3)'; for (let k = 0; k < P; k += 8) c.fillRect(X, Y + k, P, 1); }
         if (f === 'metal') { c.strokeStyle = 'rgba(20,25,35,0.9)'; c.lineWidth = 2; c.strokeRect(X + 1, Y + 1, P - 2, P - 2); c.fillStyle = 'rgba(60,255,200,0.25)'; if ((x + y) % 3 === 0) c.fillRect(X + P / 2 - 1, Y + 4, 2, P - 8); }
       }
+      this.paintMarkings(c, P);
       // Rauschen/Detail
       const img = c.getImageData(0, 0, m.W * P, m.H * P); const d = img.data;
       for (let i = 0; i < d.length; i += 4) {
@@ -227,7 +246,7 @@ export class Tactical {
     this.groundCanvas = groundTex.image;
     this.groundTex = groundTex;
     const gw = m.W * TILE, gh = m.H * TILE;
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh).rotateX(-Math.PI / 2), patchFog(new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95 })));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(gw, gh).rotateX(-Math.PI / 2), patchFog(new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.95, bumpMap: groundTex, bumpScale: 1.2 })));
     ground.receiveShadow = true;
     this.scene.add(ground);
     this.ground = ground;
@@ -240,7 +259,7 @@ export class Tactical {
     this.scene.add(outer);
     // Grasbüschel als Detail
     const tufts = [];
-    for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) { const c = m.at(x, y); if ((c.floor === 'grass' || c.floor === 'field') && !c.wall) tufts.push([x, y]); }
+    for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) { const c = m.at(x, y); if ((c.floor === 'grass' || c.floor === 'field' || c.floor === 'field2') && !c.wall) tufts.push([x, y, c.floor === 'field2']); }
     const per = 5, count = Math.min(7000, tufts.length * per);
     if (count) {
       const geo = new THREE.ConeGeometry(0.07, 0.45, 3).translate(0, 0.22, 0);
@@ -248,13 +267,13 @@ export class Tactical {
       const inst = new THREE.InstancedMesh(geo, mat, count);
       const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), pos = new THREE.Vector3(), col = new THREE.Color();
       let k = 0;
-      for (const [x, y] of tufts) for (let j = 0; j < per && k < count; j++, k++) {
+      for (const [x, y, wheat] of tufts) for (let j = 0; j < per && k < count; j++, k++) {
         const p = this.cellPos(x, y);
         pos.set(p.x + randRange(-0.95, 0.95), 0, p.z + randRange(-0.95, 0.95));
         q.setFromEuler(new THREE.Euler(randRange(-0.3, 0.3), rand() * 6, randRange(-0.3, 0.3)));
-        sc.set(1, randRange(0.6, 1.6), 1);
+        sc.set(1, wheat ? randRange(1.6, 2.2) : randRange(0.6, 1.6), 1);
         inst.setMatrixAt(k, mtx.compose(pos, q, sc));
-        inst.setColorAt(k, col.setHSL(0.22 + rand() * 0.06, 0.5, 0.25 + rand() * 0.15));
+        inst.setColorAt(k, wheat ? col.setHSL(0.12 + rand() * 0.03, 0.6, 0.45 + rand() * 0.12) : col.setHSL(0.22 + rand() * 0.06, 0.5, 0.25 + rand() * 0.15));
       }
       this.scene.add(inst);
     }

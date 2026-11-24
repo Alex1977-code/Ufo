@@ -1,0 +1,38 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntaxcheck js/*.js
+        run: |
+          for f in js/*.js; do node --experimental-default-type=module --check "$f" || exit 1; done
+      - name: Abhängigkeiten installieren
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+      - name: Playwright-Chromium installieren
+        working-directory: tests
+        run: npx playwright install --with-deps chromium
+      - name: Unit-Tests
+        working-directory: tests
+        run: npm run test:unit
+      - name: E2E-Tests
+        working-directory: tests
+        run: npm run test:e2e
+      - name: Screenshots hochladen
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-node${{ matrix.node }}
+          path: tests/screenshots/
+          if-no-files-found: ignore

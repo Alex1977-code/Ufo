@@ -10,6 +10,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { clamp } from './util.js';
+import { anyModalOpen } from './ui.js';
 
 // Qualitätsstufen analog zu DLSS / FSR (Anteil der Ausgabeauflösung pro Achse)
 export const UPSCALE_MODES = {
@@ -325,6 +326,12 @@ function halton(i, b) {
   return r;
 }
 
+// Energiesparen: Leerlauf-Drosselung (Bilder pro Sekunde) und Schwellen
+const IDLE_AFTER_MS = 8000;  // so lange ohne Eingabe, bevor gedrosselt werden darf
+const CALM_HOLD_MS = 600;    // Szene muss so lange ruhig sein (Hysterese)
+const IDLE_FPS = 12;         // gedrosselte Rate, solange die TSR-History noch konvergiert
+const STILL_FPS = 5;         // Update-Rate, wenn das Standbild fertig ist (kein Rendern mehr)
+
 export const UPSCALERS = {
   temporal: { label: 'Temporal (DLSS-artig)', short: 'TSR' },
   spatial: { label: 'Räumlich (FSR1-artig)', short: 'Räumlich' },
@@ -395,6 +402,21 @@ export class Engine {
     this.active = null; // aktiver Spielmodus {scene, camera, update(dt)}
     this._last = performance.now();
     this.onFrame = null;
+    // Energiesparen / Bildratenlimit
+    this.renderCount = 0;     // tatsächlich gerenderte Bilder (für Messungen)
+    this.updateCount = 0;     // verarbeitete Bilder (Update ausgeführt)
+    this.powerState = 'full'; // 'full' | 'idle' | 'still' | 'paused' | 'hidden'
+    this._nextDue = 0;
+    this._lastInput = performance.now();
+    this._calmSince = performance.now();
+    this._camMoved = true;
+    this._stillFrames = 0;
+    this._jitterPhases = 8;
+    this._camSig = new Float64Array(32);
+    this._skipSample = false;
+    this._padSeen = false;
+    this._hidden = typeof document !== 'undefined' && !!document.hidden;
+    this._raf = 0;
     this.applySettings();
     window.addEventListener('resize', () => this.resize());
     window.visualViewport?.addEventListener('resize', () => this.resize());
@@ -443,6 +465,7 @@ export class Engine {
     this.shadowSize = s.shadows === 'high' ? 2048 : s.shadows === 'med' ? 1024 : 512;
     this.configurePipeline();
     this.resize();
+    this.wake();
   }
 
   // Wählt temporalen oder räumlichen Weg und schaltet AO je nach Szene/Einstellung
@@ -507,6 +530,7 @@ export class Engine {
   resetHistory() {
     this._historyValid = false;
     this._jCam = null;
+    this._stillFrames = 0; // Standbild muss neu aufgebaut werden
   }
 
   resize() {
@@ -532,6 +556,7 @@ export class Engine {
     this.tsr.resolveMat.uniforms.srcSize.value.set(this.tsrScene.rt.width, this.tsrScene.rt.height);
     this.pendingResize = false;
     this.lastResize = performance.now();
+    this._stillFrames = 0; // Zeichenpuffer wurde geleert -> neu rendern
     if (this.active?.camera) {
       this.active.camera.aspect = w / h;
       this.active.camera.updateProjectionMatrix();
@@ -549,6 +574,7 @@ export class Engine {
     this.resetHistory();
     this.configurePipeline();
     this.resize();
+    this.wake();
   }
 
   // Subpixel-Jitter (Halton 2,3) auf die Projektionsmatrix legen; unverjitterte Matrizen merken
@@ -564,6 +590,7 @@ export class Engine {
     const iw = this.tsrScene.rt.width, ih = this.tsrScene.rt.height;
     const ratio = Math.max(this.outW / iw, this.outH / ih);
     const phases = clamp(Math.ceil(8 * ratio * ratio), 8, 32);
+    this._jitterPhases = phases;
     this._jitterIndex = (this._jitterIndex % phases) + 1;
     const jx = halton(this._jitterIndex, 2) - 0.5, jy = halton(this._jitterIndex, 3) - 0.5;
     this._savedP.copy(cam.projectionMatrix);
@@ -616,20 +643,24 @@ export class Engine {
   }
 
   // Dynamische Auflösung: hält Ziel-FPS durch Anpassung der internen Renderauflösung
-  updateDynamicRes(dt) {
+  // adjust=false: nur messen (Leerlauf-Drosselung ist kein „langsames“ Gerät)
+  updateDynamicRes(dt, adjust = true) {
+    if (this._skipSample) { this._skipSample = false; return; } // Lücke beim Zustandswechsel
     this.fpsSamples.push(dt);
-    if (this.fpsSamples.length < 30) return;
+    if (this.fpsSamples.length < (adjust ? 30 : 6)) return;
     const samples = this.fpsSamples.slice();
     this.fpsSamples.length = 0;
     const avg = samples.reduce((a, b) => a + b, 0) / samples.length;
     this.fps = 1 / avg;
     this.frameMs = avg * 1000;
+    if (!adjust) return;
     // Fenster mit Ausreißern (Shader-Kompilierung, Moduswechsel, Tab im Hintergrund) ignorieren
     if (samples.some((s) => s >= 0.09)) return;
     this.peakFps = Math.max(this.peakFps * 0.995, this.fps);
     if (!this.settings.dynamicRes || this.settings.upscale === 'native') return;
-    // Ziel nie über der tatsächlich erreichbaren Bildwiederholrate
-    const target = Math.min(this.settings.targetFps || 60, this.peakFps * 0.97);
+    // Ziel nie über der tatsächlich erreichbaren Bildwiederholrate und nie über dem Bildratenlimit
+    const lim = this.frameLimit;
+    const target = Math.min(this.settings.targetFps || 60, lim > 0 ? lim : Infinity, this.peakFps * 0.97);
     if (performance.now() - this.lastResize < 600) return;
     let ns = this.dynScale;
     if (this.fps < target * 0.88) { ns -= 0.08; this.goodWindows = 0; }
@@ -657,22 +688,160 @@ export class Engine {
     if (++this._tsrFrames === 3 && !this.checkTSRHealth()) this.tsrFallback();
   }
 
-  start() {
-    const loop = (now) => {
-      requestAnimationFrame(loop);
-      let dt = (now - this._last) / 1000;
-      this._last = now;
-      if (dt > 0.1) dt = 0.1;
-      if (this.paused) return;
-      this.time += dt;
-      this.updateDynamicRes(dt);
-      this.onFrame?.(dt);
-      if (this.active) {
-        this.active.update?.(dt);
-        this.renderFrame(dt);
-      }
+  // ---------------------------------------------------------------------------
+  // Energiesparen: Bildratenlimit, Leerlauf-Drosselung, Standbild, Hintergrund
+  // ---------------------------------------------------------------------------
+  get frameLimit() { const v = +this.settings.fpsLimit; return v > 0 ? v : 0; }
+
+  // Sofort wieder volle Rate (Eingabe, Moduswechsel, Einstellungen, Größenänderung)
+  wake() {
+    this._calmSince = performance.now();
+    this._stillFrames = 0;
+    this._nextDue = 0;
+  }
+
+  // Für Modi: Standbild ungültig machen (z. B. nach Szenenänderung ohne Kamerabewegung)
+  invalidate() { this._stillFrames = 0; }
+
+  installPowerHooks() {
+    if (this._powerHooks) return;
+    this._powerHooks = true;
+    const onInput = () => {
+      const was = this.powerState;
+      this._lastInput = performance.now();
+      if (was === 'idle' || was === 'still') this.wake();
     };
-    requestAnimationFrame(loop);
+    const opts = { capture: true, passive: true };
+    ['pointermove', 'pointerdown', 'pointerup', 'wheel', 'keydown', 'keyup', 'touchstart', 'touchmove'].forEach((ev) => window.addEventListener(ev, onInput, opts));
+    window.addEventListener('gamepadconnected', () => { this._padSeen = true; onInput(); });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        // Hintergrund: Schleife ruht vollständig (Audio läuft unabhängig weiter)
+        this._hidden = true;
+        this.powerState = 'hidden';
+        if (this._raf) { cancelAnimationFrame(this._raf); this._raf = 0; }
+      } else if (this._hidden) {
+        this._hidden = false;
+        this._last = null; // erste dt nach der Rückkehr nicht als Riesensprung werten
+        this._lastInput = performance.now();
+        this.wake();
+        this._skipSample = true;
+        if (!this._raf && this._loop) this._raf = requestAnimationFrame(this._loop);
+      }
+    });
+  }
+
+  // Controller-Eingaben ohne Ereignis: Achsen/Tasten selbst abfragen (nur wenn je ein Pad da war)
+  pollPadActivity(now) {
+    if (!this._padSeen) return;
+    let gps;
+    try { gps = navigator.getGamepads?.() || []; } catch { return; }
+    for (const g of gps) {
+      if (!g || !g.connected) continue;
+      if (g.buttons.some((b) => b.pressed || b.value > 0.2) || g.axes.some((a) => Math.abs(a) > 0.3)) {
+        if (this.powerState === 'idle' || this.powerState === 'still') this.wake();
+        this._lastInput = now;
+        return;
+      }
+    }
+  }
+
+  // Ist die Szene ruhig genug, um zu drosseln? Modi können isBusy()/wantsFullFps() melden.
+  sceneCalm(now) {
+    if (this.settings.idleSaver === false) return false;
+    if (now - this._lastInput < IDLE_AFTER_MS) return false;
+    if (this._camMoved) return false;
+    const m = this.active;
+    if (!m) return false;
+    try {
+      if (m._frameWaiters?.length) return false; // jemand wartet auf Bilder (Animation)
+      if (typeof m.wantsFullFps === 'function' || typeof m.isBusy === 'function') return !(m.wantsFullFps?.() || m.isBusy?.());
+      // Bodenkampf: eigener Zug, keine laufende Aktion, keine Effekte/Partikel/Rauch
+      if (Array.isArray(m.units) && 'phase' in m) {
+        if (m.busy || m.ended || m.phase !== 'player' || m.shake > 0) return false;
+        if (m.fx?.length || m.smokes?.length || m.flares?.length) return false;
+        if (m.particles?.some((p) => p.life > 0)) return false;
+        return true;
+      }
+      // Weltkarte: Zeit angehalten (Pause oder Dialog offen)
+      if (typeof m.speed === 'number' && 'tLat' in m) return m.speed === 0 || anyModalOpen();
+    } catch {
+      return false;
+    }
+    return false; // unbekannte Modi (Menü, Basis, Abfangkampf): nie drosseln
+  }
+
+  // Kamera seit dem letzten verarbeiteten Bild bewegt? (Welt- + Projektionsmatrix)
+  checkCamera() {
+    const cam = this.active?.camera;
+    if (!cam) { this._camMoved = false; return; }
+    cam.updateMatrixWorld();
+    const a = cam.matrixWorld.elements, b = cam.projectionMatrix.elements, sig = this._camSig;
+    let moved = this._sigCam !== cam;
+    for (let i = 0; i < 16; i++) {
+      if (Math.abs(sig[i] - a[i]) > 1e-5) moved = true;
+      if (Math.abs(sig[16 + i] - b[i]) > 1e-6) moved = true;
+      sig[i] = a[i]; sig[16 + i] = b[i];
+    }
+    this._sigCam = cam;
+    this._camMoved = moved;
+  }
+
+  // Anzahl ruhiger Bilder, bis das Standbild auskonvergiert ist (TSR: alle Jitter-Phasen + History)
+  stillFramesNeeded() {
+    return this.method === 'temporal' ? Math.max(24, this._jitterPhases + 12) : 3;
+  }
+
+  tick(now) {
+    if (this._last == null) this._last = now - 1000 / 60;
+    if (this.paused) { this._last = now; this.powerState = 'paused'; this._nextDue = 0; return; }
+    this.pollPadActivity(now);
+    if (!this.sceneCalm(now)) { this._calmSince = now; this._stillFrames = 0; }
+    const state = now - this._calmSince < CALM_HOLD_MS ? 'full' : this._stillFrames >= this.stillFramesNeeded() ? 'still' : 'idle';
+    if (state !== this.powerState) {
+      this.powerState = state;
+      this._nextDue = 0;
+      this.fpsSamples.length = 0;
+      this._skipSample = true;
+    }
+    // Bildratenlimit / Drosselung: zu frühe Bilder überspringen (dt läuft weiter auf)
+    const cap = state === 'still' ? STILL_FPS : state === 'idle' ? Math.min(IDLE_FPS, this.frameLimit || IDLE_FPS) : this.frameLimit;
+    if (cap > 0) {
+      const interval = 1000 / cap, tol = interval * 0.2;
+      if (this._nextDue && now < this._nextDue - tol) return;
+      const base = this._nextDue && now - this._nextDue < interval ? this._nextDue : now;
+      this._nextDue = base + interval;
+    } else this._nextDue = 0;
+
+    let dt = (now - this._last) / 1000;
+    this._last = now;
+    if (dt > 0.1) dt = 0.1;
+    if (dt < 0) dt = 0;
+    this.time += dt;
+    this.updateCount++;
+    this.updateDynamicRes(dt, state === 'full');
+    this.onFrame?.(dt);
+    if (!this.active) return;
+    this.active.update?.(dt);
+    this.checkCamera();
+    if (this._camMoved) this._stillFrames = 0;
+    // Standbild fertig und Kamera unverändert: nichts neu zeichnen (Canvas behält das letzte Bild)
+    if (state === 'still' && !this._camMoved) return;
+    this.renderFrame(dt);
+    this.renderCount++;
+    if (state === 'idle' && !this._camMoved) this._stillFrames++;
+  }
+
+  start() {
+    this.installPowerHooks();
+    const loop = (now) => {
+      this._raf = 0;
+      if (this._hidden) return; // Hintergrund: keine neue Anforderung, Schleife ruht
+      this._raf = requestAnimationFrame(loop);
+      this.tick(now);
+    };
+    this._loop = loop;
+    if (!this._hidden) this._raf = requestAnimationFrame(loop);
   }
 }
 
