@@ -152,6 +152,8 @@ export function generateMap({ biome, ufoType, kind, night }) {
     } else line(lzc.x, lzc.y, goal.x, goal.y);
     reach = floodReach(map);
   }
+  // Abgeschnittene Bereiche (z. B. Uferstreifen hinter einem Fluss) per Notsteg/Durchgang anbinden
+  if (connectIsolated(map, reach)) reach = floodReach(map);
   const farFromLz = (s) => Math.hypot(s.x - lzc.x, s.y - lzc.y) >= Math.min(16, H * 0.5);
   map.alienSpawns = map.alienSpawns.filter((s) => reach[s.y * W + s.x] && !at(s.x, s.y).wall && farFromLz(s));
   map.civSpawns = map.civSpawns.filter((s) => reach[s.y * W + s.x] && !at(s.x, s.y).wall);
@@ -172,6 +174,67 @@ export function generateMap({ biome, ufoType, kind, night }) {
   for (const c of cells) { delete c.reserved; delete c.keep; delete c.uz; delete c.mod; }
   delete map._site; delete map._modSpawns; delete map._lzc;
   return map;
+}
+
+// Unerreichbare freie Bereiche ab minSize Feldern über den billigsten Weg (Wasser → Steg) mit dem erreichbaren Teil verbinden.
+// Mehrquellen-Dijkstra vom Bereich zum nächsten erreichbaren Feld; der Weg räumt nur die Hindernisse direkt auf der Route.
+function connectIsolated(map, reach, minSize = 4) {
+  const { W, H, cells } = map, N = W * H;
+  const blocked = (i) => { const w = cells[i].wall; return !!(w && WALLS[w.type].move); };
+  const comp = new Int32Array(N).fill(-1);
+  let changed = false;
+  for (let s = 0; s < N; s++) {
+    if (reach[s] || comp[s] >= 0 || blocked(s) || cells[s].ufo) continue;
+    const members = [s]; comp[s] = s;
+    for (let k = 0; k < members.length; k++) {
+      const i = members[k], x = i % W, y = (i / W) | 0;
+      for (const [dx, dy] of DIR4) {
+        const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const j = ny * W + nx; if (reach[j] || comp[j] >= 0 || blocked(j) || cells[j].ufo) continue;
+        comp[j] = s; members.push(j);
+      }
+    }
+    if (members.length < minSize) continue;
+    const cost = (c) => {
+      if (c.ufo || c.hull) return Infinity;
+      if (!c.wall || !WALLS[c.wall.type].move) return 1;
+      return c.wall.type === 'water' ? 4 : c.bld != null ? 40 : 10;
+    };
+    const dist = new Float64Array(N).fill(Infinity), prev = new Int32Array(N).fill(-1);
+    const hd = [], hi = [];
+    const push = (d, i) => { let k = hd.length; hd.push(d); hi.push(i); while (k > 0) { const p = (k - 1) >> 1; if (hd[p] <= d) break; hd[k] = hd[p]; hi[k] = hi[p]; k = p; } hd[k] = d; hi[k] = i; };
+    const pop = () => {
+      const i0 = hi[0], ld = hd.pop(), li = hi.pop(), n = hd.length;
+      if (n) { let k = 0; for (;;) { const l = 2 * k + 1, r = l + 1; let m = -1, md = ld; if (l < n && hd[l] < md) { m = l; md = hd[l]; } if (r < n && hd[r] < md) m = r; if (m < 0) break; hd[k] = hd[m]; hi[k] = hi[m]; k = m; } hd[k] = ld; hi[k] = li; }
+      return i0;
+    };
+    for (const i of members) { dist[i] = 0; push(0, i); }
+    let hit = -1;
+    while (hd.length) {
+      const d = hd[0], i = pop();
+      if (d > dist[i]) continue;
+      if (reach[i]) { hit = i; break; }
+      const x = i % W, y = (i / W) | 0;
+      for (const [dx, dy] of DIR4) {
+        const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const j = ny * W + nx, k = cost(cells[j]); if (k === Infinity) continue;
+        const nd = d + k; if (nd < dist[j]) { dist[j] = nd; prev[j] = i; push(nd, j); }
+      }
+    }
+    if (hit < 0) continue;
+    for (let i = hit; i !== -1; i = prev[i]) {
+      const c = cells[i];
+      if (c.wall && WALLS[c.wall.type].move && !c.hull) {
+        if (c.wall.type === 'water') c.floor = 'plank';
+        else if (c.bld != null && c.indoor) c.door = true;
+        c.wall = null; changed = true;
+      }
+    }
+    // Bereich zählt ab jetzt als erreichbar (für weitere Bereiche als Ziel nutzbar)
+    for (const i of members) reach[i] = 1;
+    for (let i = hit; i !== -1; i = prev[i]) reach[i] = 1;
+  }
+  return changed;
 }
 
 function floodReach(map) {

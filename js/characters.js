@@ -433,7 +433,7 @@ function analyze(base) {
       else if (z > eyeC.z + 0.01 && y < eyeC.y - 0.005 && y > eyeC.y - 0.06 && Math.abs(x - eyeC.x) < 0.02) thin[i] = 0.6; // Nase
     }
   }
-  if (!g.attributes.aThin) g.setAttribute('aThin', new THREE.BufferAttribute(thin, 1));
+  if (!skin.geometry.attributes.aThin) skin.geometry.setAttribute('aThin', new THREE.BufferAttribute(thin, 1));
   // Handrahmen (im lokalen Raum des wrist-Bones): Griffpunkt, Fingerrichtung d, Knöchellinie a (Kleinfinger→Zeigefinger), Handflächennormale p
   const hand = {};
   for (const s of ['L', 'R']) {
