@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { generateMap, WALLS } from './tacmap.js';
 import { TILE, propParts, patchFog, fogUniforms, makeSoldier, makeAlien, makeCivilian, makeTransport, textures } from './models.js';
 import { canvasTexture } from './engine.js';
-import { WEAPONS, ARMORS, ALIENS, GRENADES, RANKS, UFOS } from './data.js';
+import { WEAPONS, ARMORS, ALIENS, ITEMS, BELT_SLOTS, RANKS, UFOS } from './data.js';
 import { Game } from './game.js';
 import { Input, padLabel } from './input.js';
 import { modal, toast, confirmBox, anyModalOpen, floatText, banner, bar, el } from './ui.js';
@@ -13,6 +13,12 @@ import { clamp, rand, randInt, randRange, choice, shuffle, sleep, smooth, lerp, 
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const FX_COLORS = { bullet: 0xffd27a, laser: 0xff3030, plasma: 0x50ff7a, beam: 0xff40a0, melee: 0xffffff };
+// ZE-Kosten der Gürtel-Gegenstände (Anteil der maximalen ZE) und Wurf-/Zonenfarben
+const ITEM_TU = { grenade: 0.3, smoke: 0.25, flare: 0.2, medkit: 0.3 };
+const ITEM_COLORS = { grenade: 0xff8030, smoke: 0xb8c0c8, flare: 0xffe070, medkit: 0x60ff90 };
+const THROW_RANGE = 13;
+const PATH_LABELS = 60;
+const SMOKE_SPRITES = 96;
 
 class Heap {
   constructor() { this.a = []; }
@@ -79,7 +85,10 @@ export class Tactical {
     this.unsub = [];
     this.fx = [];
     this.lightPool = [];
-    this.result = { kills: {}, civSaved: 0, civKilled: 0, grenadesUsed: {} };
+    this.result = { kills: {}, civSaved: 0, civKilled: 0, itemsUsed: {} };
+    this.beltSlot = 0;
+    this.smokes = []; this.flares = [];
+    this.pathLabelData = []; this.plabCount = 0;
     this.ended = false;
     this._frameWaiters = [];
     this.build();
@@ -328,24 +337,52 @@ export class Tactical {
       this.particles.push({ sp, life: 0 });
     }
     this.tracerGeo = new THREE.CylinderGeometry(0.05, 0.05, 1, 6, 1, true).rotateX(Math.PI / 2).translate(0, 0, 0.5);
+    // Rauchwolken (Nebelgranate): Sichtblockade pro Feld (verbleibende Runden) + wiederverwendete Rauch-Sprites
+    this.smokeCells = new Uint8Array(this.N);
+    this.smokeTex = canvasTexture(128, 128, (c) => {
+      for (let i = 0; i < 9; i++) {
+        const x = 64 + randRange(-22, 22), y = 64 + randRange(-22, 22), r = randRange(22, 40);
+        const g = c.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, 'rgba(255,255,255,0.55)'); g.addColorStop(0.6, 'rgba(235,235,235,0.22)'); g.addColorStop(1, 'rgba(220,220,220,0)');
+        c.fillStyle = g; c.fillRect(0, 0, 128, 128);
+      }
+    }, { wrap: false });
+    const smokeCol = this.map.night || this.opts.biome === 'hive' ? 0x59606b : 0xb4b6b8;
+    this.smokePool = [];
+    for (let i = 0; i < SMOKE_SPRITES; i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.smokeTex, color: smokeCol, transparent: true, opacity: 0, depthWrite: false, blending: THREE.NormalBlending }));
+      sp.visible = false; sp.renderOrder = 2; sp.userData.used = false;
+      this.scene.add(sp); this.smokePool.push(sp);
+    }
+    // vorab angelegte Fackel-Lichter (keine Shader-Neukompilierung zur Laufzeit)
+    this.flareLights = [];
+    for (let i = 0; i < 2; i++) { const l = new THREE.PointLight(0xffd6a0, 0, 24, 1.5); l.userData.busy = false; this.scene.add(l); this.flareLights.push(l); }
   }
 
   spawnUnits() {
     const m = this.map;
     // Soldaten
     const spawns = m.playerSpawns.slice();
-    const stockLeft = { ...Game.c.stock };
+    const stockLeft = { ...(Game.c.stock || {}) };
+    this.beltShort = [];
     this.opts.squad.forEach((s, i) => {
       const sp = spawns[i]; if (!sp) return;
       const arm = ARMORS[s.armor];
-      let gk = Game.grenadeAvailable('alien') && ((stockLeft.alien || 0) >= Math.max(1, s.grenades) || Game.cheats.allGear) ? 'alien' : 'frag', gn = s.grenades;
-      if (!Game.cheats.allGear) {
-        if (gk === 'frag' && (stockLeft.frag || 0) < gn && (stockLeft.alien || 0) > (stockLeft.frag || 0) && Game.grenadeAvailable('alien')) gk = 'alien';
-        gn = Math.max(0, Math.min(gn, stockLeft[gk] || 0)); stockLeft[gk] = (stockLeft[gk] || 0) - gn;
+      // Gürtel bestücken: jeder Gegenstand braucht ein Stück im Lager (Cheat „alle Ausrüstung“: unbegrenzt)
+      const belt = [];
+      for (let k = 0; k < BELT_SLOTS; k++) {
+        const id = Array.isArray(s.items) ? s.items[k] : null;
+        const it = id && ITEMS[id];
+        if (!it) { belt.push(null); continue; }
+        if (!Game.cheats.allGear) {
+          if ((stockLeft[id] || 0) <= 0) { belt.push(null); this.beltShort.push(it.short); continue; }
+          stockLeft[id]--;
+        }
+        belt.push({ id, uses: it.uses || 1 });
       }
       const u = this.addUnit({
         team: 'player', name: s.name, soldier: s, x: sp.x, y: sp.y, hp: s.hp + arm.hp, tu: s.tu, acc: s.acc, react: s.react, armor: arm.armor, weapon: s.weapon,
-        grenades: gn, grenadeKind: gk, obj: makeSoldier(s, arm.color, WEAPONS[s.weapon].fx), sight: m.night ? 10 : 20, rank: s.rank,
+        belt, healed: 0, obj: makeSoldier(s, arm.color, WEAPONS[s.weapon].fx), sight: m.night ? 10 : 20, rank: s.rank,
       });
       u.obj.rotation.y = Math.PI;
     });
@@ -408,7 +445,13 @@ export class Tactical {
     if (w) { const d = WALLS[w.type]; if (d.move && !(u?.flying && !d.full)) return true; }
     return false;
   }
-  blocksSight(x, y) { const w = this.wallAt(x, y); return !!(w && WALLS[w.type].full); }
+  blocksSight(x, y) {
+    // Rauch blockiert die Sicht (nicht die Bewegung) – für alle Parteien
+    if (x >= 0 && y >= 0 && x < this.W && y < this.H && this.smokeCells[y * this.W + x]) return true;
+    const w = this.wallAt(x, y); return !!(w && WALLS[w.type].full);
+  }
+  inSmoke(x, y) { return !!(this.inb(x, y) && this.smokeCells[y * this.W + x]); }
+  litByFlare(x, y) { return this.flares.some((f) => f.turns > 0 && Math.hypot(f.x - x, f.y - y) <= f.r); }
   unitAt(x, y) { const i = this.occ[y * this.W + x]; return i >= 0 ? this.units[i] : null; }
   dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
@@ -434,6 +477,8 @@ export class Tactical {
       if (this.map.lights.some((l) => Math.hypot(l.x - x, l.y - y) < 4)) range = 20;
       const t = this.unitAt(x, y); if (t && t.team === 'alien' && t.revealed) range = 20;
     }
+    // Leuchtfackeln heben die Nacht-Sichtbeschränkung im Radius auf (wirkt für beide Seiten)
+    if (this.map.night && range < 20 && this.flares.length && this.litByFlare(x, y)) range = 20;
     if (Math.hypot(u.x - x, u.y - y) > range) return false;
     return this.los(u.x, u.y, x, y);
   }
@@ -551,6 +596,9 @@ export class Tactical {
     if (!m) return Infinity;
     return Math.round(u.maxTu * m.tu);
   }
+  itemCost(u, id) { return Math.round(u.maxTu * (ITEM_TU[ITEMS[id]?.kind] ?? 0.3)); }
+  beltEntry(u, slot = this.beltSlot) { const b = u?.belt?.[slot]; return b && ITEMS[b.id] ? b : null; }
+  beltSlots(u) { const r = []; (u?.belt || []).forEach((b, k) => { if (b && ITEMS[b.id]) r.push(k); }); return r; }
   hasTu(u, cost) { return (u.team === 'player' && Game.cheats.infTU) || u.tu >= cost; }
   spendTu(u, cost) { if (!(u.team === 'player' && Game.cheats.infTU)) u.tu = Math.max(0, u.tu - cost); }
 
@@ -577,6 +625,7 @@ export class Tactical {
     if (d > w.range) c *= 0.5;
     if (this.coverBetween(u, t)) c *= 0.7;
     if (t.kneel) c *= 0.92;
+    if (this.inSmoke(t.x, t.y)) c *= 0.6; // Ziel im Rauch
     if (u.team === 'player' && t.team === 'alien') c += (Game.has('autopsy_vael') ? 0.05 : 0) + (Game.has('autopsy_krull') ? 0.05 : 0);
     return clamp(c, 0.05, 0.95);
   }
