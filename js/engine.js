@@ -472,7 +472,7 @@ export class Engine {
     if (on && !this.ao) {
       try {
         this.ao = new AOPass(m.scene, m.camera);
-        this.ao.updateGtaoMaterial({ radius: 1.1, distanceExponent: 1.6, thickness: 1.5, distanceFallOff: 1, scale: 1.15 });
+        this.ao.updateGtaoMaterial({ radius: 1.8, distanceExponent: 1.5, thickness: 2.5, distanceFallOff: 1, scale: 1.6 });
         this.ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6 });
         this.composer.insertPass(this.ao, this.composer.passes.indexOf(this.tsrScene) + 1);
         this._aoLevel = null;

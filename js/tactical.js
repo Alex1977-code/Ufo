@@ -1666,9 +1666,9 @@ export class Tactical {
       <div class="tac-bottom">
         <div class="panel unit-card" id="t-unit"></div>
         <div class="tac-actions" id="t-actions">
-          <button class="btn act" data-mode="snap"><b>Schnapp</b><small id="m-snap"></small></button>
-          <button class="btn act" data-mode="aimed"><b>Gezielt</b><small id="m-aimed"></small></button>
-          <button class="btn act" data-mode="auto"><b>Salve</b><small id="m-auto"></small></button>
+          <button class="btn act" data-mode="snap"><b>⌖ Schnellschuss</b><small id="m-snap"></small></button>
+          <button class="btn act" data-mode="aimed"><b>⌖ Gezielt</b><small id="m-aimed"></small></button>
+          <button class="btn act" data-mode="auto"><b>⌖ Salve</b><small id="m-auto"></small></button>
           ${Array.from({ length: BELT_SLOTS }, (_, k) => `<button class="btn act belt" data-belt="${k}" title="Gürtelplatz ${k + 1} (Taste ${k + 4})"><b>Gürtel</b><small>leer</small></button>`).join('')}
           <button class="btn act fire" data-a="fire"><b>FEUER</b><small id="m-fire"></small></button>
           <button class="btn act" data-a="kneel"><b>Knien</b><small>4 ZE</small></button>
