@@ -471,7 +471,8 @@ async function loadManifest() {
   const base = manifest.base_path || 'assets/';
   for (const a of manifest.assets || []) {
     if (/\.glb$/i.test(a.file || '')) {
-      const kind = a.type === 'vehicle' ? 'vehicle' : a.type === 'character' ? 'character' : 'prop';
+      // T6-F12: manifest-Feld kind (z. B. abgedecktes Auto unter Plane = 'vehicle-prop': ohne Lack/Glas/Reifen-Slots)
+      const kind = a.kind === 'vehicle-prop' ? 'vehicle-prop' : a.type === 'vehicle' ? 'vehicle' : a.type === 'character' ? 'character' : 'prop';
       addEntry({
         id: `glb:${a.id}`, cat: 'glb', grp: GLB_GRP[a.type] || 'Sonstige (GLB)', label: a.id, sub: `${a.file} · ${a.license || ''}`, kind, front: 1, manifest: a,
         opts: kind === 'vehicle' ? [

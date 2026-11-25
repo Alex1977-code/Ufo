@@ -5,9 +5,10 @@ import { Input, padLabel } from './input.js';
 import { Game } from './game.js';
 import { Geoscape } from './geoscape.js';
 import { Tactical } from './tactical.js';
+import { figuresMode } from './figures.js';
 import { Cheats } from './cheats.js';
 import { Cast } from './cast.js';
-import { modal, toast, confirmBox, closeAllModals, el, alertBox } from './ui.js';
+import { modal, toast, confirmBox, closeAllModals, el } from './ui.js';
 import { initAudio, sfx, setVolumes, setMusicMood } from './audio.js';
 import { isTouchDevice, rand } from './util.js';
 import { makeUfo, animateCraft } from './craftmodels.js';
@@ -256,7 +257,7 @@ function toggleFullscreen() {
 
 function openSettings() {
   const opt = (key, label, values, fmt = (v) => v) => {
-    const cur = settings[key] ?? (key === 'figures' ? (((navigator.deviceMemory && navigator.deviceMemory < 3) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2)) ? 'simple' : 'real') : undefined);
+    const cur = key === 'figures' ? figuresMode(engine) : settings[key]; // T6-F6: dieselbe Automatik wie im Einsatz
     return `<div class="set-row"><label>${label}</label><div class="seg">${values.map(([v, l]) => `<button class="btn seg-b ${cur === v ? 'active' : ''}" data-k="${key}" data-v='${JSON.stringify(v)}'>${fmt(l)}</button>`).join('')}</div></div>`;
   };
   const range = (key, label, min, max, step) => `<div class="set-row"><label>${label}</label><input type="range" data-r="${key}" min="${min}" max="${max}" step="${step}" value="${settings[key]}"><output>${settings[key]}</output></div>`;

@@ -1047,7 +1047,7 @@ export class Geoscape {
         if (!chosen.size) { toast('Wähle mindestens einen Soldaten.', 'warn'); return; }
         const team = sold.filter((s) => chosen.has(s.id));
         hh.close();
-        openEquipment({ soldiers: team, onDone: reopen });
+        openEquipment({ soldiers: team, onDone: reopen, engine: this.engine });
       } }, { label: 'Start!', primary: true, action: () => {
         if (!chosen.size) { toast('Wähle mindestens einen Soldaten.', 'warn'); return false; }
         const t = Game.c.transport;
@@ -1140,7 +1140,7 @@ export class Geoscape {
         <p>Einnahmen: <b class="good">${fmtMoney(rep.fundingTotal)}</b> · Gehälter: <b class="bad">−${fmtMoney(rep.salaries)}</b> · Unterhalt: <b class="bad">−${fmtMoney(rep.upkeep)}</b></p>
         <p>Bilanz: <b class="${rep.net >= 0 ? 'good' : 'bad'}">${fmtMoney(rep.net)}</b> · Monatswertung: <b>${rep.monthScore}</b></p>
         <p class="muted">Schlechter Monat bei Wertung unter <b>${rep.threshold}</b> oder negativem Kontostand. ${GAME_OVER_MONTHS} schlechte Monate in Folge beenden das Projekt.</p>
-        ${Game.c.negMonths ? `<p class="bad">⚠ Der Rat ist unzufrieden. Noch ${rep.monthsLeft} schlechte${rep.monthsLeft === 1 ? 'r' : ''} Monat${rep.monthsLeft === 1 ? '' : 'e'} in Folge, dann wird das Projekt AEGIS eingestellt!</p>` : ''}`,
+        ${over ? '<p class="bad">✖ Drei schlechte Monate in Folge – der Rat stellt das Projekt ein.</p>' : Game.c.negMonths ? `<p class="bad">⚠ Der Rat ist unzufrieden. Noch ${rep.monthsLeft} schlechte${rep.monthsLeft === 1 ? 'r' : ''} Monat${rep.monthsLeft === 1 ? '' : 'e'} in Folge, dann wird das Projekt AEGIS eingestellt!</p>` : ''}`,
       buttons: [{ label: 'Weiter', primary: true, action: () => { if (over) this.hooks.gameOver('Der Rat hat das Projekt AEGIS wegen anhaltender Misserfolge eingestellt.'); } }],
     });
     if (!over) Game.save();
@@ -1244,7 +1244,7 @@ export class Geoscape {
       title: '☗ Soldaten', wide: true,
       html: `<table class="tbl sold"><tr><th>Name</th><th>Rang</th><th>ZE</th><th>LP</th><th>Treff</th><th>Reakt</th><th>Kills</th><th>Status</th></tr>
         ${c.soldiers.map((s) => `<tr><td>${s.name}</td><td>${RANKS[s.rank]}</td><td>${s.tu}</td><td>${s.hp}</td><td>${s.acc}</td><td>${s.react}</td><td>${s.kills}</td><td>${s.wound > 0 ? `<span class="bad">verwundet (${Math.ceil(s.wound)} T)</span>` : '<span class="good">bereit</span>'}</td></tr>`).join('')}</table>`,
-      buttons: [{ label: '⚙ Ausrüstung', close: false, action: (hh) => { hh.close(); openEquipment({ soldiers: c.soldiers, onDone: () => this.soldierMenu() }); } }, { label: 'Schließen', primary: true }],
+      buttons: [{ label: '⚙ Ausrüstung', close: false, action: (hh) => { hh.close(); openEquipment({ soldiers: c.soldiers, onDone: () => this.soldierMenu(), engine: this.engine }); } }, { label: 'Schließen', primary: true }],
     });
   }
 

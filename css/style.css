@@ -331,6 +331,8 @@ body[data-mode="geo"] #fps { top: auto; bottom: calc(90px + var(--safe-b)); }
 .eq-poses { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center; }
 .eq-poses small { color: var(--muted); font-size: 0.8em; margin-right: 2px; }
 .eq-pose { padding: 0.2em 0.6em; font-size: 0.85em; min-height: 0; }
+/* T6-F8: Touch-Mindesthöhe für die Posen-Knöpfe */
+@media (pointer: coarse) { .eq-pose { min-height: 44px; padding: 0.2em 0.9em; } }
 .eq-opt.dis { opacity: 0.4; }
 /* I1: vier Gürtelplätze – ab Tablet-Breite je zwei nebeneinander, damit auf 720p nichts gescrollt werden muss */
 @media (min-width: 641px) {

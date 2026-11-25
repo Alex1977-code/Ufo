@@ -158,9 +158,21 @@ export function weaponNotes(wid) {
 }
 
 // ---------- Dialog ----------
-export async function openEquipment({ soldiers, onDone }) {
-  const [{ Game }, { modal, toast }, { sfx }, three3d] = await Promise.all([import('./game.js'), import('./ui.js'), import('./audio.js'),
-    Promise.all([import('three'), import('./models.js')]).catch(() => null)]);
+export async function openEquipment({ soldiers, onDone, engine = globalThis.__aegis?.engine }) {
+  const [{ Game }, { modal, toast }, { sfx }, three3d, figs] = await Promise.all([import('./game.js'), import('./ui.js'), import('./audio.js'),
+    Promise.all([import('three'), import('./models.js')]).catch(() => null), import('./figures.js').catch(() => null)]);
+  // T6-F7: bei „Figuren & Fahrzeuge: Realistisch“ die echte Figur aus characters.js (gleiche Basis/Statur wie im Einsatz);
+  // bis die Bibliothek geladen ist – und als Rückfall – die einfache Figur (makeSoldier)
+  let real = null;
+  if (three3d && figs && figs.figuresMode(engine) === 'real') {
+    const quality = engine?.mobile ? 'low' : 'high';
+    const ready = import('./characters.js').then(async (mod) => {
+      await mod.loadCharacterLibrary({ quality, bases: [...figs.FIG_SOLDIER.m, ...figs.FIG_SOLDIER.f] });
+      return mod;
+    });
+    ready.catch(() => {});
+    real = { ready, opts: (s) => figs.soldierFigureOpts(s, { quality }) };
+  }
   const c = Game.c, stock = c.stock, gear = !!Game.cheats.allGear;
   const all = c.soldiers;
   let sel = 0, focusKey = null;
@@ -204,7 +216,7 @@ export async function openEquipment({ soldiers, onDone }) {
     onClose: () => { view?.dispose(); view = null; onDone?.(); },
   });
   const body = h.el.querySelector('.modal-body');
-  if (three3d) { try { view = createSoldierViewer(three3d[0], three3d[1].makeSoldier); } catch (e) { console.warn('3D-Vorschau nicht verfügbar', e); view = null; } }
+  if (three3d) { try { view = createSoldierViewer(three3d[0], three3d[1].makeSoldier, real, three3d[1].fogUniforms); } catch (e) { console.warn('3D-Vorschau nicht verfügbar', e); view = null; } }
   let shownSel = sel;
   function redraw() {
     body.innerHTML = html();
@@ -410,7 +422,8 @@ function canvasTex(THREE, w, h, draw) {
 }
 
 // Erzeugt die Vorschau. Gibt { el, show(soldier, {formup}), play(name, manual), poke(), dispose() } zurück.
-function createSoldierViewer(THREE, makeSoldier) {
+// real: { ready: Promise<characters.js>, opts(soldier) } → echte Figur mit Clip-Posen, sonst/Rückfall makeSoldier.
+function createSoldierViewer(THREE, makeSoldier, real = null, fogUniforms = null) {
   const el = document.createElement('div');
   el.className = 'eq-viewer';
   el.innerHTML = `<div class="eq-stage"><canvas class="eq-cv" role="img" aria-label="3D-Ansicht des Soldaten – ziehen zum Drehen"></canvas><span class="eq-hint">⟲ ziehen</span></div>
@@ -505,7 +518,36 @@ function createSoldierViewer(THREE, makeSoldier) {
   let pose = null, poseT = 0, base = 'idle', time = 0;
   let yaw = 0.35, dragging = false, dragX = 0, lastTouch = -1e9;
 
+  // Echte Figur (characters.js): Posen über Zustände der Figur statt über die Klötzchen-Gelenke
+  let realMod = null, rch = null, rPose = 'idle', rPoseT = 0;
+  const flat = () => 0;
+  const R_POSE = { idle: 'idle', approve: 'reload', aim: 'aim', formup: 'idle' };
+  const R_LABEL = { approve: 'Nachladen' };
+  if (real) {
+    real.ready.then((mod) => {
+      if (dead) return;
+      realMod = mod;
+      for (const [k, l] of Object.entries(R_LABEL)) { const b = el.querySelector(`[data-pose="${k}"]`); if (b) b.textContent = l; }
+      if (curSoldier) { sig = ''; show(curSoldier); }
+    }).catch((e) => console.warn('AEGIS: Figuren für die Vorschau nicht ladbar – einfache Figur', e?.message || e));
+  }
+  function realPlay(name) {
+    if (!rch) return;
+    const st = R_POSE[name]; if (!st) return; // Umsehen/Dehnen/Ablehnen: nur bei der einfachen Figur
+    rPose = st; rPoseT = 0;
+    rch.setState(st, { force: st !== 'idle' });
+  }
+  function buildReal(s) {
+    rch = realMod.makeCharacter(real.opts(s));
+    rch.root.traverse((o) => { if (o.isMesh) { o.castShadow = !weak && !(o.material && o.material.transparent); o.receiveShadow = true; } });
+    fig = rch.root; ud = null; headPivot = null;
+    turntable.add(fig);
+    base = 'idle'; rPose = 'idle'; rPoseT = 0;
+    rch.setState('idle', { fade: 0.0001, force: true });
+    rch.update(0.016, flat);
+  }
   function disposeFig() {
+    if (rch) { turntable.remove(rch.root); rch.dispose(); rch = null; fig = ud = headPivot = null; return; } // Geometrien: Bibliotheks-Cache (geteilt)
     if (!fig) return;
     turntable.remove(fig);
     fig.traverse((o) => { if (o.isMesh) o.geometry?.dispose(); }); // Materialien: makeSoldier-Cache (geteilt) bzw. eigene bis dispose()
@@ -513,6 +555,9 @@ function createSoldierViewer(THREE, makeSoldier) {
   }
   function build(s) {
     disposeFig();
+    if (realMod) {
+      try { buildReal(s); return; } catch (e) { console.warn('AEGIS: Figur für die Vorschau fehlgeschlagen – einfache Figur', e); disposeFig(); realMod = null; }
+    }
     const w = WEAPONS[s.weapon] || WEAPONS.rifle, a = ARMORS[s.armor] || ARMORS.none;
     fig = makeSoldier(s, a.color, `${w.fx}:${w.hands === 1 ? 'pistol' : w.tile ? 'tube' : w.heavy ? 'heavy' : 'rifle'}`);
     ud = fig.userData;
@@ -561,6 +606,7 @@ function createSoldierViewer(THREE, makeSoldier) {
   }
 
   function play(name, manual = false) {
+    if (rch) { realPlay(name); return; }
     if (name === 'idle') { pose = null; v.lookY = 0; v.lastInput = performance.now(); return; }
     if (!POSES[name]) return;
     if (reduced && !manual) return; // reduzierte Bewegung: nur sanftes Leerlauf
@@ -572,7 +618,7 @@ function createSoldierViewer(THREE, makeSoldier) {
     const sg = sigOf(s);
     if (same && sg === sig && fig) return;
     sig = sg; build(s);
-    if (formup && !reduced) { pose = 'formup'; poseT = 0; yaw = 0.25; }
+    if (formup && !reduced) { pose = rch ? null : 'formup'; poseT = 0; yaw = 0.25; }
     else if (pose === 'formup') pose = null;
     // Zustand sofort auf die neue Haltung setzen (kein Springen beim Neuaufbau)
     evalPose(cur, 0); apply();
@@ -619,9 +665,16 @@ function createSoldierViewer(THREE, makeSoldier) {
       if (now - v.lastInput > 12000) play('impatient');
       else if (time > v.nextExtra) { play(Math.random() < 0.5 ? 'stretch' : 'shoulder'); v.nextExtra = time + 18 + Math.random() * 14; }
     }
-    evalPose(tgt, dt);
-    const kf = 1 - Math.exp(-dt * 10);
-    for (const k of CH) cur[k] += (tgt[k] - cur[k]) * kf;
+    if (rch) {
+      // Zielen hält 3,5 s, Nachladen endet in aimIdle → danach zurück in den Stand
+      rPoseT += dt;
+      if (rPose === 'aim' && rPoseT > 3.5) realPlay('idle');
+      else if (rPose === 'reload' && rch.state !== 'reload' && rPoseT > 0.5) realPlay('idle');
+    } else {
+      evalPose(tgt, dt);
+      const kf = 1 - Math.exp(-dt * 10);
+      for (const k of CH) cur[k] += (tgt[k] - cur[k]) * kf;
+    }
     // Drehung: selbsttätig langsam, bei Präsentations-Posen nach vorn schwenken
     const touched = dragging || now - lastTouch < 2500;
     if (!touched) {
@@ -629,8 +682,14 @@ function createSoldierViewer(THREE, makeSoldier) {
       else if (!reduced) yaw += dt * 0.28;
     }
     turntable.rotation.y = yaw;
-    apply();
-    renderer.render(scene, camera);
+    if (rch) { rch.update(dt, flat); contact.position.set(0, 0.01, 0); contact.scale.set(1, 1, 1); } else apply();
+    // Nebel des Krieges der Bodenkampf-Materialien (geteilt) hier neutral: alles gilt als „außerhalb der Karte“ mit Faktor 1
+    if (fogUniforms) {
+      const fs = fogUniforms.fogMapSize.value, fx = fs.x, fy = fs.y, fo = fogUniforms.fogOutside.value;
+      fs.set(1e-4, 1e-4); fogUniforms.fogOutside.value = 1;
+      renderer.render(scene, camera);
+      fs.set(fx, fy); fogUniforms.fogOutside.value = fo;
+    } else renderer.render(scene, camera);
   }
   raf = requestAnimationFrame(frame);
 

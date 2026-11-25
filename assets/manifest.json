@@ -596,6 +596,7 @@
       "id": "vehicle_covered_car",
       "file": "vehicles/covered_car.glb",
       "type": "vehicle",
+      "kind": "vehicle-prop",
       "author": "MP (Poly Haven)",
       "source_url": "https://polyhaven.com/a/covered_car",
       "license_url": "https://polyhaven.com/license",

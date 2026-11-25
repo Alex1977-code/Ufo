@@ -102,12 +102,16 @@ function rowCells(x, y, rot, n, wide = false) {
   if (wide) for (const s of [-1, 1]) out.push({ x: x + dy * s, y: y - dx * s, seg: 0, head: false });
   return out;
 }
-// Reihe prüfen: okCell je Feld, keine Türen daneben und (spaced) keine fremden Hindernisse in der 4er-Nachbarschaft
+// Reihe prüfen: okCell je Feld, keine Türen daneben und (spaced) keine fremden Hindernisse in der 8er-Nachbarschaft.
+// T6-F4: Bus/LKW sind ≈ 2,55 m breit (Feld 2 m) → auch Deko (Schild, Hydrant, Ampel …) und Laternen auf den Nachbarfeldern ausschließen.
+const decoNear = (map, x, y) => (map.deco || []).some((d) => Math.abs(d.x - x) <= 1 && Math.abs(d.y - y) <= 1)
+  || (map.lights || []).some((l) => Math.abs(l.x - x) <= 1 && Math.abs(l.y - y) <= 1);
 function rowFits(map, cells, okCell, spaced = true) {
   const own = new Set(cells.map((p) => p.y * map.W + p.x));
   for (const p of cells) {
     const c = map.at(p.x, p.y);
     if (!c || c.wall || c.door || !okCell(c, p.x, p.y)) return false;
+    if (decoNear(map, p.x, p.y)) return false;
     for (const [ex, ey] of DIR8) { // auch diagonal frei: überstehende Nachbarmodelle (Traktor, Pkw) ragen sonst hinein
       const nx = p.x + ex, ny = p.y + ey, n = map.at(nx, ny);
       if (!n || own.has(ny * map.W + nx)) continue;
@@ -116,8 +120,8 @@ function rowFits(map, cells, okCell, spaced = true) {
   }
   return true;
 }
-// Feld grenzt (auch diagonal) an ein langes Fahrzeug → kein Pkw/Traktor/Stapler daneben (Modelle würden sich überschneiden)
-const nearRow = (map, x, y) => DIR8.some(([dx, dy]) => map.at(x + dx, y + dy)?.wall?.vid != null);
+// Feld grenzt (auch diagonal) an ein langes Fahrzeug → kein Hindernis/keine Deko daneben (Modelle würden sich überschneiden)
+export const nearRow = (map, x, y) => DIR8.some(([dx, dy]) => map.at(x + dx, y + dy)?.wall?.vid != null);
 function writeRow(map, cells, type, rot, hv, o = {}) {
   map._vid = (map._vid || 0) + 1;
   const vlen = cells.filter((p) => !p.head && p.seg === 0).length ? cells.length - 2 : cells.length;
@@ -136,6 +140,70 @@ function fixVehicleRows(map) {
   for (const list of groups.values()) {
     const w = list[0].wall;
     if (list.length !== w.vcells || !list.some((c) => c.wall.vhead) || list.some((c) => c.wall.type !== w.type)) for (const c of list) c.wall = null;
+  }
+  // T6-F4: später gesetzte Hindernisse (UFO-Trümmer, Krater …) direkt neben einer Reihe: kleine halbe Deckung weicht,
+  // sonst (Rumpf, Wasser, Gebäude, volle Wände) weicht die Reihe
+  for (const list of groups.values()) {
+    if (!list[0].wall) continue;
+    const vid = list[0].wall.vid;
+    let drop = false;
+    for (let i = 0; i < map.cells.length && !drop; i++) {
+      if (map.cells[i].wall?.vid !== vid) continue;
+      const x = i % map.W, y = (i / map.W) | 0;
+      for (const [dx, dy] of DIR8) {
+        const n = map.at(x + dx, y + dy), w = n?.wall;
+        if (!w || w.vid === vid) continue;
+        const d = WALLS[w.type];
+        if (w.vid == null && !d.full && !d.indestructible && !n.hull && !n.ufo && n.bld == null && !n.door) n.wall = null;
+        else { drop = true; break; }
+      }
+    }
+    if (drop) for (const c of map.cells) if (c.wall?.vid === vid) c.wall = null;
+  }
+  pruneBlockingRows(map);
+  // T6-F4: Sicherheitsnetz – keine Deko/Laterne auf oder neben einer Reihe (Modelle ragen quer ≈ 0,3 m ins Nachbarfeld)
+  const rowAt = (x, y) => map.at(x, y)?.wall?.vid != null;
+  const touches = (x, y) => rowAt(x, y) || nearRow(map, x, y);
+  map.deco = map.deco.filter((d) => !touches(d.x, d.y));
+  map.lights = map.lights.filter((l) => !l.lamp || !touches(l.x, l.y));
+}
+// T6-F5: Erreichbarkeit ab der Landezone (8 Richtungen, keine Ecken schneiden – wie die Wegsuche im Bodenkampf).
+// ignoreRows: Felder langer Fahrzeuge gelten als frei.
+export function reachFromLz(map, ignoreRows = false) {
+  const { W, H, cells } = map, seen = new Uint8Array(W * H);
+  const blocked = (x, y) => { const c = x >= 0 && y >= 0 && x < W && y < H ? cells[y * W + x] : null; return !c || (!!c.wall && WALLS[c.wall.type].move && !(ignoreRows && c.wall.vid != null)); };
+  const q = [];
+  for (const p of map.lz) if (!seen[p.y * W + p.x]) { seen[p.y * W + p.x] = 1; q.push(p.y * W + p.x); }
+  while (q.length) {
+    const i = q.pop(), x = i % W, y = (i / W) | 0;
+    for (const [dx, dy] of DIR8) {
+      const nx = x + dx, ny = y + dy;
+      if (blocked(nx, ny) || seen[ny * W + nx]) continue;
+      if (dx && dy && (blocked(x + dx, y) || blocked(x, y + dy))) continue;
+      seen[ny * W + nx] = 1; q.push(ny * W + nx);
+    }
+  }
+  return seen;
+}
+// Felder, die nur wegen einer Fahrzeugreihe unerreichbar sind (ohne die Reihenfelder selbst)
+export function rowCutCells(map) {
+  const a = reachFromLz(map, false), b = reachFromLz(map, true), out = [];
+  for (let i = 0; i < a.length; i++) if (b[i] && !a[i] && map.cells[i].wall?.vid == null) out.push(i);
+  return out;
+}
+// Reihen entfernen, die begehbare Felder abschneiden (Hofeinfahrt, Tasche zwischen Wand und Fahrzeug); wiederholt, bis nichts mehr fehlt
+function pruneBlockingRows(map) {
+  for (let it = 0; it < 12; it++) {
+    const cut = rowCutCells(map); if (!cut.length) return;
+    const vids = new Set();
+    for (const i of cut) {
+      const x = i % map.W, y = (i / map.W) | 0;
+      for (const [dx, dy] of DIR8) { const v = map.at(x + dx, y + dy)?.wall?.vid; if (v != null) vids.add(v); }
+    }
+    if (!vids.size) { // abgeschnittene Tasche grenzt nicht direkt an eine Reihe: alle Reihen am Rand der Tasche fehlen → alle prüfen
+      for (const c of map.cells) if (c.wall?.vid != null) vids.add(c.wall.vid);
+    }
+    for (const c of map.cells) if (c.wall?.vid != null && vids.has(c.wall.vid)) c.wall = null;
   }
 }
 function pickW(obj) { let s = 0; for (const k in obj) s += obj[k]; let r = rand() * s; for (const k in obj) { r -= obj[k]; if (r < 0) return k; } return Object.keys(obj)[0]; }
@@ -696,7 +764,8 @@ function genUrban(map, at, setWall) {
 function urbanCover(map, at, setWall, { lanes, isWalk, roadDir }) {
   const { W, H } = map;
   const nearDoor = (x, y) => DIR4.some(([dx, dy]) => at(x + dx, y + dy)?.door) || at(x, y)?.door;
-  const ok = (x, y) => { const c = at(x, y); return c && !c.wall && !c.reserved && !c.indoor && !nearDoor(x, y); };
+  // T6-F4: Felder neben langen Fahrzeugen bleiben frei (Bus/LKW ragen quer ≈ 0,3 m hinein) – gilt für Gehweg, Hof und Gerüst
+  const ok = (x, y) => { const c = at(x, y); return c && !c.wall && !c.reserved && !c.indoor && !nearDoor(x, y) && !nearRow(map, x, y); };
   const put = (x, y, type, rot = randInt(0, 3)) => {
     if (!ok(x, y)) return false;
     setWall(x, y, type); const c = at(x, y); if (!c.wall) return false;
@@ -991,7 +1060,7 @@ function modCtx(G, x0, y0, gw, gh, face, mirror) {
   // Hindernis setzen; o.rot = lokale Blickrichtung (0 = Front), o.alongV = Fahrzeug längs zur Tiefe, o.car = Autovariante
   M.put = (u, v, type, o = {}) => {
     if (!M.free(u, v)) return false;
-    if (type === 'car' && nearRow(map, ...T(u, v))) return false;
+    if (nearRow(map, ...T(u, v))) return false; // T6-F4: nichts direkt neben ein langes Fahrzeug (Modelle ragen hinein)
     M.cell(u, v).wall = mkWall(type, { rot: o.rot != null ? rotG(o.rot) : undefined, variant: o.car ?? o.variant, vert: o.alongV != null ? !!o.alongV !== ew : undefined });
     return true;
   };
@@ -1058,7 +1127,7 @@ function modCtx(G, x0, y0, gw, gh, face, mirror) {
     return ok;
   };
   M.spawn = (u, v) => { if (M.cell(u, v)) { const [x, y] = T(u, v); map._modSpawns.push({ x, y }); } };
-  M.deco = (u, v, t, o) => { const c = M.cell(u, v); if (c && !c.wall && !c.reserved) { const [x, y] = T(u, v); deco(map, t, x, y, o); } };
+  M.deco = (u, v, t, o) => { const c = M.cell(u, v); if (c && !c.wall && !c.reserved) { const [x, y] = T(u, v); if (!nearRow(map, x, y)) deco(map, t, x, y, o); } };
   return M;
 }
 
