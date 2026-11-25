@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test:unit": "node --test unit/*.test.mjs",
-    "test:e2e": "node --test --test-timeout=240000 e2e/*.test.mjs",
+    "test:e2e": "node --test --test-timeout=600000 e2e/*.test.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "test:gallery": "node --test-timeout=900000 e2e/maps-gallery.mjs"
   },

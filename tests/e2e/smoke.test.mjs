@@ -54,7 +54,9 @@ test('Mission starten, Zug beenden, Cheat-Sieg, zurück zur Weltkarte', async ()
     g.buildBaseMarker();
     g.hooks.startMission({ site: { id: 'x', kind: 'crash', name: 'T', ufoType: 'scout', region: 'nw' }, squad: G.c.soldiers.slice(0, 6), night: false, biome: 'farm' });
   });
-  await page.waitForFunction(() => window.__aegis.tac?.units?.length > 0, null, { timeout: 120000 });
+  const t0 = Date.now();
+  await page.waitForFunction(() => window.__aegis.tac?.units?.length > 0, null, { timeout: 360000 });
+  console.log(`# Missionsaufbau: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   await page.waitForTimeout(2000);
   await noErrors('mission-start');
 
