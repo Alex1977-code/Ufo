@@ -30,9 +30,9 @@ export const WEAPONS = {
   a_claw: { name: 'Klauen', dmg: 58, fx: 'melee', melee: true, snap: { tu: 0.25, acc: 1.1 }, range: 1.5 },
 };
 
-// Gürtel-Ausrüstung: jeder Soldat hat BELT_SLOTS Plätze (soldier.items = ['frag', 'smoke', null]).
+// Gürtel-Ausrüstung: jeder Soldat hat BELT_SLOTS Plätze (soldier.items = ['frag', 'mag', 'mag', 'smoke']).
 // Lagerbestand liegt in Game.c.stock[<id>] (Verbrauchsgüter werden bei Benutzung abgezogen).
-export const BELT_SLOTS = 3;
+export const BELT_SLOTS = 4; // I1: vierter Gürtelplatz (alte Spielstände bekommen einen leeren Platz, siehe migrateCampaign)
 // Schema (W1 7.1): kind grenade|smoke|flare|medkit|mine|charge|stunrod|scanner|ammo; tu = ZE-Anteil; dtype; trigger (Mine);
 // wallMul/throwRange (Ladung); acc (Schockstab); reusable (nie verbraucht); free (Munition kostenlos und unbegrenzt).
 export const ITEMS = {

@@ -7,6 +7,7 @@ const { Game, createCampaign, migrateCampaign, newSoldier } = await import('../.
 const { WEAPONS, ITEMS, ARMORS, ALIENS, RESEARCH, CRAFTS, BELT_SLOTS, ammoFits, ammoList, defaultLoad } = await import('../../js/data.js');
 const { availableCount, setEquip, clampBelts, applyTemplate, beltTotals, pickLoad, itemEffect, weaponDesc } = await import('../../js/equip.js');
 
+const pad = (a) => [...a, ...Array(Math.max(0, BELT_SLOTS - a.length)).fill(null)]; // I1: Gürtel mit BELT_SLOTS (4) Plätzen
 const mk = (over = {}) => ({ id: 'x' + Math.random(), weapon: 'rifle', load: 'mag', armor: 'none', items: ['frag', 'mag', 'mag'], ...over });
 
 test('Neue Kampagne: Gewehr + 2 Ersatzmagazine + Granate', () => {
@@ -27,11 +28,11 @@ test('Migration v1: Ladung, Ersatzmagazine, Startvorrat', () => {
   assert.equal(c.v, 4);
   const [laser, plasma, rifle, odd] = c.soldiers;
   assert.equal(laser.load, null);                               // Laser braucht keine Munition
-  assert.deepEqual(laser.items, ['frag', 'smoke', null]);       // und bekommt keine Magazine
+  assert.deepEqual(laser.items, pad(['frag', 'smoke', null]));  // und bekommt keine Magazine
   assert.equal(plasma.load, 'pz_cell');
   assert.equal(plasma.items.filter((i) => i === 'mag').length, 0); // Standardmagazin passt nicht zu Plasma
   assert.equal(rifle.load, 'mag');
-  assert.deepEqual(rifle.items, ['frag', 'frag', 'mag']);       // freier Platz bekommt ein Magazin
+  assert.deepEqual(rifle.items, ['frag', 'frag', 'mag', 'mag']); // freie Plätze bekommen bis zu 2 Magazine
   assert.equal(odd.weapon, 'rifle');
   assert(!odd.items.includes('xxx'));
   assert(odd.items.includes('mag'));
@@ -48,7 +49,7 @@ test('Migration v2: Magazine werden nachgerüstet, falsche Ladung korrigiert', (
   c.soldiers[1].weapon = 'cannon'; c.soldiers[1].load = 'pz_cell'; c.soldiers[1].items = ['rk_light', 'mag', null];
   c.stock.altlast = 5; c.stock.frag = -1;
   migrateCampaign(c);
-  assert.deepEqual(c.soldiers[0].items, ['frag', 'mag', 'mag']);
+  assert.deepEqual(c.soldiers[0].items, pad(['frag', 'mag', 'mag']));
   assert.equal(c.soldiers[1].load, 'mag');
   assert(!c.soldiers[1].items.includes('rk_light'));            // passt nicht zur Kanone
   assert.equal(c.stock.altlast, undefined); assert.equal(c.stock.frag, undefined);
@@ -61,7 +62,7 @@ test('Gürtel: Standardmagazin ist unbegrenzt und wird nie entfernt', () => {
   assert(setEquip(a, 'items', 'mag', sq, {}, 0)); assert(setEquip(a, 'items', 'mag', sq, {}, 1)); assert(setEquip(b, 'items', 'mag', sq, {}, 0));
   assert.deepEqual(a.items, ['mag', 'mag', null]);
   clampBelts(sq, {});                                           // Lager ganz leer
-  assert.deepEqual(a.items, ['mag', 'mag', null]); assert.equal(b.items[0], 'mag');
+  assert.deepEqual(a.items, pad(['mag', 'mag', null])); assert.equal(b.items[0], 'mag');
   assert.deepEqual(beltTotals(sq), {});                         // gratis Magazine zählen nicht als Verbrauch
   assert.equal(availableCount('mag', sq, a, {}, 'items', 0, false), Infinity);
 });
@@ -111,7 +112,7 @@ test('Vorlage überträgt Ladung und Ersatzmagazine', () => {
   const stock = { cannon: 2, mag_in: 2, frag: 2 };
   applyTemplate(src, sq, sq, stock);
   assert.equal(t.weapon, 'cannon'); assert.equal(t.load, 'mag_in');
-  assert.deepEqual(t.items, ['mag', 'mag', 'frag']);
+  assert.deepEqual(t.items, pad(['mag', 'mag', 'frag']));
   const t2 = mk(); applyTemplate(src, [src, t2], [src, t2], { cannon: 1 }); // nur eine Kanone: Rückfall auf Gewehr
   assert.equal(t2.weapon, 'rifle'); assert.equal(t2.load, 'mag'); assert(t2.items.includes('mag'));
 });
@@ -196,4 +197,24 @@ test('Forschung: Gefangene werden verbraucht und schalten Verhör frei', () => {
   assert(Game.startResearch('verhoer_vael')); assert.equal(c.artifacts['Gefangener Vael'], 0);
   Game.completeResearch('verhoer_vael');
   assert(Game.has('verhoer_vael'));
+});
+
+// I1: vierter Gürtelplatz
+test('Gürtel mit 4 Plätzen: Startgürtel, Migration alter 3er-Gürtel, Lagergrenze für Nebel', () => {
+  assert.equal(BELT_SLOTS, 4);
+  assert.deepEqual(newSoldier().items, ['frag', 'mag', 'mag', 'smoke']);
+  const c = createCampaign();
+  for (const s of c.soldiers) assert.deepEqual(s.items, ['frag', 'mag', 'mag', 'smoke']);
+  assert(c.stock.smoke >= c.soldiers.length, 'genug Nebelgranaten für den Startgürtel');
+  // bestehender Spielstand (Version 4, 3 Plätze): bekommt einen leeren 4. Platz, Inhalt bleibt
+  const old = createCampaign(); old.soldiers.forEach((s) => { s.items = ['frag', 'mag', 'mag']; });
+  migrateCampaign(old);
+  for (const s of old.soldiers) assert.deepEqual(s.items, ['frag', 'mag', 'mag', null]);
+  // Platz 4 nutzbar und zählt gegen den Lagerbestand
+  const a = mk(), b = mk(), sq = [a, b];
+  assert(setEquip(a, 'items', 'smoke', sq, { smoke: 1 }, 3));
+  assert(!setEquip(b, 'items', 'smoke', sq, { smoke: 1 }, 3));
+  assert.deepEqual(a.items, ['frag', 'mag', 'mag', 'smoke']);
+  b.items = ['frag', 'mag', 'mag', 'smoke']; clampBelts(sq, { smoke: 1, frag: 2 });
+  assert.equal(beltTotals(sq).smoke, 1);
 });

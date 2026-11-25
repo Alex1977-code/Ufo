@@ -528,7 +528,7 @@ function createSoldierViewer(THREE, makeSoldier) {
     const beltY = 0.93;
     const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.335, 0.335, 0.07, 24, 1, true), mat('belt', { color: 0x3a2e22, roughness: 0.8, side: THREE.DoubleSide }));
     belt.position.y = beltY; body.add(belt);
-    const angles = [-0.75, 0.75, -1.75];
+    const angles = [-0.75, 0.75, -1.75, 1.75]; // I1: vierter Gürtelplatz hinten rechts
     (s.items || []).forEach((id, i) => {
       const it = ITEMS[id]; if (!it) return;
       const m = beltMesh(THREE, it.kind, id, mat), th = angles[i] ?? 0;

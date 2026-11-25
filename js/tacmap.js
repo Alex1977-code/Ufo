@@ -70,7 +70,8 @@ export const WALLS = {
 // graveyard, parking, ice (gefrorener See, begehbar). Dazu weiterhin grass/field/field2/dirt/sand/snow/asphalt/... .
 // Variation: wall.rot = Blickrichtung in Vierteldrehungen (0 = Süd/+y, 1 = West, 2 = Nord, 3 = Ost; längliche
 // Objekte liegen entlang ihrer Blickrichtung), wall.variant = 0..3 (Farbe/Form). Fahrzeuge vom Typ 'car' behalten
-// ihre Varianten-Namen ('tractor', 'pickup', ...) und 'vert'.
+// ihre Varianten-Namen ('tractor', 'pickup', ..., I1: 'forklift' mit wall.rot = Gabel zur Palette, 'combine' als Reihe) und 'vert'.
+// I1: Bus/LKW/Mähdrescher liegen als Reihen über mehrere Felder (wall.vid/vseg/vhead/vlen/vcells/hv, siehe VEHICLE_ROWS).
 const VARY = new Set(['stonewall', 'sandbag', 'woodpile', 'bush', 'tallhedge', 'birch', 'oak', 'palm', 'deadtree', 'stump', 'rockpile', 'container', 'pallet', 'barrel', 'fuelbarrel', 'fuelpump', 'bus', 'truck', 'milwreck', 'well', 'fountain', 'gravestone', 'statue', 'pylon', 'watertank', 'silo', 'scaffold', 'tent', 'milcrate', 'chainlink']);
 const SIDE_V = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
 const ROTSEQ = ['s', 'w', 'n', 'e'];
@@ -85,6 +86,57 @@ function mkWall(type, o = {}) {
   if (o.variant != null) w.variant = o.variant; else if (VARY.has(type)) w.variant = randInt(0, 3);
   if (o.vert != null) w.vert = o.vert;
   return w;
+}
+// ---- I1: lange Fahrzeuge über mehrere Felder (Bus ≈ 12 m, Koffer-LKW ≈ 8 m, Sattelzug ≈ 16 m, Mähdrescher) ----
+// Alle Felder einer Reihe tragen denselben Wand-Typ und dieselbe wall.vid; wall.vseg = Abstand zur Front (0 = Front),
+// wall.vhead = Kopffeld (Mitte der Frontreihe), wall.vlen = Felder in Fahrtrichtung, wall.vcells = Felder gesamt,
+// wall.hv = Modellvariante (bus: city|coach, truck: box|semi, car: combine), wall.rot = Fahrtrichtung (Front).
+// Deckung, Sicht und Zerstörung bleiben je Feld; tactical.js legt genau ein Modell über die Reihe.
+const ROT_DIR = [[0, 1], [-1, 0], [0, -1], [1, 0]];
+const DIR8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]; // Blickrichtung je rot (0 Süd, 1 West, 2 Nord, 3 Ost)
+export const VEHICLE_ROWS = { bus: { city: [6, 5, 4], coach: [6, 5] }, truck: { box: [4, 3], semi: [8] }, car: { combine: [5] } };
+// Felder einer Reihe: Kopf (x, y) vorne, n Felder nach hinten; wide = Frontreihe 3 Felder breit (Schneidwerk)
+function rowCells(x, y, rot, n, wide = false) {
+  const [dx, dy] = ROT_DIR[rot], out = [];
+  for (let i = 0; i < n; i++) out.push({ x: x - dx * i, y: y - dy * i, seg: i, head: i === 0 });
+  if (wide) for (const s of [-1, 1]) out.push({ x: x + dy * s, y: y - dx * s, seg: 0, head: false });
+  return out;
+}
+// Reihe prüfen: okCell je Feld, keine Türen daneben und (spaced) keine fremden Hindernisse in der 4er-Nachbarschaft
+function rowFits(map, cells, okCell, spaced = true) {
+  const own = new Set(cells.map((p) => p.y * map.W + p.x));
+  for (const p of cells) {
+    const c = map.at(p.x, p.y);
+    if (!c || c.wall || c.door || !okCell(c, p.x, p.y)) return false;
+    for (const [ex, ey] of DIR8) { // auch diagonal frei: überstehende Nachbarmodelle (Traktor, Pkw) ragen sonst hinein
+      const nx = p.x + ex, ny = p.y + ey, n = map.at(nx, ny);
+      if (!n || own.has(ny * map.W + nx)) continue;
+      if ((n.door && (ex === 0 || ey === 0)) || (spaced && n.wall)) return false;
+    }
+  }
+  return true;
+}
+// Feld grenzt (auch diagonal) an ein langes Fahrzeug → kein Pkw/Traktor/Stapler daneben (Modelle würden sich überschneiden)
+const nearRow = (map, x, y) => DIR8.some(([dx, dy]) => map.at(x + dx, y + dy)?.wall?.vid != null);
+function writeRow(map, cells, type, rot, hv, o = {}) {
+  map._vid = (map._vid || 0) + 1;
+  const vlen = cells.filter((p) => !p.head && p.seg === 0).length ? cells.length - 2 : cells.length;
+  for (const p of cells) {
+    const w = mkWall(type, { rot, variant: o.variant });
+    Object.assign(w, { vid: map._vid, vseg: p.seg, vlen, vcells: cells.length, hv });
+    if (p.head) w.vhead = true;
+    map.at(p.x, p.y).wall = w;
+  }
+  return true;
+}
+// Zerschnittene Reihen (Wege, Schneisen, UFO-Platz haben Felder geräumt) vollständig entfernen – nie halbe Modelle
+function fixVehicleRows(map) {
+  const groups = new Map();
+  for (const c of map.cells) if (c.wall?.vid != null) (groups.get(c.wall.vid) || groups.set(c.wall.vid, []).get(c.wall.vid)).push(c);
+  for (const list of groups.values()) {
+    const w = list[0].wall;
+    if (list.length !== w.vcells || !list.some((c) => c.wall.vhead) || list.some((c) => c.wall.type !== w.type)) for (const c of list) c.wall = null;
+  }
 }
 function pickW(obj) { let s = 0; for (const k in obj) s += obj[k]; let r = rand() * s; for (const k in obj) { r -= obj[k]; if (r < 0) return k; } return Object.keys(obj)[0]; }
 // Freies Feld für Füll-Hindernisse (nicht in Modulen, Wegen, UFO-Zone oder Landezone)
@@ -174,8 +226,9 @@ export function generateMap({ biome, ufoType, kind, night }) {
     for (let y = b.y0; y < b.y0 + b.h && !b.ruined; y++) for (let x = b.x0; x < b.x0 + b.w; x++) { const c = at(x, y); if (c.ufo || !c.indoor) { b.ruined = true; break; } }
   }
   map.deco = map.deco.filter((d) => { const c = at(d.x, d.y); return c && !c.wall && !c.ufo && !c.indoor && c.floor !== 'burnt'; });
+  fixVehicleRows(map);
   for (const c of cells) { delete c.reserved; delete c.keep; delete c.uz; delete c.mod; }
-  delete map._site; delete map._modSpawns; delete map._lzc;
+  delete map._site; delete map._vid; delete map._modSpawns; delete map._lzc;
   return map;
 }
 
@@ -422,7 +475,7 @@ function genRural(map, at, setWall, biome) {
   for (const v of vehicles) for (let t = 0; t < 40; t++) {
     if (map.modules.length && rand() < 0.5) break;
     const x = randInt(1, W - 2), y = randInt(1, H - 7), c = at(x, y);
-    if (!freeCell(c) || DIR4.some(([dx, dy]) => at(x + dx, y + dy)?.wall)) continue;
+    if (!freeCell(c) || DIR4.some(([dx, dy]) => at(x + dx, y + dy)?.wall) || nearRow(map, x, y)) continue;
     c.wall = mkWall('car', { variant: v, vert: rand() < 0.5 }); break;
   }
   // umgestürzte Baumstämme im Wald (halbe Deckung)
@@ -652,13 +705,22 @@ function urbanCover(map, at, setWall, { lanes, isWalk, roadDir }) {
   // Keine geschlossenen Riegel bauen: höchstens 2 belegte Nachbarn je Feld
   const crowded = (x, y) => DIR4.filter(([dx, dy]) => at(x + dx, y + dy)?.wall).length >= 2;
 
-  // 1) Große Fahrzeuge auf den Außenspuren (volle Deckung, blockieren Sicht)
+  // 1) Große Fahrzeuge auf den Außenspuren (volle Deckung, blockieren Sicht): Reihen in echter Länge
+  //    (Bus 6 Felder ≈ 12 m, Koffer-LKW 4 ≈ 8 m, Sattelzug 8 ≈ 16 m); Mittelspur und Gehweg bleiben frei
+  const laneKey = new Map(lanes.map((l) => [l.y * W + l.x, l.vert]));
+  const onLane = (vert) => (c, x, y) => laneKey.get(y * W + x) === vert && !c.reserved && !c.indoor;
+  const wantBig = randInt(2, 4);
   let big = 0;
   for (const l of lanes) {
-    if (big >= randInt(2, 4)) break;
-    const [dx, dy] = l.vert ? [0, 1] : [1, 0];
-    if (!ok(l.x, l.y) || at(l.x + dx, l.y + dy)?.wall || at(l.x - dx, l.y - dy)?.wall || crowded(l.x, l.y)) continue;
-    if (rand() < 0.15 && put(l.x, l.y, rand() < 0.5 ? 'bus' : 'truck', l.vert ? choice([0, 2]) : choice([1, 3]))) big++;
+    if (big >= wantBig) break;
+    if (rand() > 0.2 || !ok(l.x, l.y)) continue;
+    const r = rand(), [type, hv] = r < 0.4 ? ['bus', rand() < 0.25 ? 'coach' : 'city'] : r < 0.8 ? ['truck', 'box'] : ['truck', 'semi'];
+    const rot = l.vert ? choice([0, 2]) : choice([1, 3]);
+    for (const n of type === 'truck' && hv === 'semi' ? [8, 4, 3] : VEHICLE_ROWS[type][hv]) {
+      const v2 = type === 'truck' && n < 8 ? 'box' : hv, cells = rowCells(l.x, l.y, rot, n);
+      if (!rowFits(map, cells, onLane(l.vert))) continue;
+      writeRow(map, cells, type, rot, v2, { variant: randInt(0, 3) }); big++; break;
+    }
   }
   // 2) Gehwege: Pflanzkübel (Busch), Betonsperren, Polizei-Sandsäcke, Zeitungs-/Stromkästen als Kisten
   const walks = [];
@@ -929,6 +991,7 @@ function modCtx(G, x0, y0, gw, gh, face, mirror) {
   // Hindernis setzen; o.rot = lokale Blickrichtung (0 = Front), o.alongV = Fahrzeug längs zur Tiefe, o.car = Autovariante
   M.put = (u, v, type, o = {}) => {
     if (!M.free(u, v)) return false;
+    if (type === 'car' && nearRow(map, ...T(u, v))) return false;
     M.cell(u, v).wall = mkWall(type, { rot: o.rot != null ? rotG(o.rot) : undefined, variant: o.car ?? o.variant, vert: o.alongV != null ? !!o.alongV !== ew : undefined });
     return true;
   };
@@ -942,6 +1005,38 @@ function modCtx(G, x0, y0, gw, gh, face, mirror) {
       if (M.put(u, v, Array.isArray(type) ? choice(type) : type, oo)) k++;
     }
     return k;
+  };
+  // I1: langes Fahrzeug als Reihe (lokale Blickrichtung o.rot); lens = Längen in Feldern, erste passende gewinnt.
+  // Alle Felder liegen in area, sind frei und haben keine fremden Nachbarn (keine Riegel, keine Türen).
+  M.vehicle = (type, hv, n, area = [1, 1, lw - 2, lh - 2], o = {}) => {
+    const nearEntry = (u, v) => v >= lh - 2 && Math.abs(u - M.entry[0]) <= 1; // Moduleingang/Tor frei lassen
+    const inA = (u, v) => u >= area[0] && v >= area[1] && u < area[0] + area[2] && v < area[1] + area[3];
+    let k = 0;
+    for (let t = 0; t < n * 14 && k < n; t++) {
+      const rl = o.rot != null ? (Array.isArray(o.rot) ? choice(o.rot) : o.rot) : randInt(0, 3);
+      const u = area[0] + randInt(0, Math.max(0, area[2] - 1)), v = area[1] + randInt(0, Math.max(0, area[3] - 1));
+      for (const len of o.lens || VEHICLE_ROWS[type][hv]) {
+        const loc = rowCells(u, v, rl, len, o.wide);
+        if (!loc.every((p) => inA(p.x, p.y) && M.free(p.x, p.y) && !nearEntry(p.x, p.y))) continue;
+        const cells = loc.map((p) => { const [x, y] = T(p.x, p.y); return { ...p, x, y }; });
+        if (!rowFits(map, cells, () => true)) continue;
+        writeRow(map, cells, type, rotG(rl), hv, { variant: o.variant ?? randInt(0, 3) }); k++; break;
+      }
+    }
+    return k;
+  };
+  // I1: Gabelstapler neben einer Palette (Gabel zur Palette), Wahrscheinlichkeit p; keine Riegel, Eingang frei
+  M.forklift = (p) => {
+    if (rand() > p) return false;
+    const pal = [];
+    for (let v = 0; v < lh; v++) for (let u = 0; u < lw; u++) if (M.cell(u, v)?.wall?.type === 'pallet') pal.push([u, v]);
+    for (const [pu, pv] of shuffle(pal)) for (const [du, dv] of shuffle(DIR4.slice())) {
+      const u = pu - du, v = pv - dv;
+      if (!M.free(u, v) || (v >= lh - 2 && Math.abs(u - M.entry[0]) <= 1)) continue;
+      if (DIR4.some(([eu, ev]) => (eu !== du || ev !== dv) && M.cell(u + eu, v + ev)?.wall)) continue;
+      if (M.put(u, v, 'car', { car: 'forklift', rot: ROT_DIR.findIndex(([a, b]) => a === du && b === dv) })) return true;
+    }
+    return false;
   };
   M.ring = (u0, v0, w, h, type, o = {}) => {
     const gates = new Set((o.gates || []).map(([u, v]) => v * 1000 + u));
@@ -1175,6 +1270,7 @@ function modCornfield(M) {
   if (rand() < 0.3) M.ell((lw - 1) / 2, (lh - 1) / 2, 3.2, 3.2, (u, v, d) => { if (d < 1) M.floor(u, v, d < 0.4 || d > 0.75 ? 'field2' : 'crops'); }); // Kornkreis
   M.scatter('hay', randInt(2, 5)); M.scatter('bush', randInt(0, 2));
   M.scatter('car', 1, [1, 1, lw - 2, lh - 2], { car: 'tractor', randAlong: true });
+  if (rand() < 0.45) M.vehicle('car', 'combine', 1, [1, 1, lw - 2, lh - 4], { wide: true, variant: 'combine' }); // Mähdrescher bei der Ernte
   if (rand() < 0.5) { const u = rand() < 0.5 ? 0 : lw - 1; for (let v = 0; v < lh; v++) if (rand() > 0.15) M.put(u, v, 'fence', { rot: 0 }); }
   for (let k = 0; k < 4; k++) M.spawn(randInt(1, lw - 2), randInt(1, lh - 3));
 }
@@ -1201,7 +1297,7 @@ function modLumbercamp(M) {
   for (let k = 0, rows = randInt(2, 3); k < rows; k++) { const v = 2 + k * 2, u0 = randInt(cw + 2, lw - 5); for (let u = u0; u < Math.min(lw - 1, u0 + randInt(2, 4)); u++) M.put(u, v, 'woodpile', { rot: 1 }); }
   M.scatter('stump', randInt(5, 9)); M.scatter('log', randInt(2, 4), undefined, { randAlong: true });
   M.scatter('fuelbarrel', randInt(1, 2)); M.scatter('barrel', randInt(0, 2)); M.scatter('pallet', randInt(1, 2));
-  M.scatter('truck', 1, [1, lh - 3, lw - 2, 2], { rot: 1 });
+  M.vehicle('truck', 'box', 1, [1, lh - 3, lw - 2, 2], { rot: [1, 3] });
 }
 function modRangerhut(M, biome) {
   const { lw, lh } = M;
@@ -1221,7 +1317,7 @@ function modCampsite(M) {
   M.fill(1, lh - 2, lw - 2, 1, 'gravel'); M.fill(1, 1, 1, lh - 2, 'gravel'); M.fill(lw - 2, 1, 1, lh - 2, 'gravel'); M.fill(1, 1, lw - 2, 1, 'gravel');
   if (rand() < 0.7) M.bld(lw - 7, 2, 4, 4, { style: 'cabin', doors: ['e'] }); // Sanitärhaus
   for (let v = 3; v < lh - 3; v += 3) for (let u = 3; u < lw - 3; u += 3) if (rand() < 0.6) M.put(u, v, 'tent', { rot: randInt(0, 3) });
-  M.scatter('bus', randInt(1, 2), [2, 2, lw - 4, lh - 4], { rot: choice([1, 3]), spaced: true }); // Wohnmobile
+  for (let k = randInt(1, 2); k > 0; k--) if (!M.vehicle('bus', 'coach', 1, [2, 2, lw - 4, lh - 4], { rot: [1, 3], lens: [5] })) M.vehicle('bus', 'city', 1, [2, 2, lw - 4, lh - 4], { rot: [1, 3], lens: [4] }); // Reisebus/Wohnmobil
   M.scatter('car', randInt(0, 2), [2, 2, lw - 4, lh - 4], { car: choice(['kombi', 'suv', 'van']), randAlong: true, spaced: true });
   M.scatter('barrel', 2); M.scatter('crate', randInt(2, 3)); M.scatter('bush', 2);
   for (let k = 0; k < 3; k++) M.spawn(randInt(2, lw - 3), randInt(2, lh - 3));
@@ -1259,7 +1355,7 @@ function modGasstation(M) {
   const pv = Math.min(sh + 2, lh - 3), n = randInt(2, 4), u0 = Math.max(1, (lw - n * 3) >> 1);
   for (let k = 0; k < n; k++) { M.put(u0 + k * 3, pv, 'fuelpump', { rot: 1 }); if (rand() < 0.6) M.put(u0 + k * 3 + 1, pv, 'car', { car: choice(['sedan', 'kombi', 'suv', 'pickup']), alongV: true }); }
   M.scatter('fuelbarrel', randInt(2, 4), [0, 0, lw, sh + 1]); M.scatter('barrel', randInt(1, 2), [0, 0, lw, sh + 1]);
-  if (rand() < 0.5) M.scatter('truck', 1, [0, lh - 2, lw, 1], { rot: 1 });
+  if (rand() < 0.5 && !(rand() < 0.5 && M.vehicle('truck', 'semi', 1, [0, lh - 2, lw, 1], { rot: [1, 3] }))) M.vehicle('truck', 'box', 1, [0, lh - 2, lw, 1], { rot: [1, 3] }); // Highway
   if (rand() < 0.4) M.scatter('watertank', 1, [0, 0, lw, sh + 1]);
 }
 function modOasis(M) {
@@ -1314,7 +1410,7 @@ function modMotel(M) {
   M.bld(bu, 1, bw, bh, { style: 'motel', front: 's', rooms: true });
   M.fill(0, bh + 2, lw, lh - bh - 2, 'parking'); M.fill(bu, bh + 1, bw, 1, 'concretefloor'); // Laubengang
   for (let u = 1; u < lw - 1; u += 2) if (rand() < 0.4) M.put(u, bh + 3, 'car', { car: choice(['sedan', 'kombi', 'suv', 'van', 'pickup', 'burnt']), alongV: true });
-  if (rand() < 0.35) M.scatter('bus', 1, [1, lh - 2, lw - 2, 1], { rot: 1 });
+  if (rand() < 0.35) M.vehicle('bus', 'coach', 1, [1, lh - 2, lw - 2, 1], { rot: [1, 3] });
   M.put(bu + bw, randInt(1, 3), 'watertank'); M.scatter('barrel', randInt(1, 2), [0, bh + 1, lw, lh - bh - 1]); M.scatter('bush', randInt(1, 2), [0, bh + 1, lw, lh - bh - 1]);
 }
 // ---------- arctic ----------
@@ -1388,8 +1484,9 @@ function modIndustrial(M) {
   M.bld(wu, 1, ww, wh, { style: 'warehouse', doors: ['s'] });
   const c0 = left ? wu + ww + 1 : 1, c1 = left ? lw - 2 : wu - 2;
   for (let v = 1; v < wh; v += 2) { const vr = randInt(0, 3); for (let u = c0; u <= c1; u++) if (rand() < 0.7) M.put(u, v, 'container', { rot: 1, variant: vr }); }
-  M.scatter('truck', randInt(1, 2), [1, wh + 2, lw - 2, lh - wh - 3], { rot: choice([1, 3]), spaced: true });
+  for (let k = randInt(1, 2); k > 0; k--) M.vehicle('truck', rand() < 0.3 ? 'semi' : 'box', 1, [1, wh + 2, lw - 2, lh - wh - 3], { rot: [1, 3] }) || M.vehicle('truck', 'box', 1, [1, wh + 2, lw - 2, lh - wh - 3], { rot: [1, 3] });
   M.scatter('pallet', randInt(3, 6)); M.scatter('barrel', randInt(1, 3)); M.scatter('fuelbarrel', randInt(1, 2)); M.scatter('crate', 2);
+  M.forklift(0.8);
 }
 function modConstruction(M) {
   const { lw, lh } = M;
@@ -1401,7 +1498,8 @@ function modConstruction(M) {
   for (let v = bv; v < bv + bh; v++) if (rand() < 0.85) M.put(su, v, 'scaffold', { rot: su < bu ? 1 : 3 });
   M.scatter('pallet', randInt(3, 6)); M.scatter('rockpile', randInt(1, 3)); M.scatter('barrel', randInt(1, 2));
   M.scatter('container', 1, undefined, { rot: 1, spaced: true });
-  if (rand() < 0.6) M.scatter('truck', 1, [1, lh - 3, lw - 2, 2], { rot: 1 });
+  if (rand() < 0.6) M.vehicle('truck', 'box', 1, [1, lh - 3, lw - 2, 2], { rot: [1, 3] });
+  M.forklift(0.35);
   for (let u = 0; u < lw; u++) if (Math.abs(u - (lw >> 1)) > 1 && rand() < 0.8) M.put(u, lh - 1, 'chainlink', { rot: 1 });
 }
 function modReststop(M, biome) {
@@ -1409,7 +1507,7 @@ function modReststop(M, biome) {
   M.fill(0, 0, lw, lh, 'parking'); M.fill(0, lh - 2, lw, 2, 'asphalt');
   const left = rand() < 0.5;
   M.bld(left ? 1 : lw - 6, 1, 5, 4, biome === 'forest' || biome === 'arctic' ? { style: 'cabin', doors: ['s'] } : { style: 'motel', doors: ['s'] });
-  for (let k = 0, n = randInt(2, 4); k < n; k++) M.scatter(choice(['bus', 'truck', 'truck']), 1, [1, 6, lw - 2, Math.max(1, lh - 8)], { rot: choice([1, 3]), spaced: true });
+  for (let k = 0, n = randInt(2, 4); k < n; k++) { const r = rand(), a = [1, 6, lw - 2, Math.max(1, lh - 8)], o = { rot: [1, 3] }; if (r < 0.3) M.vehicle('bus', rand() < 0.5 ? 'coach' : 'city', 1, a, o); else if (!(r > 0.75 && M.vehicle('truck', 'semi', 1, a, o))) M.vehicle('truck', 'box', 1, a, o); }
   M.scatter('car', randInt(2, 3), [1, 5, lw - 2, Math.max(1, lh - 7)], { car: choice(['sedan', 'kombi', 'suv', 'van']), alongV: true });
   M.scatter(treeOf(biome), 2, [0, 0, lw, 1]); M.scatter('crate', 2, [0, 0, lw, 5]); M.scatter('barrel', randInt(1, 2)); M.scatter('bush', 2, [0, 0, lw, 5]);
 }

@@ -22,7 +22,7 @@ export function newSoldier() {
     rank: 0, xp: 0, kills: 0, missions: 0,
     tu: randInt(50, 62), hp: randInt(38, 48), acc: randInt(45, 72), react: randInt(35, 65), brave: randInt(30, 70),
     wound: 0, // Heilungstage verbleibend
-    weapon: 'rifle', load: 'mag', armor: 'none', grenades: 1, items: ['frag', 'mag', 'mag'], // Gürtel: Granate + 2 Ersatzmagazine (gratis, unbegrenzt)
+    weapon: 'rifle', load: 'mag', armor: 'none', grenades: 1, items: ['frag', 'mag', 'mag', 'smoke'], // Gürtel (4 Plätze): Granate + 2 Ersatzmagazine (gratis, unbegrenzt) + Nebelgranate
     look: { skin: [0xf1c27d, 0xc68642, 0x8d5524, 0xe0ac69, 0xffdbac][randInt(0, 4)], hair: [0x2c1b10, 0x6b4423, 0xd4b06a, 0x111111, 0x8a3b12][randInt(0, 4)] },
   };
 }
@@ -46,7 +46,7 @@ export function createCampaign() {
     artifacts: {},
     researchProgress: {}, researchPaid: {}, // Fortschritt je Projekt / Artefakte bereits verbraucht
     autoPauseHint: false,
-    stock: { sniper: 1, shotgun: 1, pistol: 2, frag: 10, smoke: 6, flare: 4, medkit: 2, charge: 2, stunrod: 1 }, // gekaufte Ausrüstung (Waffen sind wiederverwendbar)
+    stock: { sniper: 1, shotgun: 1, pistol: 2, frag: 10, smoke: 8, flare: 4, medkit: 2, charge: 2, stunrod: 1 }, // gekaufte Ausrüstung (Waffen sind wiederverwendbar)
     score: 0, monthScore: 0,
     regionScore: Object.fromEntries(REGIONS.map((r) => [r.id, 0])),
     funding: Object.fromEntries(REGIONS.map((r) => [r.id, FUNDING_START])),
@@ -58,7 +58,7 @@ export function createCampaign() {
   };
 }
 
-// Ältere Spielstände auf das Gürtel-System umstellen
+// Ältere Spielstände auf das Gürtel-System umstellen; I1: bestehende Soldaten bekommen leere Plätze bis BELT_SLOTS (4)
 export function migrateCampaign(c) {
   for (const s of c.soldiers || []) {
     if (!Array.isArray(s.items)) {

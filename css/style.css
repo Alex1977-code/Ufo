@@ -332,6 +332,12 @@ body[data-mode="geo"] #fps { top: auto; bottom: calc(90px + var(--safe-b)); }
 .eq-poses small { color: var(--muted); font-size: 0.8em; margin-right: 2px; }
 .eq-pose { padding: 0.2em 0.6em; font-size: 0.85em; min-height: 0; }
 .eq-opt.dis { opacity: 0.4; }
+/* I1: vier Gürtelplätze – ab Tablet-Breite je zwei nebeneinander, damit auf 720p nichts gescrollt werden muss */
+@media (min-width: 641px) {
+  .eq-main .eq-slots { grid-template-columns: 1fr 1fr; }
+  .eq-main .eq-slots > :not([data-slot^="i"]) { grid-column: 1 / -1; }
+  .eq-main .eq-slot[data-slot^="i"] em { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+}
 @media (max-width: 640px) {
   .eq-main { grid-template-columns: 1fr; }
   .eq-stage { flex: 0 0 auto; min-height: 0; height: 220px; }

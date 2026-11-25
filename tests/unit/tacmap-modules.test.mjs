@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import { generateMap, WALLS, MAP_MODULES } from '../../js/tacmap.js';
+import { generateMap, WALLS, MAP_MODULES, VEHICLE_ROWS } from '../../js/tacmap.js';
 import { setSeed } from '../../js/util.js';
 
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -132,4 +132,40 @@ test('Generierung < 50 ms im Mittel', () => {
   const avg = genMs / genN;
   console.log(`# generateMap Ø ${avg.toFixed(2)} ms über ${genN} Karten`);
   assert(avg < 50, `Ø ${avg.toFixed(1)} ms`);
+});
+
+// I1: lange Fahrzeuge als Reihen (Bus ≈ 12 m = 6 Felder, Koffer-LKW 4, Sattelzug 8, Mähdrescher 5 + Schneidwerk)
+test('Fahrzeug-Reihen: vollständig, gerade, ein Kopf, keine Türen/Landezone', () => {
+  const found = {};
+  const jobs = [];
+  for (let s = 1; s <= 60; s++) jobs.push(['terror', 'urban', null, s * 7907]);
+  for (const b of BIOMES) for (let s = 1; s <= 50; s++) jobs.push([KINDS[s % 2], b, UFOS[s % 4], s * 104729 + b.length]);
+  for (const [kind, biome, ufoType, seed] of jobs) {
+    setSeed(seed);
+    const m = generateMap({ biome, kind, ufoType, night: false });
+    const groups = new Map();
+    m.cells.forEach((c, i) => { if (c.wall?.vid != null) (groups.get(c.wall.vid) || groups.set(c.wall.vid, []).get(c.wall.vid)).push({ c, x: i % m.W, y: (i / m.W) | 0 }); });
+    const lz = new Set(m.lz.map((p) => p.y * m.W + p.x));
+    for (const [vid, list] of groups) {
+      const tag = `${biome} seed ${seed} vid ${vid}`;
+      const w0 = list[0].c.wall;
+      assert(list.every((e) => e.c.wall.type === w0.type && e.c.wall.rot === w0.rot && e.c.wall.vlen === w0.vlen), `${tag}: uneinheitlich`);
+      assert.equal(list.length, w0.vcells, `${tag}: Felder fehlen`);
+      const heads = list.filter((e) => e.c.wall.vhead);
+      assert.equal(heads.length, 1, `${tag}: Kopf`);
+      const lens = VEHICLE_ROWS[w0.type]?.[w0.hv];
+      assert(lens && lens.includes(w0.vlen), `${tag}: Länge ${w0.type}/${w0.hv}/${w0.vlen}`);
+      // Reihe: alle Felder entlang der Fahrtrichtung hinter dem Kopf (Mähdrescher: Frontreihe 3 breit)
+      const [dx, dy] = [[0, 1], [-1, 0], [0, -1], [1, 0]][w0.rot], h = heads[0];
+      for (let k = 0; k < w0.vlen; k++) assert(list.some((e) => e.x === h.x - dx * k && e.y === h.y - dy * k), `${tag}: Reihe unterbrochen`);
+      for (const e of list) {
+        assert(!lz.has(e.y * m.W + e.x), `${tag}: auf der Landezone`);
+        assert(!e.c.indoor && !e.c.door, `${tag}: im Gebäude/Tür`);
+        for (const [ex, ey] of DIRS) assert(!m.at(e.x + ex, e.y + ey)?.door, `${tag}: vor einer Tür`);
+      }
+      found[`${w0.type}:${w0.hv}`] = (found[`${w0.type}:${w0.hv}`] || 0) + 1;
+    }
+  }
+  for (const k of ['bus:city', 'bus:coach', 'truck:box', 'truck:semi', 'car:combine']) assert(found[k] > 0, 'nie erzeugt: ' + k);
+  assert(found['bus:city'] + found['bus:coach'] >= 20 && found['truck:box'] >= 20, JSON.stringify(found));
 });

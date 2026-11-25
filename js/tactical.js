@@ -6,6 +6,7 @@ import { TILE, propParts, patchFog, fogUniforms, makeSoldier, makeAlien, makeCiv
 import { canvasTexture } from './engine.js';
 import { applyEnvironment, createSunWithCSM } from './environment.js';
 import { getHeroCarKit } from './herocar.js';
+import { getHeavyVehicleKit } from './heavyvehicles.js';
 import { loadCharacterLibrary, makeCharacter } from './characters.js';
 import { makeTransport as makeKondor, animateCraft, setHatch } from './craftmodels.js';
 import { WEAPONS, ARMORS, ALIENS, ITEMS, BELT_SLOTS, RANKS, UFOS, effWeapon, ammoFits, ammoList, defaultLoad, isInstantItem, guidedMode } from './data.js';
@@ -82,11 +83,25 @@ class PropSet {
   }
   setMask(i, bits) { if (this.mask[i] === bits) return; this.mask[i] = bits; if (this.shown[i]) this.show(i, true); }
 }
-// Mehrere Optik-Varianten eines Wandtyps (z. B. Fahrzeugmodelle, Möbel, Außen-/Innenwand) mit gemeinsamer Indexierung
+// Mehrere Optik-Varianten eines Wandtyps (z. B. Fahrzeugmodelle, Möbel, Außen-/Innenwand) mit gemeinsamer Indexierung.
+// I1: alias() hängt weitere Felder an ein Modell (lange Fahrzeuge über mehrere Felder): Das Modell ist sichtbar, solange
+// mindestens ein nicht zerstörtes Feld der Gruppe aufgedeckt ist; alive[h] = verbleibende Felder.
 class VariantSet {
-  constructor(sets) { this.sets = sets; this.ref = []; this.base = []; this.zero = new THREE.Matrix4().makeScale(0, 0, 0); }
+  constructor(sets) { this.sets = sets; this.ref = []; this.base = []; this.zero = new THREE.Matrix4().makeScale(0, 0, 0); this.owner = []; this.members = {}; this.alive = {}; this.vis = []; }
   add(mtx, colors, tiles, mask, v) { const s = this.sets[v]; this.ref.push([s, s.add(mtx, colors, tiles, mask)]); this.base.push(mtx.clone()); return this.ref.length - 1; }
-  show(i, on) { const [s, li] = this.ref[i]; s.show(li, on && this.base[i] !== this.zero); }
+  alias(h) {
+    const i = this.ref.length;
+    this.ref.push(this.ref[h]); this.base.push(this.base[h].clone()); this.owner[i] = h;
+    (this.members[h] ||= [h]).push(i); this.alive[h] = this.members[h].length;
+    return i;
+  }
+  head(i) { return this.owner[i] ?? i; }
+  show(i, on) {
+    const h = this.head(i), mem = this.members[h];
+    if (!mem) { const [s, li] = this.ref[i]; s.show(li, on && this.base[i] !== this.zero); return; }
+    this.vis[i] = on && this.base[i] !== this.zero;
+    const [s, li] = this.ref[h]; s.show(li, mem.some((j) => this.vis[j]));
+  }
   setMask(i, bits) { const [s, li] = this.ref[i]; s.setMask(li, bits); }
 }
 // G6: geparkte Hero-Autos (herocar.js) als InstancedMeshes je (LOD-Stufe, Material-Slot); gleiche Schnittstelle wie PropSet.
@@ -95,10 +110,19 @@ const HERO_VARIANT = {
   sedan: { type: 'sedan' }, kombi: { type: 'sedan' }, suv: { type: 'suv' }, pickup: { type: 'pickup' }, van: { type: 'van' },
   burnt: { type: 'sedan', damage: 1, paint: 0x141414, seed: 5, burnt: true },
 };
+// I1: Nutzfahrzeuge (heavyvehicles.js) über denselben Instanzpfad. Schlüssel 'hv|typ|variante|länge|farbe|schaden|maßstab';
+// Farbe leer = sauberer, weißer Lack mit Instanzfarbe; mit Farbe = Verschmutzung (Schaden) samt Farbe in der Lack-Map.
+const heavyKey = (type, variant, { length = '', color = '', damage = 0, scale = 1 } = {}) => `hv|${type}|${variant}|${length}|${color}|${damage}|${scale}`;
+function heavySpec(key) {
+  const [, heavy, variant, length, color, damage, scale] = key.split('|');
+  return { heavy, variant, length: length ? +length : undefined, color: color ? parseInt(color, 16) : undefined, damage: +damage || 0, scale: +scale || 1 };
+}
+const ROT_DIR = [[0, 1], [-1, 0], [0, -1], [1, 0]]; // wall.rot → Blickrichtung (dx, dy) im Raster
+const TRACTOR_PAINT = ['3a7a2a', 'b82a1a', '2f6b2a', '2a5a9a']; // AGRION-Grün, Rot, Dunkelgrün, Blau (Farbe in der Schmutz-Map)
 const HERO_LOD_DIST = { desktop: [16, 40], mobile: [0, 24] };
 class HeroCarSet {
-  constructor(scene, kit, count, shadows, { scale = 1, mobile = false, burnt = false } = {}) {
-    this.kit = kit; this.scale = scale; this.mobile = mobile;
+  constructor(scene, kit, count, shadows, { scale = 1, mobile = false, burnt = false, lodK = 1 } = {}) {
+    this.kit = kit; this.scale = scale; this.mobile = mobile; this.lodK = lodK;
     this.levels = Object.keys(kit.levels).map(Number).sort();
     this.meshes = {};
     for (const lv of this.levels) {
@@ -112,9 +136,11 @@ class HeroCarSet {
         return m;
       });
     }
-    this.base = []; this.color = []; this.shown = []; this.lod = []; this.dirty = true;
+    this.base = []; this.color = []; this.shown = []; this.lod = []; this.wreck = []; this.dirty = true;
     this._p = new THREE.Vector3(); this._S = new THREE.Matrix4().makeScale(scale, scale, scale);
   }
+  // I1: Instanz durch ein ausgebranntes Einzelmodell ersetzen (lange Fahrzeuge mit restlichen Feldern); null = loslösen
+  setWreck(i, g) { this.wreck[i] = g; if (g) g.visible = this.shown[i]; this.dirty = true; }
   add(mtx, colors) {
     const i = this.base.length;
     this.base.push(mtx.clone().multiply(this._S));
@@ -122,15 +148,15 @@ class HeroCarSet {
     this.shown.push(false); this.lod.push(this.levels[this.levels.length - 1]);
     return i;
   }
-  show(i, on) { if (this.shown[i] !== on) { this.shown[i] = on; this.dirty = true; } }
+  show(i, on) { if (this.wreck[i]) this.wreck[i].visible = on; if (this.shown[i] !== on) { this.shown[i] = on; this.dirty = true; } }
   setMask() {}
   posOf(i) { return this._p.setFromMatrixPosition(this.base[i]); }
   // LOD nach Kameraabstand; packt nur bei Änderungen neu
   update(cam) {
     const D = this.mobile ? HERO_LOD_DIST.mobile : HERO_LOD_DIST.desktop, L = this.levels;
     for (let i = 0; i < this.base.length; i++) {
-      if (!this.shown[i]) continue;
-      const d = cam.distanceTo(this.posOf(i));
+      if (!this.shown[i] || this.wreck[i]) continue;
+      const d = cam.distanceTo(this.posOf(i)) / this.lodK;
       let want = d < D[0] ? 0 : d < D[1] ? 1 : 2;
       if (!L.includes(want)) want = L.find((l) => l >= want) ?? L[L.length - 1];
       if (want !== this.lod[i]) { this.lod[i] = want; this.dirty = true; }
@@ -141,7 +167,7 @@ class HeroCarSet {
     for (const lv of L) {
       let n = 0;
       for (let i = 0; i < this.base.length; i++) {
-        if (!this.shown[i] || this.lod[i] !== lv) continue;
+        if (!this.shown[i] || this.wreck[i] || this.lod[i] !== lv) continue;
         for (const m of this.meshes[lv]) { m.setMatrixAt(n, this.base[i]); if (m.instanceColor) m.setColorAt(n, this.kit.damaged ? white : this.color[i]); }
         n++;
       }
@@ -158,7 +184,7 @@ class HeroCarSet {
     mtx.decompose(g.position, g.quaternion, g.scale);
     return g;
   }
-  dispose() { for (const lv of this.levels) for (const m of this.meshes[lv]) { m.removeFromParent(); m.dispose(); } }
+  dispose() { for (const lv of this.levels) for (const m of this.meshes[lv]) { m.removeFromParent(); m.dispose(); } for (const g of this.wreck) g?.removeFromParent(); }
 }
 const FURNITURE = ['furn:table', 'furn:table', 'furn:bed', 'furn:shelf', 'furn:cabinet', 'furn:sofa', 'furn:counter'];
 const CAR_PAINT = ['#e8e8e6', '#c8ccd0', '#2a2c30', '#1e2e4a', '#8a1a1a', '#2e4a34', '#d8ccb0', '#4a5a6a', '#b04a1a', '#e0c040', '#3a6a9a', '#6a6e72'];
@@ -717,6 +743,27 @@ export class Tactical {
       plan.push(e); (counts[t] ||= {})[v] = (counts[t][v] || 0) + 1; return e;
     };
     const M4 = (px, pz, ang, sx = 1, sy = 1, sz = 1, tx = 0, tz = 0) => mtx.compose(pos.set(px, 0, pz), q.setFromEuler(eul.set(tx, ang, tz)), s.set(sx, sy, sz));
+    // I1: lange Fahrzeuge (tacmap: wall.vid/vhead/vlen/rot/hv) → genau ein Modell über der Reihe, übrige Felder als Alias
+    const rowHeads = new Map(), rowEntry = new Map();
+    for (let y = 0; y < m.H; y++) for (let x = 0; x < m.W; x++) { const w = m.at(x, y).wall; if (w?.vhead) rowHeads.set(w.vid, { x, y }); }
+    // Modell-Mitte in Fahrtrichtung (Bounding-Box des Bausatzes; z. B. Gabeln/Schneidwerk vorne)
+    const kitZ = (key) => { const k = this.heroKitFor(key); if (k._zc == null) { const b = new THREE.Box3(); for (const g of Object.values(k.levels[Math.max(...Object.keys(k.levels).map(Number))])) { if (!g.boundingBox) g.computeBoundingBox(); b.union(g.boundingBox); } k._zc = (b.min.z + b.max.z) / 2; } return k._zc * heavySpec(key).scale; };
+    const addRow = (c, x, y, t) => {
+      const w = c.wall, hp = rowHeads.get(w.vid);
+      if (!hp) { M4(this.cellPos(x, y).x, this.cellPos(x, y).z, 0); put(c, t, 'crate'); return; }
+      if (hp.x !== x || hp.y !== y) { plan.push({ c, t, alias: w.vid }); if (this.realModels) c.wall.hero = true; return; }
+      const rot = (w.rot ?? 0) & 3, [dx, dy] = ROT_DIR[rot], n = w.vlen || 1, ang = -rot * T2, vr = Number.isInteger(w.variant) ? w.variant & 3 : (x + y) & 3;
+      const p0 = this.cellPos(x, y), off = ((n - 1) / 2) * TILE;
+      let cx = p0.x - dx * off, cz = p0.z - dy * off, key = null, colors = null, v = null;
+      if (t === 'car') { // Mähdrescher (Erntestellung, Schneidwerk vorne über drei Felder)
+        if (this.realModels) key = heavyKey('combine', 'standard', { color: ['2f6b2a', 'b82a1a'][w.vid & 1], damage: 0.35 });
+        else { v = 'car:combine'; colors = parts[v].map((pp) => (pp.paint ? new THREE.Color(['#2f6b2a', '#b82a1a'][w.vid & 1]) : null)); }
+      } else if (t === 'bus') { key = heavyKey('bus', w.hv === 'coach' ? 'coach' : 'city', { length: Math.max(w.hv === 'coach' ? 10 : 8, n * TILE - 0.5) }); colors = [col(PAL.bus[vr])]; }
+      else { key = w.hv === 'semi' ? heavyKey('truck', 'semi') : heavyKey('truck', 'box', { length: Math.max(6.5, n * TILE - 0.5) }); colors = [col(PAL.cab[vr])]; }
+      if (key) { const zc = kitZ(key); cx -= dx * zc; cz -= dy * zc; v = 'hero:' + key; c.wall.hero = true; }
+      M4(cx, cz, ang + randRange(-0.015, 0.015));
+      rowEntry.set(w.vid, put(c, t, v, null, colors));
+    };
     const addNew = (c, x, y, t, p) => {
       const w = c.wall, vr = Number.isInteger(w.variant) ? w.variant & 3 : (x * 7 + y * 13) & 3, rr = Number.isInteger(w.rot) ? w.rot & 3 : null;
       const qa = rr == null ? randInt(0, 3) * T2 : -rr * T2, hash = (x * 31 + y * 17) >>> 0;
@@ -791,7 +838,10 @@ export class Tactical {
       if (t === 'pallet') v = vr & 1 ? 'pallet:load' : 'pallet';
       if (t === 'barrel') colors = [col(PAL.barrel[vr])];
       if (t === 'watertank') colors = [col(PAL.tank[vr]), null];
-      if (t === 'milwreck') { tx = randRange(-0.04, 0.04); tz = randRange(-0.05, 0.05); }
+      if (t === 'milwreck') {
+        tx = randRange(-0.04, 0.04); tz = randRange(-0.05, 0.05);
+        if (this.realModels) { M4(p.x, p.z, ang, 1, 1, 1, tx, tz); c.wall.hero = true; put(c, t, 'hero:' + heavyKey('milwreck', 'standard', { damage: 1, scale: 0.75 })); return; }
+      }
       if (t === 'scaffold') ang = same(x - 1, y, t) || same(x + 1, y, t) ? 0 : same(x, y - 1, t) || same(x, y + 1, t) ? T2 : rr != null ? (rr % 2 ? 0 : T2) : 0;
       M4(p.x, p.z, ang, 1, 1, 1, tx, tz);
       put(c, t, v, null, colors);
@@ -802,6 +852,7 @@ export class Tactical {
       const p = this.cellPos(x, y);
       pos.set(p.x, 0, p.z);
       if (t === 'water') { water.push([x, y]); continue; }
+      if (c.wall.vid != null && (this.realModels || t === 'car')) { addRow(c, x, y, t); continue; }
       if (!(t in parts) || NEWT.has(t) || (t === 'window' && c.bld != null && BMAT.has(m.buildings[c.bld]?.mat))) { addNew(c, x, y, t, p); continue; }
       let v = t, rot = 0, scl = 1, colors = null, tiles = null, mask = 0, B = null;
       if (['tree', 'pine', 'rock', 'bigrock', 'hivewall', 'wreck', 'pod', 'crate'].includes(t)) { rot = rand() * Math.PI * 2; scl = randRange(0.85, 1.2); }
@@ -822,10 +873,14 @@ export class Tactical {
         const variant = c.wall.variant || choice(['sedan', 'sedan', 'kombi', 'suv', 'van', 'pickup']);
         v = 'car:' + variant;
         rot = c.wall.vert == null ? randInt(0, 3) * T2 + randRange(-0.15, 0.15) : (c.wall.vert ? 0 : T2) + (rand() < 0.5 ? Math.PI : 0) + randRange(-0.06, 0.06);
-        const paint = new THREE.Color(variant === 'tractor' ? choice(['#3a7a2a', '#b82a1a', '#2a5a9a', '#d0a020']) : choice(CAR_PAINT));
-        // G6: Hero-Auto (Lack/Glas/Chrom aus herocar.js) statt Kastenmodell; Traktor bleibt das alte Modell
+        if (Number.isInteger(c.wall.rot)) rot = -(c.wall.rot & 3) * T2 + randRange(-0.05, 0.05); // Gabelstapler: Gabel zur Palette
+        const paint = new THREE.Color(variant === 'tractor' ? choice(['#3a7a2a', '#b82a1a', '#2a5a9a', '#d0a020']) : variant === 'forklift' ? choice(['#e0a818', '#d86a18', '#c8c8c4']) : choice(CAR_PAINT));
+        // G6: Hero-Auto (Lack/Glas/Chrom aus herocar.js) statt Kastenmodell; I1: Traktor (AGRION, ab und zu mit Frontlader) und Gabelstapler aus heavyvehicles.js
         const hv = this.realModels && HERO_VARIANT[variant];
-        if (hv) { v = 'hero:' + variant; c.wall.hero = hv; colors = [paint]; }
+        const hk = this.realModels && (variant === 'tractor' || variant === 'forklift') ? (variant === 'forklift' ? heavyKey('forklift', 'standard')
+          : (((x * 73856093) ^ (y * 19349663)) >>> 0) % 100 < 30 ? heavyKey('tractor', 'loader', { color: TRACTOR_PAINT[(x + y) & 3], damage: 0.4, scale: 0.88 }) : heavyKey('tractor', 'standard', { color: TRACTOR_PAINT[(x + y) & 3], damage: 0.4 })) : null;
+        if (hk) { v = 'hero:' + hk; c.wall.hero = true; colors = [paint]; const zc = kitZ(hk); pos.x -= Math.sin(rot) * zc; pos.z -= Math.cos(rot) * zc; }
+        else if (hv) { v = 'hero:' + variant; c.wall.hero = hv; colors = [paint]; }
         else colors = parts[v].map((pp) => (pp.paint ? paint : null));
       }
       if (t === 'hay' && rand() < 0.4) v = 'hay:stack';
@@ -840,6 +895,7 @@ export class Tactical {
       (counts[t] ||= {})[v] = (counts[t][v] || 0) + 1;
     }
     this.props = {};
+    for (const e of plan) if (e.alias != null) (counts[e.t] ||= {}); // nur Alias-Felder (Kopf fehlt nie, aber sicher ist sicher)
     for (const [t, vs] of Object.entries(counts)) {
       const sets = {};
       for (const [v, n] of Object.entries(vs)) sets[v] = v.startsWith('hero:') ? this.makeHeroSet(v.slice(5), n, shadows) : new PropSet(this.scene, parts[v], n, shadows);
@@ -847,11 +903,13 @@ export class Tactical {
     }
     const links = {};
     for (const e of plan) {
+      if (e.alias != null) continue;
       const i = this.props[e.t].add(e.m, e.colors, e.tiles, e.mask, e.v);
       if (e.extraOf) { ((links[e.t] ||= {})[e.extraOf.c.wall.idx] ||= []).push(i); continue; }
       e.c.wall.idx = i;
       if (e.B) e.B.inst.push([this.props[e.t], e.c.wall.idx, e.mask]);
     }
+    for (const e of plan) if (e.alias != null) { const h = rowEntry.get(e.alias); if (h) e.c.wall.idx = this.props[e.t].alias(h.c.wall.idx); }
     // Typen mit mehreren Instanzen je Feld (Ecken linearer Objekte): Ein-/Ausblenden und Zerstören wirken auf alle Teile
     for (const [t, lk] of Object.entries(links)) {
       const vs = this.props[t];
@@ -939,11 +997,39 @@ export class Tactical {
 
   // G6: Instanz-Satz für eine Hero-Auto-Variante (geteilte Geometrie/Materialien aus dem Cache von herocar.js)
   makeHeroSet(variant, n, shadows) {
-    const hv = HERO_VARIANT[variant], mobile = !!this.engine.mobile;
-    const kit = this.heroKit(hv);
-    const set = new HeroCarSet(this.scene, kit, n, shadows, { scale: Math.min(1, 4.6 / kit.dims.length), mobile, burnt: hv.burnt });
+    const hv = HERO_VARIANT[variant] || heavySpec(variant), mobile = !!this.engine.mobile;
+    const kit = this.heroKitFor(variant);
+    // Nutzfahrzeuge unskaliert (Länge passt zur Feldreihe), LOD-Abstände mit der Größe etwas weiter (Bus schaltet nicht zu früh)
+    const set = new HeroCarSet(this.scene, kit, n, shadows, hv.heavy
+      ? { scale: hv.scale, mobile, lodK: Math.min(1.6, Math.sqrt(Math.max(1, kit.dims.length / 4.6))) }
+      : { scale: Math.min(1, 4.6 / kit.dims.length), mobile, burnt: hv.burnt });
+    set.spec = hv;
     (this.heroSets ||= []).push(set);
     return set;
+  }
+  // Bausatz je Varianten-Schlüssel (Pkw aus herocar.js, 'hv|…' aus heavyvehicles.js); Nebel des Krieges auf allen Materialien
+  heroKitFor(variant) {
+    const hv = HERO_VARIANT[variant];
+    if (hv) return this.heroKit(hv);
+    const sp = heavySpec(variant);
+    const kit = getHeavyVehicleKit(sp.heavy, { variant: sp.variant, length: sp.length, damage: sp.damage, color: sp.color, seed: 7, levels: this.engine.mobile ? [1, 2] : [0, 1, 2] });
+    for (const m of Object.values(kit.mats)) patchFog(m);
+    return kit;
+  }
+  // Ausgebranntes Nutzfahrzeug: Bausatz mit Ruß/Rost, matter Lack, Leuchten aus, Innenraum/Reifen verkohlt (einmal je Typ/Länge)
+  heavyBurntKit(kit, lv) {
+    if (kit.type === 'milwreck') return kit; // ist schon ein Wrack
+    const b = getHeavyVehicleKit(kit.type, { variant: kit.variant, length: kit.dims.length, damage: 0.9, color: 0x2e2a27, seed: 11, levels: [lv] });
+    if (!b.burntTuned) {
+      b.burntTuned = true;
+      for (const m of Object.values(b.mats)) patchFog(m);
+      Object.assign(b.mats.paint, { clearcoat: 0 }); b.mats.paint.color.setRGB(0.5, 0.46, 0.42); b.mats.trim.color.setRGB(0.45, 0.42, 0.4);
+      for (const k of ['headlight', 'taillight', 'beacon']) b.mats[k].emissiveIntensity = 0;
+      b.mats.plate.color.setRGB(0.3, 0.28, 0.26); b.mats.chrome.color.multiplyScalar(0.45);
+      const soot = (c, r, mt = 0) => { const mm = patchFog(new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: mt })); b.own.push(mm); return mm; };
+      b.mats.interior = soot(0x0c0b0a, 1); b.mats.tyre = soot(0x080808, 0.95);
+    }
+    return b;
   }
   heroKit(hv) {
     const kit = getHeroCarKit(hv.type, { damage: hv.damage, paintColor: hv.paint, seed: hv.seed, levels: this.engine.mobile ? [1, 2] : [0, 1, 2] });
@@ -959,14 +1045,22 @@ export class Tactical {
     return kit;
   }
   // Zerstörtes Hero-Auto: erst ausgebranntes Wrack mit Feuer/Rauch zeigen, danach wie bisher entfernen
+  // I1: Fahrzeug über mehrere Felder: erstes zerstörtes Feld → Gesamtmodell ausgebrannt (bleibt als Deckung der übrigen Felder),
+  // letztes Feld → wie beim Pkw nach Feuer/Rauch entfernen.
   wreckHeroCar(t, idx, x, y) {
-    const vs = this.props[t]; const ref = vs?.ref?.[idx]; if (!ref) return;
+    const vs = this.props[t]; const h = vs?.head ? vs.head(idx) : idx, ref = vs?.ref?.[h]; if (!ref) return;
     const [set, li] = ref; if (!(set instanceof HeroCarSet)) return;
-    const burnt = this.heroKit({ ...HERO_VARIANT.burnt, type: set.kit.type });
-    if (this.csm) Object.values(burnt.mats).forEach((m) => this.csm.setupMaterial(m));
+    const group = vs.members?.[h], last = !group || --vs.alive[h] <= 0;
     const lv = this.engine.mobile ? 2 : 1;
-    const g = HeroCarSet.single(burnt, lv, set.base[li], true);
-    this.scene.add(g);
+    let g = set.wreck[li];
+    if (!g) {
+      const burnt = set.spec?.heavy ? this.heavyBurntKit(set.kit, lv) : this.heroKit({ ...HERO_VARIANT.burnt, type: set.kit.type });
+      if (this.csm) Object.values(burnt.mats).forEach((m) => this.csm.setupMaterial(m));
+      g = HeroCarSet.single(burnt, lv, set.base[li], set.kit.type !== 'milwreck');
+      this.scene.add(g);
+      if (!last) set.setWreck(li, g);
+    }
+    if (last) set.setWreck(li, null); // ab jetzt eigenständig: wird nach dem Feuer entfernt
     const p = this.cellPos(x, y), pos = new THREE.Vector3(p.x, 0.8, p.z);
     this.flash(pos, 0xff8030, 5, 0.3);
     let k = 0, acc = 0;
@@ -976,7 +1070,7 @@ export class Tactical {
       if (acc > 0.08) { acc = 0; this.emit(pos.clone(), new THREE.Color(2.2, 0.8, 0.2), 0.6, 0.35, 0.5); this.emit(pos.clone().setY(1.2), new THREE.Color(0.18, 0.17, 0.17), 0.5, 0.8, 1.6, false, true); }
       if (k < 1.8) return true;
       for (let i = 0; i < 10; i++) this.emit(pos.clone(), new THREE.Color(0.4, 0.38, 0.35), 0, 1.4, 1.1, false, true);
-      g.removeFromParent();
+      if (last) g.removeFromParent();
       return false;
     });
   }
@@ -3650,7 +3744,7 @@ export class Tactical {
       if (this.phase !== 'player' || this.busy) return;
       const map = {
         Tab: () => { e?.preventDefault(); this.cycleUnit(e?.shiftKey ? -1 : 1); },
-        Digit1: () => this.setMode('snap'), Digit2: () => this.setMode('aimed'), Digit3: () => this.setMode('auto'), Digit4: () => this.setBelt(0), Digit5: () => this.setBelt(1), Digit6: () => this.setBelt(2), KeyG: () => this.setMode('belt'),
+        Digit1: () => this.setMode('snap'), Digit2: () => this.setMode('aimed'), Digit3: () => this.setMode('auto'), Digit4: () => this.setBelt(0), Digit5: () => this.setBelt(1), Digit6: () => this.setBelt(2), Digit7: () => this.setBelt(3), KeyG: () => this.setMode('belt'),
         KeyF: () => this.btnAction('fire'), KeyK: () => this.toggleKneel(), KeyC: () => this.toggleKneel(), Enter: () => this.confirmEndTurn(),
         Space: () => this.recenter(), KeyT: () => this.cycleAlien(1),
         KeyN: () => this.reloadAuto(), Backspace: () => { if (this.isGuided()) this.guidedUndo(); },
