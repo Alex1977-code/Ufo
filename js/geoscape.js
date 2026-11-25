@@ -1,21 +1,24 @@
 // Geoscape: 3D-Erdkugel in Echtzeit – Radar, UFO-Abfang, Einsätze, Basis, Forschung, Finanzen
 import * as THREE from 'three';
 import { NOISE_GLSL } from './shaders.js';
-import { Game, newSoldier } from './game.js';
-import { UFOS, CRAFTS, RESEARCH, FACILITIES, WEAPONS, ARMORS, GRENADES, RANKS, REGIONS, regionOf, CITY_NAMES } from './data.js';
+import { Game, newSoldier, HIRE_SOLDIER, GAME_OVER_MONTHS, hiveCrew, hiveAttrition } from './game.js';
+import { ARTIFACT_PRICES, ALIENS, UFOS, CRAFTS, RESEARCH, FACILITIES, WEAPONS, ARMORS, ITEMS, RANKS, REGIONS, regionOf, CITY_NAMES } from './data.js';
 import { Input, padLabel } from './input.js';
+import { openEquipment, beltTotals, itemEffect, weaponDesc } from './equip.js';
 import { modal, toast, confirmBox, alertBox, anyModalOpen, el, bar, banner } from './ui.js';
 import { sfx, setMusicMood } from './audio.js';
+import { openBaseView, isBaseViewOpen } from './basescape.js';
+import { runAirCombat } from './aircombat.js';
 import { clamp, rand, randRange, randInt, choice, latLonToVec, vecToLatLon, angleBetween, slerpStep, fmtDate, fmtMoney, smooth, DEG } from './util.js';
 
 // Spielminuten pro Echtzeitsekunde
 const SPEEDS = [
-  { label: '⏸', mps: 0 },
-  { label: '1m', mps: 1 },
-  { label: '5m', mps: 5 },
-  { label: '30m', mps: 30 },
-  { label: '2h', mps: 120 },
-  { label: '12h', mps: 720 },
+  { label: '⏸', mps: 0, tip: 'Pause – die Zeit steht' },
+  { label: '1m', mps: 1, tip: '1 Spielminute pro Sekunde' },
+  { label: '5m', mps: 5, tip: '5 Spielminuten pro Sekunde' },
+  { label: '30m', mps: 30, tip: '30 Spielminuten pro Sekunde' },
+  { label: '2h', mps: 120, tip: '2 Spielstunden pro Sekunde' },
+  { label: '12h', mps: 720, tip: '12 Spielstunden pro Sekunde' },
 ];
 const HM_VERT = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
 
@@ -404,8 +407,8 @@ export class Geoscape {
     hud.innerHTML = `
       <div id="geo-labels"></div>
       <div class="geo-top panel">
-        <div class="geo-clock"><div id="g-date">–</div><div id="g-time">–</div></div>
-        <div class="speeds" id="g-speeds">${SPEEDS.map((s, i) => `<button class="btn sp" data-sp="${i}">${s.label}</button>`).join('')}</div>
+        <div class="geo-clock"><div id="g-date">–</div><div id="g-time">–</div><div id="g-pause" class="pause-badge" hidden>PAUSE</div></div>
+        <div class="speeds-wrap"><div class="speeds" id="g-speeds">${SPEEDS.map((s, i) => `<button class="btn sp" data-sp="${i}" title="${s.tip}" aria-label="${s.tip}">${s.label}</button>`).join('')}</div><small class="speeds-cap">Spielzeit pro Sekunde</small></div>
         <div class="geo-cred"><span class="lbl">Budget</span><span id="g-cred">–</span></div>
       </div>
       <div class="geo-events panel" id="g-events"></div>
@@ -433,10 +436,25 @@ export class Geoscape {
     h.innerHTML = `<span>${padLabel('A')} Auswählen</span><span>${padLabel('LB')}/${padLabel('RB')} Tempo</span><span>${padLabel('X')} Basis</span><span>${padLabel('Y')} Forschung</span><span>${padLabel('LT')}/${padLabel('RT')} Zoom</span><span>${padLabel('START')} Menü</span><span>L3+R3 Cheats</span>`;
   }
 
-  setSpeed(i) {
+  // reason: nur gesetzt, wenn die Simulation die Zeit automatisch anhält
+  setSpeed(i, reason) {
     if (!Game.c.base) i = 0;
     this.speed = clamp(i, 0, SPEEDS.length - 1);
     this.hud.querySelectorAll('[data-sp]').forEach((b) => b.classList.toggle('active', +b.dataset.sp === this.speed));
+    this.updatePauseBadge(reason);
+  }
+  updatePauseBadge(reason) {
+    const p = document.getElementById('g-pause');
+    if (!p) return;
+    const paused = this.speed === 0 && !!Game.c.base;
+    p.hidden = !paused;
+    clearTimeout(this._pauseT);
+    if (!paused) { p.textContent = 'PAUSE'; delete p.dataset.why; return; }
+    if (!reason) { if (!p.dataset.why) p.textContent = 'PAUSE'; return; }
+    p.dataset.why = '1';
+    p.textContent = `PAUSE – ${reason}`;
+    this._pauseT = setTimeout(() => { p.textContent = 'PAUSE'; delete p.dataset.why; }, 6000);
+    if (!Game.c.autoPauseHint) { Game.c.autoPauseHint = true; toast('Wichtige Ereignisse halten die Zeit automatisch an.', 'info', 5000); }
   }
 
   log(msg, type = 'info') {
@@ -459,6 +477,7 @@ export class Geoscape {
     document.getElementById('g-time').textContent = d.time;
     document.getElementById('g-cred').textContent = fmtMoney(c.credits);
     if (force) { this.setSpeed(this.speed); this.renderEvents(); }
+    else { const p = document.getElementById('g-pause'); if (p) p.hidden = !(this.speed === 0 && !!c.base); }
   }
 
   // ---------- Eingabe ----------
@@ -663,12 +682,12 @@ export class Geoscape {
     // UFO-Erzeugung
     this.nextUfo -= min;
     if (this.nextUfo <= 0) {
-      const diff = 1 + monthIdx * 0.35;
-      this.nextUfo = randRange(360, 1500) / Math.min(diff, 3);
+      const diff = 1 + monthIdx * 0.25; // E10: 38…95 UFOs je Monat statt 46…139
+      this.nextUfo = randRange(480, 1800) / Math.min(diff, 2.5);
       this.spawnUfo(diff);
     }
     this.nextTerror -= min;
-    if (this.nextTerror <= 0) { this.nextTerror = randRange(9000, 16000); this.spawnUfo(2 + monthIdx * 0.35, 'terror'); }
+    if (this.nextTerror <= 0) { this.nextTerror = randRange(9000, 16000); this.spawnUfo(2 + monthIdx * 0.25, 'terror'); }
     c.geo = { nextUfo: this.nextUfo, nextTerror: this.nextTerror };
 
     // UFOs bewegen
@@ -683,7 +702,7 @@ export class Geoscape {
         s.expires -= min;
         if (s.expires <= 0) {
           this.sites.splice(this.sites.indexOf(s), 1);
-          if (s.kind === 'terror') { Game.addScore(-120, s.region); this.log(`Terrorangriff auf ${s.name} nicht abgewehrt!`, 'bad'); toast(`Terrorangriff auf ${s.name} – keine Reaktion. Die Region ist empört.`, 'bad'); }
+          if (s.kind === 'terror') { Game.addScore(-200, s.region); this.log(`Terrorangriff auf ${s.name} nicht abgewehrt!`, 'bad'); toast(`Terrorangriff auf ${s.name} – keine Reaktion. Die Region ist empört.`, 'bad'); }
           else this.log(`Einsatzort ${s.name} aufgegeben.`, 'warn');
         }
       }
@@ -724,13 +743,13 @@ export class Geoscape {
       u.pos = { x: r.x, y: r.y, z: r.z };
       ll = vecToLatLon(u.pos);
       if (r.arrived) {
-        if (u.state === 'leave') { this.removeUfo(u); if (u.detected) this.log(`${u.name} hat die Atmosphäre verlassen.`); else Game.addScore(-15, regionOf(ll.lat, ll.lon)); return; }
+        if (u.state === 'leave') { this.removeUfo(u); if (u.detected) this.log(`${u.name} hat die Atmosphäre verlassen.`); else if (Game.c.lastMonth >= 2) Game.addScore(-4, regionOf(ll.lat, ll.lon)); return; } // E1: ab Monat 2, −4 statt −15
         if (u.mission === 'terror') {
           const city = Game.c.cities.find((x) => x.name === u.city);
           this.addSite({ kind: 'terror', name: city.name, lat: city.lat, lon: city.lon, ufoType: u.type, expires: 18 * 60, region: city.region });
           this.log(`TERRORANGRIFF in ${city.name}!`, 'bad');
           toast(`⚠ Terrorangriff in ${city.name}! Sende sofort ein Einsatzteam.`, 'bad', 6000);
-          sfx('alert'); this.setSpeed(0); this.focusOn(city.lat, city.lon);
+          sfx('alert'); this.setSpeed(0, 'Terrorangriff'); this.focusOn(city.lat, city.lon);
           u.state = 'leave'; u.target = latLonToVec(Math.asin(rand() * 1.6 - 0.8), rand() * 6.28);
           return;
         }
@@ -740,7 +759,7 @@ export class Geoscape {
           u.state = 'landed'; u.landTimer = randRange(180, 540);
           if (u.detected) {
             this.addSite({ kind: 'landed', name: `${u.name} (gelandet)`, lat: ll.lat, lon: ll.lon, ufoType: u.type, ufoId: u.id, region: regionOf(ll.lat, ll.lon) });
-            this.log(`${u.name} ist gelandet.`, 'warn'); toast(`${u.name} (${UFOS[u.type].name}) ist gelandet – Bodeneinsatz möglich!`, 'warn'); sfx('alert'); this.setSpeed(0);
+            this.log(`${u.name} ist gelandet.`, 'warn'); toast(`${u.name} (${UFOS[u.type].name}) ist gelandet – Bodeneinsatz möglich!`, 'warn'); sfx('alert'); this.setSpeed(0, 'UFO gelandet');
           }
         } else u.target = this.pickWaypoint();
       }
@@ -754,7 +773,7 @@ export class Geoscape {
         u.detected = true;
         const first = !u.reported; u.reported = true;
         this.log(`${u.name} ${first ? 'geortet' : 'erneut geortet'}: ${spec.name}`, 'warn');
-        if (first) { toast(`📡 UFO geortet: ${spec.name} – ${u.mission === 'terror' ? 'Kurs auf ' + u.city : 'Kurs unbekannt'}`, 'warn'); sfx('alert'); this.setSpeed(0); }
+        if (first) { toast(`📡 UFO geortet: ${spec.name} – ${u.mission === 'terror' ? 'Kurs auf ' + u.city : 'Kurs unbekannt'}`, 'warn'); sfx('alert'); this.setSpeed(0, 'UFO geortet'); }
         if (Input.lastDevice === 'pad') this.focusOn(ll.lat, ll.lon);
         if (u.state === 'landed' && !this.sites.find((s) => s.ufoId === u.id)) this.addSite({ kind: 'landed', name: `${u.name} (gelandet)`, lat: ll.lat, lon: ll.lon, ufoType: u.type, ufoId: u.id, region: regionOf(ll.lat, ll.lon) });
       }
@@ -851,12 +870,68 @@ export class Geoscape {
 
   // ---------- Luftkampf ----------
   airCombat(cr, u) {
-    this.setSpeed(0);
+    this.setSpeed(0, 'Luftkampf');
     sfx('alert');
     const spec = CRAFTS[cr.type], us = UFOS[u.type];
-    let mode = 'std', timer = null, done = false;
     u.engaged = true;
     const camp = Game.c;
+    // Ergebnislogik (unverändert übernommen) – genutzt von 3D-Szene und Modal-Fallback.
+    // Gibt das endgültige Ergebnis zurück oder null, wenn die Kampagne inzwischen gewechselt wurde.
+    const applyResult = (res, log) => {
+      u.engaged = false;
+      if (Game.c !== camp) return null; // Kampagne wurde inzwischen gewechselt
+      if (res === 'win' && !this.ufos.includes(u)) res = 'flee';
+      u.hp = Math.max(0, u.hp); cr.hp = Math.max(0, cr.hp);
+      const ll = vecToLatLon(u.pos);
+      const region = regionOf(ll.lat, ll.lon);
+      if (res === 'win') {
+        this.removeUfo(u);
+        Game.c.stats.ufosDown++;
+        Game.addScore(us.score, region);
+        if (this.isLand(ll.lat, ll.lon)) {
+          this.addSite({ kind: 'crash', name: `Absturz ${u.name}`, lat: ll.lat, lon: ll.lon, ufoType: u.type, region, crashed: true });
+          log(`<b>${u.name} abgeschossen!</b> Absturzstelle markiert.`, 'good');
+          this.log(`${u.name} abgeschossen – Absturzstelle an Land!`, 'good');
+        } else { log(`<b>${u.name} abgeschossen!</b> Das Wrack versinkt im Ozean.`, 'good'); this.log(`${u.name} ins Meer gestürzt.`, 'good'); }
+        sfx('explosion'); Input.rumble(1, 1, 400);
+      } else if (res === 'lost') {
+        const ci = Game.c.crafts.indexOf(cr); if (ci >= 0) Game.c.crafts.splice(ci, 1);
+        log(`<b>${cr.name} wurde zerstört!</b>`, 'bad'); this.log(`${cr.name} abgeschossen.`, 'bad'); sfx('explosion');
+        Game.addScore(-40, region);
+      } else if (res === 'escaped') {
+        log(`<b>${u.name} ist entkommen.</b> ${cr.name} kehrt zur Basis zurück.`, 'warn'); this.log(`${u.name} ist ${cr.name} entkommen.`, 'warn');
+      } else { log('Gefecht abgebrochen.'); }
+      if (res !== 'lost') cr.status = 'return';
+      return res;
+    };
+
+    // 3D-Abfangsequenz (js/aircombat.js); bei Fehlern Fallback auf das bisherige Modal
+    try {
+      const ll0 = vecToLatLon(u.pos);
+      runAirCombat({
+        engine: this.engine, geo: this, craft: cr, ufo: u, craftSpec: spec, ufoSpec: us, overLand: this.isLand(ll0.lat, ll0.lon),
+        onEnd: ({ result }) => {
+          const lines = [];
+          const res = applyResult(result, (t, cls = '') => lines.push(`<div class="${cls}">${t}</div>`));
+          if (res == null) return;
+          const head = { win: ['✔ Abschuss', 'good'], lost: ['✖ Jäger verloren', 'bad'], flee: ['⮌ Rückzug', 'warn'], escaped: ['⮌ UFO entkommen', 'warn'] }[res];
+          modal({
+            title: `Luftkampf: ${cr.name} vs. ${u.name}`, closable: false,
+            html: `<h3 class="${head[1]}">${head[0]}</h3>
+              <div class="dogfight ac-sum"><div class="df-side"><b>${cr.name}</b><small>${spec.name}</small>${bar(cr.hp, spec.hp, 'good')}</div>
+              <div class="df-side"><b>${u.name}</b><small>${us.name}</small>${bar(u.hp, us.hp, 'bad')}</div></div>
+              <div class="df-log">${lines.join('')}</div>`,
+            buttons: [{ label: 'Weiter', primary: true }],
+          });
+        },
+      });
+      return;
+    } catch (e) {
+      console.error('3D-Luftkampf nicht verfügbar – nutze Modal-Ansicht.', e);
+      u.engaged = true;
+    }
+
+    let mode = 'std', timer = null, done = false;
     const h = modal({
       title: `Luftkampf: ${cr.name} vs. ${u.name}`, closable: false, wide: true,
       html: `<div class="dogfight">
@@ -886,28 +961,8 @@ export class Geoscape {
     const finish = (res) => {
       if (done) return false; done = true;
       clearInterval(timer);
-      u.engaged = false;
-      if (Game.c !== camp) return false; // Kampagne wurde inzwischen gewechselt
-      if (res === 'win' && !this.ufos.includes(u)) res = 'flee';
-      u.hp = Math.max(0, u.hp); cr.hp = Math.max(0, cr.hp); draw();
-      const ll = vecToLatLon(u.pos);
-      const region = regionOf(ll.lat, ll.lon);
-      if (res === 'win') {
-        this.removeUfo(u);
-        Game.c.stats.ufosDown++;
-        Game.addScore(us.score, region);
-        if (this.isLand(ll.lat, ll.lon)) {
-          this.addSite({ kind: 'crash', name: `Absturz ${u.name}`, lat: ll.lat, lon: ll.lon, ufoType: u.type, region, crashed: true });
-          log(`<b>${u.name} abgeschossen!</b> Absturzstelle markiert.`, 'good');
-          this.log(`${u.name} abgeschossen – Absturzstelle an Land!`, 'good');
-        } else { log(`<b>${u.name} abgeschossen!</b> Das Wrack versinkt im Ozean.`, 'good'); this.log(`${u.name} ins Meer gestürzt.`, 'good'); }
-        sfx('explosion'); Input.rumble(1, 1, 400);
-      } else if (res === 'lost') {
-        const ci = Game.c.crafts.indexOf(cr); if (ci >= 0) Game.c.crafts.splice(ci, 1);
-        log(`<b>${cr.name} wurde zerstört!</b>`, 'bad'); this.log(`${cr.name} abgeschossen.`, 'bad'); sfx('explosion');
-        Game.addScore(-40, region);
-      } else { log('Gefecht abgebrochen.'); }
-      if (res !== 'lost') cr.status = 'return';
+      if (applyResult(res, log) == null) return false;
+      draw();
       const foot = h.el.querySelector('.modal-foot');
       foot.innerHTML = '';
       const b = el('button', 'btn primary', 'Weiter'); b.onclick = () => h.close(); foot.appendChild(b);
@@ -966,7 +1021,7 @@ export class Geoscape {
     const desc = { crash: 'Ein abgeschossenes UFO. Überlebende Aliens verteidigen das Wrack.', landed: 'Ein intaktes, gelandetes UFO. Die volle Besatzung ist anwesend.', terror: 'Aliens terrorisieren die Zivilbevölkerung. Schnelles Handeln rettet Leben!', hive: 'Das Hive-Nest der Invasoren. Vernichte den Hive-Kommandanten, um den Krieg zu beenden.' };
     modal({
       title: s.name,
-      html: `<p>${desc[s.kind]}</p>${s.ufoType ? `<p class="muted">UFO-Klasse: ${UFOS[s.ufoType].name}</p>` : ''}${s.expires ? `<p class="muted">Verbleibende Zeit: ${Math.ceil(s.expires / 60)} h</p>` : ''}
+      html: `<p>${desc[s.kind]}</p>${s.ufoType ? `<p class="muted">UFO-Klasse: ${UFOS[s.ufoType].name}</p>` : ''}${s.expires ? `<p class="muted">Verbleibende Zeit: ${Math.ceil(s.expires / 60)} h</p>` : ''}${s.kind === 'hive' ? `<p class="muted">Geschätzte Besatzung: ${hiveCrew(s, Game.c.lastMonth || 0)} + Kommandant</p>` : ''}
         <p>Transporter Kondor: <b>${t.status === 'ready' ? 'Einsatzbereit' : 'Im Einsatz'}</b></p>`,
       buttons: [{ label: 'Schließen' }, { label: 'Einsatztrupp entsenden', primary: true, disabled: t.status !== 'ready', action: () => { this.squadSelect(s); } }],
     });
@@ -976,18 +1031,24 @@ export class Geoscape {
     const sold = Game.c.soldiers.filter((s) => s.wound <= 0);
     if (!sold.length) { alertBox('Kein Personal', 'Keine einsatzfähigen Soldaten verfügbar. Rekrutiere neue Soldaten in der Basis.'); return; }
     const chosen = new Set(sold.slice(0, 8).map((s) => s.id));
+    const beltIcons = (s) => (s.items || []).map((i) => (ITEMS[i] ? ITEMS[i].icon : '·')).join(' ');
+    const loadIcon = (s) => (WEAPONS[s.weapon].mag ? `${ITEMS[s.load]?.icon || '▮'} ` : '');
     const render = () => sold.map((s) => `
       <div class="sq-row ${chosen.has(s.id) ? 'on' : ''}">
         <button class="btn sq-tog" data-tog="${s.id}">${chosen.has(s.id) ? '☑' : '☐'}</button>
-        <div class="sq-name"><b>${s.name}</b><small>${RANKS[s.rank]} · Treff ${s.acc} · ZE ${s.tu} · LP ${s.hp + ARMORS[s.armor].hp}</small></div>
-        <button class="btn sq-eq" data-w="${s.id}">◀ ${WEAPONS[s.weapon].short} ▶</button>
-        <button class="btn sq-eq" data-a="${s.id}">${ARMORS[s.armor].name}</button>
-        <button class="btn sq-eq" data-g="${s.id}">💣×${s.grenades}</button>
+        <div class="sq-name"><b>${s.name}</b><small>${RANKS[s.rank]} · Treff ${s.acc} · ZE ${s.tu} · LP ${s.hp + ARMORS[s.armor].hp}</small>
+          <small class="sq-sum">${loadIcon(s)}${WEAPONS[s.weapon].short} · ${ARMORS[s.armor].name} · ${beltIcons(s)}</small></div>
       </div>`).join('');
+    const reopen = () => this.squadSelect(site);
     const h = modal({
       title: `Einsatztrupp – ${site.name}`, wide: true,
-      html: `<p class="muted">Bis zu 8 Soldaten. Tippe auf Waffe/Rüstung/Granaten, um die Ausrüstung zu wechseln.</p><div id="sq-list" class="sq-list">${render()}</div><p id="sq-info" class="muted"></p>`,
-      buttons: [{ label: 'Abbrechen' }, { label: 'Start!', primary: true, action: () => {
+      html: `<p class="muted">Bis zu 8 Soldaten. Ausrüstung über „⚙ Ausrüstung“ anpassen.</p><div id="sq-list" class="sq-list">${render()}</div><p id="sq-info" class="muted"></p>`,
+      buttons: [{ label: 'Abbrechen' }, { label: '⚙ Ausrüstung', close: false, action: (hh) => {
+        if (!chosen.size) { toast('Wähle mindestens einen Soldaten.', 'warn'); return; }
+        const team = sold.filter((s) => chosen.has(s.id));
+        hh.close();
+        openEquipment({ soldiers: team, onDone: reopen, engine: this.engine });
+      } }, { label: 'Start!', primary: true, action: () => {
         if (!chosen.size) { toast('Wähle mindestens einen Soldaten.', 'warn'); return false; }
         const t = Game.c.transport;
         t.status = 'out'; t.target = site.id; t.pos = { ...this.baseVec }; t.squad = [...chosen];
@@ -995,37 +1056,18 @@ export class Geoscape {
       } }],
     });
     const list = h.el.querySelector('#sq-list');
-    const grenadeStock = () => (Game.c.stock.frag || 0) + (Game.grenadeAvailable('alien') ? Game.c.stock.alien || 0 : 0);
     const info = () => {
-      const g = [...chosen].reduce((a, id) => a + Game.c.soldiers.find((x) => x.id === id).grenades, 0);
-      h.el.querySelector('#sq-info').textContent = `Granaten im Trupp: ${g} / Lager: ${grenadeStock()}${Game.cheats.allGear ? ' (Cheat: unbegrenzt)' : g > grenadeStock() ? ' – nicht genug, wird gekürzt' : ''}`;
+      const tot = beltTotals(sold.filter((s) => chosen.has(s.id)));
+      const parts = Object.keys(ITEMS).filter((k) => !ITEMS[k].free && (tot[k] || Game.c.stock[k])).map((k) => `${ITEMS[k].icon} ${tot[k] || 0}/${Game.c.stock[k] || 0}`);
+      const mags = sold.filter((x) => chosen.has(x.id)).reduce((n, x) => n + (x.items || []).filter((i) => i === 'mag').length, 0);
+      h.el.querySelector('#sq-info').textContent = `Verbrauchsgüter und Munition Trupp/Lager: ${parts.join('  ') || '–'} · Ersatzmagazine ▮ ${mags} (gratis)${Game.cheats.allGear ? ' (Cheat: unbegrenzt)' : ''}`;
     };
-    const cycle = (arr, cur) => arr[(arr.indexOf(cur) + 1) % arr.length];
-    const owned = (id, field) => Game.c.soldiers.filter((x) => x[field] === id).length;
     list.addEventListener('click', (e) => {
-      const b = e.target.closest('button'); if (!b) return;
+      const b = e.target.closest('button'); if (!b || !b.dataset.tog) return;
       sfx('click');
-      const focusKey = Object.keys(b.dataset)[0], focusVal = b.dataset[focusKey];
-      const s = (id) => Game.c.soldiers.find((x) => x.id === id);
-      if (b.dataset.tog) { const id = b.dataset.tog; if (chosen.has(id)) chosen.delete(id); else if (chosen.size < 8) chosen.add(id); }
-      if (b.dataset.w) {
-        const so = s(b.dataset.w);
-        const opts = Object.keys(WEAPONS).filter((w) => Game.weaponAvailable(w) && (w === 'rifle' || w === so.weapon || owned(w, 'weapon') < (Game.c.stock[w] || 0) || Game.cheats.allGear));
-        so.weapon = cycle(opts, so.weapon);
-      }
-      if (b.dataset.a) {
-        const so = s(b.dataset.a);
-        const opts = Object.keys(ARMORS).filter((a) => Game.armorAvailable(a) && (a === 'none' || a === so.armor || owned(a, 'armor') < (Game.c.stock[a] || 0) || Game.cheats.allGear));
-        so.armor = cycle(opts, so.armor);
-      }
-      if (b.dataset.g) {
-        const so = s(b.dataset.g);
-        const others = [...chosen].filter((id) => id !== so.id).reduce((a, id) => a + s(id).grenades, 0);
-        const room = Game.cheats.allGear ? 3 : Math.max(0, Math.min(3, grenadeStock() - others));
-        so.grenades = so.grenades >= room ? 0 : so.grenades + 1;
-      }
+      const id = b.dataset.tog; if (chosen.has(id)) chosen.delete(id); else if (chosen.size < 8) chosen.add(id);
       list.innerHTML = render();
-      list.querySelector(`[data-${focusKey}="${focusVal}"]`)?.focus();
+      list.querySelector(`[data-tog="${id}"]`)?.focus();
       info();
     });
     info();
@@ -1037,7 +1079,7 @@ export class Geoscape {
   }
 
   arrival(site) {
-    this.setSpeed(0);
+    this.setSpeed(0, 'Einsatzteam angekommen');
     sfx('alert');
     const t = Game.c.transport;
     modal({
@@ -1059,15 +1101,21 @@ export class Geoscape {
     const i = this.sites.findIndex((s) => s.id === site.id);
     if (i >= 0 && (result.won || site.kind === 'terror')) this.sites.splice(i, 1);
     if (result.won && site.ufoId) { const u = this.ufos.find((x) => x.id === site.ufoId); if (u) this.removeUfo(u); }
+    // E15: Hive-Nest wird zermürbt – gefallene Wachen kehren nur langsam zurück
+    if (site.kind === 'hive' && !result.won) { const a = hiveAttrition(site, result.hiveKills || 0, Game.c.lastMonth || 0); site.hiveKilled = a.hiveKilled; site.hiveMonth = a.hiveMonth; }
     const t = Game.c.transport;
     t.status = 'return';
     this.log(result.won ? `Mission ${site.name}: Erfolg!` : `Mission ${site.name}: Fehlschlag.`, result.won ? 'good' : 'bad');
+    const cap = Object.entries(result.captured || {}).filter(([, n]) => n > 0).map(([k, n]) => `${ALIENS[k]?.name || k} ×${n}`);
+    if (cap.length) this.log(`Gefangene: ${cap.join(', ')} – im Lager (Verhör-Forschung möglich).`, 'good');
+    const loot = Object.entries(result.ammoLoot || {}).filter(([k, n]) => n > 0 && ITEMS[k]).map(([k, n]) => `${ITEMS[k].name} ×${n}`);
+    if (loot.length) this.log(`Erbeutete Munition: ${loot.join(', ')}.`, 'good');
     this.updateHud(true);
   }
 
   researchDone(id) {
     const r = RESEARCH.find((x) => x.id === id);
-    sfx('research'); this.setSpeed(0);
+    sfx('research'); this.setSpeed(0, 'Forschung abgeschlossen');
     this.log(`Forschung abgeschlossen: ${r.name}`, 'good');
     modal({ title: '⚗ Forschung abgeschlossen', html: `<h3>${r.name}</h3><p>${r.desc}</p>`, buttons: [{ label: 'Neues Projekt', action: () => setTimeout(() => this.action('research'), 200) }, { label: 'OK', primary: true }] });
   }
@@ -1081,7 +1129,7 @@ export class Geoscape {
 
   monthEnd() {
     const rep = Game.monthlyReport();
-    sfx('alert'); this.setSpeed(0);
+    sfx('alert'); this.setSpeed(0, 'Monatsbericht');
     const d = fmtDate(Game.c.time - 1440);
     const over = rep.gameOver && !Game.cheats.god;
     if (over) Game.c.lost = true;
@@ -1091,7 +1139,8 @@ export class Geoscape {
         ${rep.lines.map((l) => `<tr><td>${l.name}</td><td class="${l.score >= 0 ? 'good' : 'bad'}">${l.score}</td><td>${fmtMoney(l.funding)}</td><td class="${l.delta >= 0 ? 'good' : 'bad'}">${l.delta >= 0 ? '+' : ''}${fmtMoney(l.delta)}</td></tr>`).join('')}</table>
         <p>Einnahmen: <b class="good">${fmtMoney(rep.fundingTotal)}</b> · Gehälter: <b class="bad">−${fmtMoney(rep.salaries)}</b> · Unterhalt: <b class="bad">−${fmtMoney(rep.upkeep)}</b></p>
         <p>Bilanz: <b class="${rep.net >= 0 ? 'good' : 'bad'}">${fmtMoney(rep.net)}</b> · Monatswertung: <b>${rep.monthScore}</b></p>
-        ${Game.c.negMonths ? '<p class="bad">⚠ Der Rat ist unzufrieden. Ein weiterer schlechter Monat beendet das Projekt AEGIS!</p>' : ''}`,
+        <p class="muted">Schlechter Monat bei Wertung unter <b>${rep.threshold}</b> oder negativem Kontostand. ${GAME_OVER_MONTHS} schlechte Monate in Folge beenden das Projekt.</p>
+        ${over ? '<p class="bad">✖ Drei schlechte Monate in Folge – der Rat stellt das Projekt ein.</p>' : Game.c.negMonths ? `<p class="bad">⚠ Der Rat ist unzufrieden. Noch ${rep.monthsLeft} schlechte${rep.monthsLeft === 1 ? 'r' : ''} Monat${rep.monthsLeft === 1 ? '' : 'e'} in Folge, dann wird das Projekt AEGIS eingestellt!</p>` : ''}`,
       buttons: [{ label: 'Weiter', primary: true, action: () => { if (over) this.hooks.gameOver('Der Rat hat das Projekt AEGIS wegen anhaltender Misserfolge eingestellt.'); } }],
     });
     if (!over) Game.save();
@@ -1132,10 +1181,10 @@ export class Geoscape {
           ${c.building.length ? `<h4>Im Bau</h4>${c.building.map((b) => `<div>${FACILITIES[b.type].name}: noch ${Math.ceil(b.daysLeft)} Tage</div>`).join('')}` : ''}</div>
         <div><h4>Personal</h4><p>Soldaten: <b>${c.soldiers.length}</b> (${c.soldiers.filter((s) => s.wound > 0).length} verwundet)</p>
           <p>Wissenschaftler: <b>${c.scientists}</b> / ${Game.labCapacity}</p>
-          <button class="btn wide" data-hire="soldier">Soldat rekrutieren – ${fmtMoney(60000)}</button>
+          <button class="btn wide" data-hire="soldier">Soldat rekrutieren – ${fmtMoney(HIRE_SOLDIER)}</button>
           <button class="btn wide" data-hire="sci" ${c.scientists >= Game.labCapacity ? 'disabled' : ''}>${Math.max(1, Math.min(5, Game.labCapacity - c.scientists))} Wissenschaftler einstellen – ${fmtMoney(Math.max(1, Math.min(5, Game.labCapacity - c.scientists)) * 30000)}</button>
           <h4>Radar</h4><p>Reichweite: ${Math.round(Game.radarRange / DEG * 111)} km</p></div></div>`,
-      buttons: [{ label: 'Schließen', primary: true }],
+      buttons: [...(isBaseViewOpen() ? [] : [{ label: '🏗 3D-Ansicht', action: () => { openBaseView(this.engine, this, { onBuild: () => this.baseMenu() }); } }]), { label: 'Schließen', primary: true }],
     });
     h.el.addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
@@ -1145,7 +1194,7 @@ export class Geoscape {
         c.credits -= f.cost; c.building.push({ type: b.dataset.build, daysLeft: f.days }); sfx('select');
         toast(`${f.name} wird gebaut.`); h.close(); this.baseMenu();
       }
-      if (b.dataset.hire === 'soldier') { if (c.credits < 60000) { sfx('deny'); return; } c.credits -= 60000; const s = newSoldier(); c.soldiers.push(s); toast(`${s.name} rekrutiert.`); h.close(); this.baseMenu(); }
+      if (b.dataset.hire === 'soldier') { if (c.credits < HIRE_SOLDIER) { sfx('deny'); return; } c.credits -= HIRE_SOLDIER; const s = newSoldier(); c.soldiers.push(s); toast(`${s.name} rekrutiert.`); h.close(); this.baseMenu(); }
       if (b.dataset.hire === 'sci') { const n = Math.min(5, Game.labCapacity - c.scientists); const cost = n * 30000; if (n <= 0 || c.credits < cost) { sfx('deny'); return; } c.credits -= cost; c.scientists += n; h.close(); this.baseMenu(); }
       this.updateHud();
     });
@@ -1155,18 +1204,35 @@ export class Geoscape {
     const c = Game.c;
     const avail = Game.researchAvailable();
     const cur = c.research ? RESEARCH.find((r) => r.id === c.research.id) : null;
+    const locked = RESEARCH.filter((r) => !Game.has(r.id) && !avail.includes(r));
+    const unlocks = (r) => {
+      const out = [...Object.values(WEAPONS).filter((w) => w.req === r.id && w.cost).map((w) => w.name), ...Object.values(ITEMS).filter((it) => it.req === r.id).map((it) => it.name), ...Object.values(ARMORS).filter((a) => a.req === r.id).map((a) => a.name)];
+      const next = RESEARCH.filter((x) => (x.after || []).includes(r.id)).map((x) => x.name);
+      return (out.length ? `Schaltet frei: ${out.join(', ')}` : '') + (next.length ? `${out.length ? ' · ' : ''}Führt zu: ${next.join(', ')}` : '');
+    };
+    const afterText = (r) => { const n = (r.after || []).filter((t) => !Game.has(t)).map((t) => RESEARCH.find((x) => x.id === t)?.name); return n.length ? `Benötigt zuerst: ${n.join(', ')}` : ''; };
+    const needsText = (r) => {
+      const ns = Game.researchNeeds(r);
+      if (!ns.length) return 'Keine Artefakte nötig';
+      if (Game.researchPaid(r.id)) return 'Artefakte bereits verbraucht';
+      const fmt = (list) => list.map((a) => `${a.n}× ${a.name} (vorhanden: ${c.artifacts[a.name] || 0})`).join(' + ');
+      const alt = Game.researchNeeds(r, true);
+      if (Game.researchWaived(r)) return `Artefakte entfallen (${RESEARCH.find((x) => x.id === r.waivedBy)?.name} erforscht)`;
+      const waive = r.waivedBy ? ` · oder Projekt „${RESEARCH.find((x) => x.id === r.waivedBy)?.name}“ erforschen (−${r.waivedCut || 0} WT)` : '';
+      return 'Verbraucht beim Start: ' + fmt(ns) + (alt.length ? ' · oder: ' + fmt(alt) : '') + waive;
+    };
     const h = modal({
       title: '⚗ Forschung', wide: true,
-      html: `${cur ? `<div class="cur-research"><b>${cur.name}</b>${bar(c.research.progress, cur.cost, 'good')}<small>ca. ${Math.ceil((cur.cost - c.research.progress) / c.scientists)} Tage · ${c.scientists} Wissenschaftler</small></div>` : '<p class="warn">Kein laufendes Projekt!</p>'}
-        <h4>Verfügbare Projekte</h4>${avail.filter((r) => r.id !== cur?.id).map((r) => `<button class="btn wide research-item" data-r="${r.id}"><b>${r.name}</b><small>${r.desc}</small><i>${r.cost} WT</i></button>`).join('') || '<p class="muted">Keine – birg Alien-Artefakte, um neue Projekte freizuschalten.</p>'}
+      html: `${cur ? `<div class="cur-research"><b>${cur.name}</b>${bar(c.research.progress, Game.researchCost(cur), 'good')}<small>ca. ${Math.ceil((Game.researchCost(cur) - c.research.progress) / c.scientists)} Tage · ${c.scientists} Wissenschaftler</small></div>` : '<p class="warn">Kein laufendes Projekt!</p>'}
+        <h4>Verfügbare Projekte</h4>${avail.filter((r) => r.id !== cur?.id).map((r) => `<button class="btn wide research-item" data-r="${r.id}"><b>${r.name}</b><small>${r.desc}</small><small class="res-needs">${needsText(r)}</small>${unlocks(r) ? `<small class="res-unlock">${unlocks(r)}</small>` : ''}<i>${Game.researchCost(r)} WT</i></button>`).join('') || '<p class="muted">Keine – birg Alien-Artefakte, um neue Projekte freizuschalten.</p>'}
+        ${locked.length ? `<h4>Noch nicht verfügbar</h4><div class="res-locked">${locked.map((r) => `<div class="research-lock"><b>${r.name}</b> <small>${[afterText(r), Game.researchPaid(r.id) || Game.researchWaived(r) ? '' : [Game.researchNeeds(r).filter((a) => (c.artifacts[a.name] || 0) < a.n).map((a) => `${a.n}× ${a.name} fehlt`).join(', '), Game.researchNeeds(r, true).length ? 'oder ' + Game.researchNeeds(r, true).map((a) => `${a.n}× ${a.name}`).join(' + ') : '', r.waivedBy ? `oder „${RESEARCH.find((x) => x.id === r.waivedBy)?.name}“ erforschen` : ''].filter(Boolean).join(' · ')].filter(Boolean).join(' · ')}</small></div>`).join('')}</div>` : ''}
         <h4>Artefakte im Lager</h4><p class="muted">${Object.entries(c.artifacts).filter(([, n]) => n > 0).map(([k, n]) => `${k} ×${n}`).join(' · ') || 'Keine'}</p>
         <h4>Abgeschlossen</h4><p class="muted">${c.researched.map((id) => RESEARCH.find((r) => r.id === id).name).join(' · ') || '—'}</p>`,
       buttons: [{ label: 'Schließen', primary: true }],
     });
     h.el.addEventListener('click', (e) => {
       const b = e.target.closest('[data-r]'); if (!b) return;
-      if (c.research) c.researchProgress[c.research.id] = c.research.progress;
-      c.research = { id: b.dataset.r, progress: c.researchProgress[b.dataset.r] || 0 };
+      if (!Game.startResearch(b.dataset.r)) { sfx('deny'); toast('Nicht genug Artefakte.', 'warn'); return; }
       sfx('select'); toast(`Forschung gestartet: ${RESEARCH.find((r) => r.id === b.dataset.r).name}`);
       h.close();
     });
@@ -1178,34 +1244,50 @@ export class Geoscape {
       title: '☗ Soldaten', wide: true,
       html: `<table class="tbl sold"><tr><th>Name</th><th>Rang</th><th>ZE</th><th>LP</th><th>Treff</th><th>Reakt</th><th>Kills</th><th>Status</th></tr>
         ${c.soldiers.map((s) => `<tr><td>${s.name}</td><td>${RANKS[s.rank]}</td><td>${s.tu}</td><td>${s.hp}</td><td>${s.acc}</td><td>${s.react}</td><td>${s.kills}</td><td>${s.wound > 0 ? `<span class="bad">verwundet (${Math.ceil(s.wound)} T)</span>` : '<span class="good">bereit</span>'}</td></tr>`).join('')}</table>`,
-      buttons: [{ label: 'Schließen', primary: true }],
+      buttons: [{ label: '⚙ Ausrüstung', close: false, action: (hh) => { hh.close(); openEquipment({ soldiers: c.soldiers, onDone: () => this.soldierMenu(), engine: this.engine }); } }, { label: 'Schließen', primary: true }],
     });
   }
 
   shopMenu() {
     const c = Game.c;
     const items = [
-      ...Object.entries(WEAPONS).filter(([k, w]) => w.cost && Game.weaponAvailable(k)).map(([k, w]) => ({ k, name: w.name, cost: w.cost, info: `Schaden ${w.dmg}` })),
-      ...Object.entries(ARMORS).filter(([k, a]) => a.cost && Game.armorAvailable(k)).map(([k, a]) => ({ k, name: a.name, cost: a.cost, info: `Panzerung ${a.armor}` })),
-      ...Object.entries(GRENADES).filter(([k]) => Game.grenadeAvailable(k)).map(([k, g]) => ({ k, name: g.name, cost: g.cost, info: `Schaden ${g.dmg}` })),
+      ...Object.entries(WEAPONS).filter(([k, w]) => w.cost && Game.priceOf(k) != null && Game.weaponAvailable(k)).map(([k, w]) => ({ k, name: `${w.icon || ''} ${w.name}`, cost: w.cost, info: weaponDesc(k) })),
+      ...Object.entries(ARMORS).filter(([k, a]) => a.cost && Game.armorAvailable(k)).map(([k, a]) => ({ k, name: a.name, cost: a.cost, info: `Panzerung ${a.armor}${a.hp ? ` · +${a.hp} LP` : ''}` })),
     ];
+    const buyable = Object.entries(ITEMS).filter(([k]) => Game.priceOf(k) != null && Game.itemAvailable(k));
+    const ammo = buyable.filter(([, it]) => it.kind === 'ammo'), cons = buyable.filter(([, it]) => it.kind !== 'ammo');
     const crafts = Object.entries(CRAFTS).filter(([, cr]) => !cr.req || Game.has(cr.req));
+    const arts = Object.entries(c.artifacts).filter(([k, n]) => n > 0 && ARTIFACT_PRICES[k]);
+    const pair = ([k, it]) => `<div class="shop-pair"><span><b>${it.icon} ${it.name}</b><br><small class="muted">${itemEffect(it)} · Lager: ${c.stock[k] || 0}</small></span><button class="btn" data-buy="${k}" data-n="1">+1 · ${fmtMoney(it.cost)}</button><button class="btn" data-buy="${k}" data-n="5">+5 · ${fmtMoney(it.cost * 5)}</button></div>`;
     const h = modal({
       title: '⚙ Beschaffung', wide: true,
-      html: `<p>Budget: <b>${fmtMoney(c.credits)}</b></p><div class="shop">${items.map((i) => `<button class="btn shop-item" data-buy="${i.k}"><b>${i.name}</b><small>${i.info} · Lager: ${c.stock[i.k] || 0}</small><i>${fmtMoney(i.cost)}</i></button>`).join('')}</div>
+      html: `<p>Budget: <b>${fmtMoney(c.credits)}</b></p><h4>Waffen &amp; Rüstungen</h4><div class="shop">${items.map((i) => `<button class="btn shop-item" data-buy="${i.k}"><b>${i.name}</b><small>${i.info}</small><small>Lager: ${c.stock[i.k] || 0}</small><i>${fmtMoney(i.cost)}</i></button>`).join('')}</div>
+        <p class="muted">Standardmagazine (▮) sind gratis und unbegrenzt. Weitere Waffen und Munition schaltet die Forschung frei.</p>
+        <h4>Munition</h4><div class="shop">${ammo.map(pair).join('')}</div>
+        <h4>Verbrauchsgüter</h4><div class="shop">${cons.map(pair).join('')}</div>
         <h4>Abfangjäger</h4><div class="shop">${crafts.map(([k, cr]) => `<button class="btn shop-item" data-craft="${k}" ${c.crafts.length >= c.facilities.hangar + 1 ? 'disabled' : ''}><b>${cr.name}</b><small>Hülle ${cr.hp} · Schaden ${cr.dmg}</small><i>${fmtMoney(cr.cost)}</i></button>`).join('')}</div>
-        <p class="muted">Hangarplätze: ${c.crafts.length}/${c.facilities.hangar + 1}</p>`,
+        <p class="muted">Hangarplätze: ${c.crafts.length}/${c.facilities.hangar + 1}</p>
+        <h4>Verkauf von Alien-Artefakten</h4><div class="shop" id="artifact-sale">${arts.map(([k, n]) => { const need = Game.artifactNeededFor(k); return `<div class="shop-pair"><span><b>${k}</b> ×${n}<br><small class="muted">${fmtMoney(ARTIFACT_PRICES[k])} pro Stück</small>${need.length ? `<br><small class="warn">⚠ Wird noch für Forschung gebraucht: ${need.map((r) => r.name).join(', ')}</small>` : ''}</span><button class="btn" data-sell="${k}" data-n="1">1 verkaufen</button><button class="btn" data-sell="${k}" data-n="all">alle verkaufen</button></div>`; }).join('') || '<p class="muted">Keine Artefakte im Lager.</p>'}</div>`,
       buttons: [{ label: 'Schließen', primary: true }],
     });
+    const body = h.el.querySelector('.modal-body');
     h.el.addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return;
+      const keep = body ? body.scrollTop : 0;
+      const again = () => { h.close(); this.shopMenu(); this.updateHud(); const nb = [...document.querySelectorAll('.modal-body')].pop(); if (nb) nb.scrollTop = keep; };
+      if (b.dataset.sell) { const got = Game.sellArtifact(b.dataset.sell, b.dataset.n === 'all' ? Infinity : 1); if (got) { sfx('select'); toast(`Verkauft: +${fmtMoney(got)}`); } else sfx('deny'); again(); return; }
       const k = b.dataset.buy || b.dataset.craft; if (!k) return;
-      const cost = b.dataset.buy ? items.find((i) => i.k === k).cost : CRAFTS[k].cost;
+      const n = +(b.dataset.n || 1);
+      if (b.dataset.buy) {
+        const r = Game.purchase(k, n);
+        if (!r.ok) { sfx('deny'); toast(r.reason === 'Budget' ? 'Nicht genug Budget.' : 'Nicht kaufbar.', 'warn'); return; }
+        sfx('select'); again(); return;
+      }
+      const cost = CRAFTS[k].cost;
       if (c.credits < cost) { sfx('deny'); toast('Nicht genug Budget.', 'warn'); return; }
       c.credits -= cost; sfx('select');
-      if (b.dataset.buy) c.stock[k] = (c.stock[k] || 0) + 1;
-      else { const n = c.crafts.filter((x) => x.type === k).length + 1; c.crafts.push({ id: 'c' + Math.floor(rand() * 1e9).toString(36), type: k, name: `${CRAFTS[k].name}-${n}`, hp: CRAFTS[k].hp, status: 'ready' }); }
-      h.close(); this.shopMenu(); this.updateHud();
+      const nn = c.crafts.filter((x) => x.type === k).length + 1; c.crafts.push({ id: 'c' + Math.floor(rand() * 1e9).toString(36), type: k, name: `${CRAFTS[k].name}-${nn}`, hp: CRAFTS[k].hp, status: 'ready' });
+      again();
     });
   }
 

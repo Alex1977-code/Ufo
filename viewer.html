@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#05080d">
+  <meta name="description" content="AEGIS – Asset-Viewer: Hero-Autos, Figuren, Fluggeräte, GLB-Assets und Props mit Statistik und Prüfungen.">
+  <title>AEGIS – Asset-Viewer</title>
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/viewer.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
+  </script>
+  <link rel="preload" href="fonts/orbitron-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/rajdhani-600-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="modulepreload" href="vendor/three/three.module.min.js">
+  <link rel="modulepreload" href="js/viewer.js">
+</head>
+<body class="vw" data-device="mouse">
+  <header id="vw-top" class="panel">
+    <button id="vw-btn-list" class="btn x" type="button" aria-controls="vw-list" aria-expanded="true" title="Asset-Liste ein-/ausklappen">☰ <span class="lbl">Assets</span></button>
+    <h1 class="vw-title">AEGIS <span>Asset-Viewer</span></h1>
+    <div id="vw-status" class="muted" aria-live="polite"></div>
+    <div class="vw-top-actions">
+      <button id="vw-btn-check" class="btn x primary" type="button" title="Alle Assets nacheinander laden und prüfen">✓ <span class="lbl">Alle prüfen</span></button>
+      <button id="vw-btn-info" class="btn x" type="button" aria-controls="vw-info" aria-expanded="true" title="Info-Panel ein-/ausklappen">ⓘ <span class="lbl">Info</span></button>
+    </div>
+  </header>
+
+  <aside id="vw-list" class="panel" aria-label="Asset-Liste">
+    <div class="vw-search">
+      <input id="vw-search" type="search" placeholder="Suchen … (Name, Kategorie, Typ)" autocomplete="off" spellcheck="false">
+    </div>
+    <div id="vw-cats" class="vw-chips" role="tablist" aria-label="Kategorie"></div>
+    <ul id="vw-items" class="vw-items"></ul>
+    <div id="vw-count" class="muted vw-count"></div>
+  </aside>
+
+  <main id="vw-view">
+    <canvas id="vw-canvas" aria-label="3D-Ansicht"></canvas>
+    <div id="vw-hud">
+      <div id="vw-asset-name"></div>
+      <div id="vw-asset-sub" class="muted"></div>
+    </div>
+    <div id="vw-loading" hidden><span class="spin"></span><span id="vw-loading-txt">Lade …</span></div>
+    <div id="vw-quick" class="panel">
+      <button class="btn x" type="button" data-quick="turntable" title="Drehteller an/aus">⟳ <span class="lbl">Drehteller</span></button>
+      <button class="btn x" type="button" data-quick="wire" title="Drahtgitter an/aus">▦ <span class="lbl">Drahtgitter</span></button>
+      <button class="btn x" type="button" data-quick="view" title="Ansicht wechseln: Schattiert → Normalen → UV-Checker">◐ <span class="lbl" id="vw-quick-view">Schattiert</span></button>
+      <button class="btn x" type="button" data-quick="frame" title="Kamera auf das Asset ausrichten">⌖ <span class="lbl">Zentrieren</span></button>
+    </div>
+  </main>
+
+  <aside id="vw-info" class="panel" aria-label="Info-Panel">
+    <details id="sec-opts" class="vw-sec" open><summary>Asset-Optionen</summary><div class="vw-body" id="vw-opts"></div></details>
+    <details id="sec-stats" class="vw-sec" open><summary>Statistik</summary><div class="vw-body" id="vw-stats"></div></details>
+    <details id="sec-lod" class="vw-sec" open><summary>LOD-Stufen</summary><div class="vw-body" id="vw-lod"></div></details>
+    <details id="sec-checks" class="vw-sec" open><summary>Prüfungen</summary><div class="vw-body" id="vw-checks"></div></details>
+    <details id="sec-anim" class="vw-sec" open><summary>Skelett &amp; Animation</summary><div class="vw-body" id="vw-anim"></div></details>
+    <details id="sec-mats" class="vw-sec"><summary>Materialien</summary><div class="vw-body" id="vw-mats"></div></details>
+    <details id="sec-tex" class="vw-sec"><summary>Texturen</summary><div class="vw-body" id="vw-tex"></div></details>
+    <details id="sec-view" class="vw-sec"><summary>Ansicht &amp; Licht</summary><div class="vw-body" id="vw-viewopts"></div></details>
+  </aside>
+
+  <div id="vw-modal" class="vw-modal" hidden>
+    <div class="panel vw-modal-box" role="dialog" aria-modal="true" aria-labelledby="vw-modal-title">
+      <div class="vw-modal-head">
+        <h2 id="vw-modal-title">Alle prüfen</h2>
+        <div class="vw-modal-actions">
+          <label class="vw-check"><input type="checkbox" id="vw-only-issues"> nur ⚠/✗</label>
+          <button id="vw-copy-md" class="btn x" type="button">Markdown kopieren</button>
+          <button id="vw-modal-close" class="btn x" type="button" aria-label="Schließen">✕</button>
+        </div>
+      </div>
+      <div id="vw-progress" class="vw-progress"><div></div></div>
+      <div id="vw-summary" class="muted"></div>
+      <div class="vw-table-wrap"><table id="vw-table" class="vw-table"></table></div>
+    </div>
+  </div>
+
+  <noscript><p class="vw-noscript">Der Asset-Viewer benötigt JavaScript und WebGL2.</p></noscript>
+  <script type="module" src="js/viewer.js"></script>
+</body>
+</html>

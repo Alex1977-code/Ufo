@@ -5,17 +5,25 @@ import { Input, padLabel } from './input.js';
 import { Game } from './game.js';
 import { Geoscape } from './geoscape.js';
 import { Tactical } from './tactical.js';
+import { figuresMode } from './figures.js';
 import { Cheats } from './cheats.js';
 import { Cast } from './cast.js';
-import { modal, toast, confirmBox, closeAllModals, el, alertBox } from './ui.js';
+import { modal, toast, confirmBox, closeAllModals, el } from './ui.js';
 import { initAudio, sfx, setVolumes, setMusicMood } from './audio.js';
 import { isTouchDevice, rand } from './util.js';
+import { makeUfo, animateCraft } from './craftmodels.js';
+import { initEnvironment, applyEnvironment } from './environment.js';
 
 const SETTINGS_KEY = 'aegis_settings_v1';
 const mobile = isTouchDevice() && Math.min(screen.width, screen.height) < 900;
 const DEFAULTS = {
-  upscale: mobile ? 'performance' : 'quality', dynamicRes: true, targetFps: 60, sharpness: 0.5,
+  upscaler: 'temporal', upscale: mobile ? 'performance' : 'quality', dynamicRes: true, targetFps: 60, sharpness: 0.5,
+  ao: mobile ? 'off' : 'high',
+  // Energiesparen: Bildratenlimit (0 = aus) – Handy 30, sonst 60; Leerlauf-Drosselung an
+  fpsLimit: Math.min(screen.width, screen.height) < 700 ? 30 : 60, idleSaver: true,
   bloom: true, filmGrain: !mobile, shadows: mobile ? 'med' : 'high', maxDpr: mobile ? 2 : 2,
+  // Realistisches Rendering (G1): Tonemapping, Farbstimmung, Schattenfilter, Spiegelungen, HDRI-Auflösung
+  toneMap: mobile ? 'aces' : 'agx', grading: 'filmic', shadowFilter: mobile ? 'pcf' : 'pcss', ssr: !mobile, hdri: mobile ? '1k' : '2k',
   sfx: 0.7, music: 0.35, vibration: true, animSpeed: 1, tvMode: false, showFps: false, confirmEnd: true,
 };
 let settings = { ...DEFAULTS };
@@ -23,6 +31,7 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* */ } };
 
 const engine = new Engine(document.getElementById('game'), settings);
+initEnvironment(engine);
 Input.settings = settings;
 Cast.init(engine);
 setVolumes(settings.sfx, settings.music);
@@ -56,29 +65,17 @@ function buildMenuScene() {
   }));
   planet.position.set(0, -31.5, -6);
   scene.add(planet);
+  // Jäger-UFO aus der gemeinsamen Modellbibliothek (~18 m Ø, Leuchtring/Lichter über userData animiert)
   const ufo = new THREE.Group();
-  const prof = [[0, 0.55], [0.9, 0.45], [2.3, 0.08], [2.5, 0], [2.2, -0.15], [0.9, -0.35], [0, -0.38]].map(([r, y]) => new THREE.Vector2(r, y));
-  const hullMat = new THREE.MeshStandardMaterial({ color: 0xc4ccd6, metalness: 0.7, roughness: 0.28 });
-  ufo.add(new THREE.Mesh(new THREE.LatheGeometry(prof, 64), hullMat));
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.85, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x0a2030, metalness: 0.2, roughness: 0.05, emissive: 0x104040, emissiveIntensity: 0.6 }));
-  dome.position.y = 0.4; ufo.add(dome);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(2.42, 0.06, 8, 96), new THREE.MeshStandardMaterial({ color: 0, emissive: 0x30ffd0, emissiveIntensity: 4 }));
-  ring.rotation.x = Math.PI / 2; ufo.add(ring);
-  for (let i = 0; i < 12; i++) {
-    const l = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), new THREE.MeshStandardMaterial({ color: 0, emissive: i % 2 ? 0xff3050 : 0x40ffd0, emissiveIntensity: 5 }));
-    const a = (i / 12) * Math.PI * 2; l.position.set(Math.cos(a) * 1.6, -0.25, Math.sin(a) * 1.6); ufo.add(l);
-  }
+  const craft = makeUfo('fighter', { accent: 0x30ffd0, shadows: false, transmission: false });
+  craft.scale.setScalar(0.29); ufo.add(craft);
   const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 2.2, 6, 32, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.3, 1.6, 1.3), transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
   beam.position.y = -3.3; ufo.add(beam);
   ufo.position.set(2.2, 1.4, 0);
   scene.add(ufo);
-  const pmrem = new THREE.PMREMGenerator(engine.renderer);
-  const env = new THREE.Scene(); env.background = new THREE.Color(0x0a1220);
-  const lamp = new THREE.Mesh(new THREE.SphereGeometry(5, 8, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 4, 4.5) })); lamp.position.set(20, 20, 10); env.add(lamp);
-  const lamp2 = new THREE.Mesh(new THREE.SphereGeometry(8, 8, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.2, 0.6, 1.4) })); lamp2.position.set(0, -30, 0); env.add(lamp2);
-  scene.environment = pmrem.fromScene(env, 0.02).texture;
-  pmrem.dispose();
-  env.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+  // HDRI-Umgebungslicht (Poly Haven, CC0) – nur das PBR-UFO nutzt es; Sternenhimmel bleibt Hintergrund.
+  // Offline/„Aus“: prozedurale Ersatzumgebung (environment.js).
+  applyEnvironment(scene, 'night', { background: 'none', intensity: 1.6, rotation: 1.2 }).catch(() => {});
   const key = new THREE.DirectionalLight(0xffffff, 3); key.position.set(5, 6, 4); scene.add(key);
   const rimL = new THREE.DirectionalLight(0x60c0ff, 2.5); rimL.position.set(-4, -2, -3); scene.add(rimL);
   scene.add(new THREE.AmbientLight(0x223344, 1));
@@ -88,6 +85,7 @@ function buildMenuScene() {
     update(dt) {
       t += dt;
       ufo.rotation.y += dt * 0.6;
+      animateCraft(craft, t, { throttle: 0.7 });
       ufo.position.y = 1.4 + Math.sin(t * 0.9) * 0.18;
       ufo.rotation.z = Math.sin(t * 0.7) * 0.06;
       planet.rotation.y += dt * 0.01;
@@ -259,23 +257,38 @@ function toggleFullscreen() {
 
 function openSettings() {
   const opt = (key, label, values, fmt = (v) => v) => {
-    const cur = settings[key];
+    const cur = key === 'figures' ? figuresMode(engine) : settings[key]; // T6-F6: dieselbe Automatik wie im Einsatz
     return `<div class="set-row"><label>${label}</label><div class="seg">${values.map(([v, l]) => `<button class="btn seg-b ${cur === v ? 'active' : ''}" data-k="${key}" data-v='${JSON.stringify(v)}'>${fmt(l)}</button>`).join('')}</div></div>`;
   };
   const range = (key, label, min, max, step) => `<div class="set-row"><label>${label}</label><input type="range" data-r="${key}" min="${min}" max="${max}" step="${step}" value="${settings[key]}"><output>${settings[key]}</output></div>`;
   const render = () => `
     <div class="set-tabs-info">Grafik-Pipeline: interne Auflösung <b id="s-res">${engine.internalW}×${engine.internalH}</b> → Ausgabe <b>${engine.outW}×${engine.outH}</b></div>
     <h4>Super-Resolution (DLSS-Stil)</h4>
+    ${opt('upscaler', 'Upscaler-Verfahren', [['temporal', 'Temporal (DLSS-artig)'], ['spatial', 'Räumlich (FSR1-artig)']])}
+    <p class="muted">Temporal: Jedes Bild wird um Bruchteile eines Pixels versetzt gerendert und über mehrere Bilder in voller Ausgabeauflösung zusammengesetzt (Bewegungsausgleich über die Kamera, Schutz gegen Geisterbilder) – deutlich ruhigere Kanten und mehr Details. Räumlich: rekonstruiert nur aus dem aktuellen Bild, minimal schneller.${(settings.upscaler || 'temporal') === 'temporal' && engine.method !== 'temporal' ? ' <b>Temporal wird von diesem Gerät nicht unterstützt – räumlicher Fallback aktiv.</b>' : ''}</p>
     ${opt('upscale', 'Upscaling-Modus', Object.entries(UPSCALE_MODES).map(([k, m]) => [k, m.label]))}
     ${opt('dynamicRes', 'Dynamische Auflösung', [[true, 'An'], [false, 'Aus']])}
     ${opt('targetFps', 'Ziel-Bildrate', [[30, '30'], [60, '60'], [90, '90'], [120, '120']])}
     ${range('sharpness', 'Schärfe (RCAS)', 0, 1, 0.05)}
     <h4>Grafik</h4>
-    ${opt('shadows', 'Schatten', [['off', 'Aus'], ['low', 'Niedrig'], ['med', 'Mittel'], ['high', 'Hoch']])}
+    ${opt('toneMap', 'Tonemapping', [['agx', 'AgX'], ['aces', 'ACES'], ['neutral', 'Neutral']])}
+    ${opt('grading', 'Farbstimmung', [['neutral', 'Neutral'], ['filmic', 'Filmisch'], ['vivid', 'Kräftig']])}
+    ${opt('hdri', 'Umgebungslicht (HDRI)', [['off', 'Aus'], ['1k', '1K'], ...(mobile ? [] : [['2k', '2K']])])}
+    ${opt('figures', 'Figuren & Fahrzeuge', [['real', 'Realistisch'], ['simple', 'Einfach (schneller)']])}
+    ${opt('shadowFilter', 'Schattenqualität', [['off', 'Aus'], ['pcf', 'Weich (PCF)'], ['vsm', 'Sehr weich (VSM)'], ...(mobile ? [] : [['pcss', 'Kontaktschatten (PCSS)']])])}
+    ${opt('shadows', 'Schattenauflösung', [['off', 'Aus'], ['low', 'Niedrig'], ['med', 'Mittel'], ['high', 'Hoch']])}
+    ${mobile ? '' : opt('ssr', 'Spiegelungen (SSR)', [[false, 'Aus'], [true, 'An']])}
+    <p class="muted">AgX: natürliche, filmische Lichter ohne Farbverschiebung; ACES: kontrastreicher. Kontaktschatten werden nahe am Objekt hart und mit Abstand weich. Spiegelungen (Bildschirmraum) wirken nur in Szenen, die sie unterstützen, und kosten deutlich Leistung. HDRI-Auflösung wirkt ab dem nächsten Szenenwechsel.</p>
+    ${opt('ao', 'Umgebungsverdeckung (AO)', [['off', 'Aus'], ['low', 'Niedrig'], ['high', 'Hoch']])}
+    <p class="muted">Umgebungsverdeckung (GTAO) dunkelt Ecken, Spalten und Kontaktstellen ab – im Bodenkampf. „Niedrig“ rechnet mit halber Auflösung.</p>
     ${opt('bloom', 'Bloom / Leuchten', [[true, 'An'], [false, 'Aus']])}
     ${opt('filmGrain', 'Filmkorn & Vignette', [[true, 'An'], [false, 'Aus']])}
     ${opt('maxDpr', 'Max. Pixeldichte', [[1, '1×'], [1.5, '1,5×'], [2, '2×'], [3, '3×']])}
     ${opt('showFps', 'Leistungsanzeige', [[true, 'An'], [false, 'Aus']])}
+    <h4>Energie &amp; Akku</h4>
+    ${opt('fpsLimit', 'Bildrate begrenzen', [[0, 'Aus'], [30, '30'], [60, '60']])}
+    ${opt('idleSaver', 'Energiesparen im Leerlauf', [[true, 'An'], [false, 'Aus']])}
+    <p class="muted">Das Bildratenlimit spart Strom und Wärme auf Handy und Laptop; die Ziel-Bildrate der dynamischen Auflösung liegt nie darüber. Energiesparen im Leerlauf: Ohne Eingabe für einige Sekunden und bei ruhiger Szene (pausierte Weltkarte, eigener Zug im Bodenkampf) wird die Bildrate stark gesenkt; ein ruhendes Bild wird noch scharf auskonvergiert und dann nicht mehr neu gezeichnet. Jede Eingabe stellt sofort die volle Bildrate wieder her.</p>
     <h4>Spiel</h4>
     ${opt('animSpeed', 'Animationstempo', [[1, 'Normal'], [1.5, 'Schnell'], [2.5, 'Sehr schnell']])}
     ${opt('confirmEnd', 'Zugende bestätigen', [[true, 'An'], [false, 'Aus']])}
@@ -284,7 +297,7 @@ function openSettings() {
     <h4>Audio</h4>
     ${range('sfx', 'Effekte', 0, 1, 0.05)}
     ${range('music', 'Musik', 0, 1, 0.05)}
-    <p class="muted">Hinweis: NVIDIA DLSS selbst ist nur in nativen Windows-Spielen mit RTX-Grafikkarte verfügbar. AEGIS nutzt einen eigenen, plattformunabhängigen Upscaler (Kantenrekonstruktion + kontrastadaptives Schärfen + dynamische Auflösung), der auf PC, Handy und TV läuft. Schattenqualität wirkt ab dem nächsten Einsatz.</p>`;
+    <p class="muted">Hinweis: NVIDIA DLSS selbst ist nur in nativen Windows-Spielen mit RTX-Grafikkarte verfügbar. AEGIS nutzt eigene, plattformunabhängige Upscaler (temporal: Subpixel-Jitter + Bildhistorie mit Reprojektion; räumlich: Kantenrekonstruktion; jeweils mit kontrastadaptivem Schärfen und dynamischer Auflösung), die auf PC, Handy und TV laufen – ohne KI-Netz und ohne spezielle Grafikkarte. Schattenqualität wirkt ab dem nächsten Einsatz.</p>`;
   const h = modal({ title: '⚙ Einstellungen', wide: true, html: `<div id="set-body">${render()}</div>`, buttons: [{ label: 'Standard', close: false, action: () => { settings = Object.assign(settings, DEFAULTS); apply(); return false; } }, { label: 'Fertig', primary: true }] });
   const body = h.el.querySelector('#set-body');
   const apply = (focusSel) => {
@@ -310,21 +323,118 @@ function openSettings() {
 }
 
 function openHelp() {
-  modal({
-    title: '🎮 Steuerung & Anleitung', wide: true,
-    html: `<div class="grid2"><div>
-      <h4>Geoscape (Weltkarte)</h4>
-      <ul><li>Ziehen / Stick: Globus drehen · Mausrad / Pinch / LT-RT: Zoom</li><li>Marker antippen: UFOs abfangen, Einsätze starten</li><li>Zeit: Tasten 1–6, Leertaste = Pause · Controller ${padLabel('LB')}/${padLabel('RB')}</li><li>B Basis · R Forschung · I Abfangjäger</li></ul>
-      <h4>Bodenkampf – Maus &amp; Touch</h4>
-      <ul><li>Feld anklicken: Soldat bewegt sich (Touch: zweimal tippen)</li><li>Alien anklicken = Ziel wählen, erneut klicken = Feuer</li><li>Linke Maus ziehen: Kamera schwenken · Rechte Maus: drehen · Rad: Zoom</li><li>Zwei Finger: Zoom &amp; Drehen</li></ul>
-      <h4>Bodenkampf – Tastatur</h4>
-      <ul><li>WASD/Pfeile: Kamera · Q/E: drehen · R/V: Zoom</li><li>Tab: nächster Soldat · 1–4: Schussmodus/Granate · F: Feuer</li><li>K: Knien · T: nächstes Alien · Enter: Zug beenden · Esc: Menü</li></ul></div>
-      <div><h4>Bodenkampf – Controller</h4>
-      <ul><li>Linker Stick: Cursor · Rechter Stick: Kamera · ${padLabel('LT')}/${padLabel('RT')}: Zoom</li><li>${padLabel('A')}: Bewegen / Ziel / Feuer · ${padLabel('B')}: Abbrechen</li><li>${padLabel('X')}: Schussmodus · ${padLabel('Y')}: Knien</li><li>${padLabel('LB')}/${padLabel('RB')}: Soldat wechseln · Steuerkreuz ◀▶: Aliens durchschalten</li><li>Steuerkreuz ▼: Granate · ${padLabel('SELECT')}: Zug beenden · ${padLabel('START')}: Menü</li><li><b>L3 + R3: Cheat-Menü</b></li></ul>
-      <h4>Regeln</h4>
-      <ul><li>Jede Aktion kostet Zeiteinheiten (ZE). Gezielte Schüsse treffen besser, kosten aber mehr.</li><li>Halbe Deckung (Zäune, Felsen, Autos) senkt die Trefferchance des Gegners um 30 %.</li><li>Knien erhöht die Präzision. Unverbrauchte ZE ermöglichen Reaktionsfeuer.</li><li>Granaten und Fehlschüsse zerstören die Umgebung.</li><li>Rückzug: Soldaten in der Landezone (beim Transporter) werden evakuiert.</li></ul></div></div>`,
+  const P = padLabel;
+  const tbl = (rows, head = ['Aktion', 'Maus / Touch', 'Tastatur', 'Controller']) => `<div class="help-scroll"><table class="help-tbl"><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, i) => (i ? `<td>${c}</td>` : `<th scope="row">${c}</th>`)).join('')}</tr>`).join('')}</tbody></table></div>`;
+  const dl = (items) => `<dl class="help-gloss">${items.map(([t, d]) => `<dt>${t}</dt><dd>${d}</dd>`).join('')}</dl>`;
+  const tabs = [
+    ['Weltkarte', () => `<p class="muted">Die Weltkarte ist dein Lagezentrum: Hier läuft die Zeit, UFOs tauchen auf und du steuerst Basis, Forschung und Einkauf.</p>` + tbl([
+      ['Globus drehen', 'Ziehen', 'WASD / Pfeiltasten', 'Linker / Rechter Stick'],
+      ['Zoom', 'Mausrad · Zwei Finger (Pinch)', '+ / −', `${P('RT')} näher · ${P('LT')} weiter`],
+      ['Marker wählen (UFO, Einsatz, Basis)', 'Anklicken / Antippen', '–', `${P('A')} (Fadenkreuz in der Mitte)`],
+      ['Pause / Weiter', 'Button ⏸', 'Leertaste', P('SELECT')],
+      ['Zeitstufe wählen', 'Zeit-Buttons oben', 'Tasten 1–6 (1 = Pause)', `${P('LB')} langsamer · ${P('RB')} schneller`],
+      ['Abfangjäger', 'Button „Abfangen“', 'I', '▲ Steuerkreuz'],
+      ['Basis (3D)', 'Button „Basis“', 'B', P('X')],
+      ['Forschung', 'Button „Forschung“', 'R', P('Y')],
+      ['Soldaten', 'Button „Soldaten“', '–', '▼ Steuerkreuz'],
+      ['Beschaffung', 'Button „Beschaffung“', '–', '◀ Steuerkreuz'],
+      ['Finanzen', 'Button „Finanzen“', 'F', '▶ Steuerkreuz'],
+      ['Menü / Hilfe', 'Button ☰', 'Esc', P('START')],
+    ])],
+    ['Bodenkampf', () => `<p class="muted">Rundenbasiert: Du ziehst mit allen Soldaten, dann die Aliens. Jede Aktion kostet Zeiteinheiten (ZE).</p>` + tbl([
+      ['Soldat wählen', 'Soldat anklicken · Buttons ◀ ▶', 'Tab / Shift+Tab', `${P('LB')} / ${P('RB')}`],
+      ['Bewegen', 'Feld anklicken (Touch: zweimal tippen)', '–', `Linker Stick = Cursor, ${P('A')}`],
+      ['Ziel wählen &amp; Feuer', 'Alien anklicken, erneut anklicken = Feuer · Button FEUER', 'T = nächstes Alien · F = Feuer', `◀ ▶ = Alien wählen, ${P('A')} = Feuer`],
+      ['Schussmodus', 'Buttons Schnellschuss / Gezielt / Salve', '1 / 2 / 3', `${P('X')} schaltet durch (auch Gürtel)`],
+      ['Gürtel-Ausrüstung', 'Button „Gürtel“ 1–4, dann Zielfeld', '4 / 5 / 6 / 7 · G = erster Wurfgegenstand', `▼ schaltet Plätze durch, ${P('A')} setzt ein`],
+      ['Nachladen', 'Gürtel-Magazin antippen (sofort) · FEUER, wenn das Magazin leer ist', 'N · 4 / 5 / 6 / 7 = bestimmtes Magazin', `▼ Magazin wählen, ${P('A')} lädt`],
+      ['Bodenziel (Werfer, Explosiv- &amp; Schockmunition)', 'Leeres Feld antippen, dann erneut antippen oder FEUER', 'Feld anklicken, F', `Cursor auf Feld, ${P('A')} zweimal`],
+      ['Lenkschuss (Leitwerfer)', 'Wegpunkte antippen · letzten Punkt erneut antippen = Start · „↶ Wegpunkt“ zurück · „✖ Abbrechen“', 'Rücktaste = zurück, Esc = abbrechen', `${P('A')} setzt, ${P('B')} zurück`],
+      ['Knien / Aufstehen', 'Button „Knien“', 'K oder C', P('Y')],
+      ['Auswahl abbrechen', 'Rechtsklick', 'Esc', P('B')],
+      ['Kamera schwenken', 'Linke Maustaste ziehen · ein Finger', 'WASD / Pfeiltasten', 'Linker Stick (Cursor)'],
+      ['Kamera drehen', 'Rechte Maustaste ziehen · zwei Finger drehen', 'Q / E', 'Rechter Stick'],
+      ['Zoom', 'Mausrad · Pinch', 'R = näher · V = weiter', `${P('RT')} näher · ${P('LT')} weiter`],
+      ['Auf Soldat zentrieren', '–', 'Leertaste', '▲ Steuerkreuz'],
+      ['Zug beenden', 'Button „Zug beenden“', 'Enter', P('SELECT')],
+      ['Rückzug', 'Button ⚑ · Menü', '–', `${P('START')} → Menü`],
+      ['Menü', 'Button ☰', 'Esc (wenn nichts gewählt)', P('START')],
+    ])],
+    ['Abfangkampf & Basis', () => `<h4>3D-Abfangkampf (Jäger gegen UFO)</h4>` + tbl([
+      ['Annähern', 'Button „Annähern“', '1 · ↑ · W', '▲ Steuerkreuz · Stick hoch'],
+      ['Auf Distanz bleiben', 'Button „Distanz“', '2 · ↓ · S', '▼ Steuerkreuz · Stick runter'],
+      ['Ausweichen (Feuer pausiert kurz)', 'Button „Ausweichen“', '3 · E · Shift links', `${P('X')} · ${P('LB')}`],
+      ['Feuer frei (Raketensalve)', 'Button „Feuer frei“', '4 · Leertaste · F · Enter', `${P('A')} · ${P('RT')}`],
+      ['Abbrechen (zweimal drücken)', 'Button „Abbrechen“', '5 · Rücktaste · Q', P('B')],
+      ['Pause', '–', 'Esc · P', `${P('START')} (dann ${P('A')} weiter, ${P('B')} Rückzug)`],
+    ]) + `<h4>Basis (3D)</h4>` + tbl([
+      ['Ansicht drehen / neigen', 'Ziehen', 'WASD / Pfeiltasten', 'Rechter Stick'],
+      ['Ansicht verschieben', 'Rechte Maustaste oder Shift + ziehen · zwei Finger', '–', '–'],
+      ['Zoom', 'Mausrad · Pinch', '+ / − · Bild ↑ / ↓', `${P('RT')} näher · ${P('LT')} weiter`],
+      ['Modul wählen', 'Anklicken / Antippen', 'Q / E', `Steuerkreuz / Linker Stick · ${P('LB')} / ${P('RB')}`],
+      ['Info ein / aus', 'Modul antippen', 'Enter · Leertaste', P('A')],
+      ['Bauen / Ausbauen', 'Button im Infofenster', 'B', P('X')],
+      ['Ansicht zurücksetzen', '–', 'R', P('Y')],
+      ['Zurück zur Weltkarte', 'Button zum Schließen', 'Esc', P('B')],
+    ]) + `<h4>Ausrüstung &amp; Menüs</h4>` + tbl([
+      ['Soldat wechseln', 'Buttons ◀ ▶ · Soldat in der Liste', 'Tab-Navigation', `${P('LB')} / ${P('RB')}`],
+      ['Waffe, Rüstung, Gürtel ändern', 'Platz anklicken, Gegenstand wählen', 'Tab / Enter', `Steuerkreuz, ${P('A')}`],
+      ['Schließen / Zurück', 'Button „Fertig“ · ✕', 'Esc', P('B')],
+    ])],
+    ['Begriffe', () => `<p class="muted">Werte stammen aus den aktuellen Spielregeln und können sich durch Balancing ändern.</p>` + dl([
+      ['Zeiteinheiten (ZE)', 'Dein Aktionsbudget pro Zug. Gehen kostet 4 ZE je Feld (diagonal 6), Knien 4 ZE, Aufstehen 8 ZE. Schüsse und Gürtel-Gegenstände kosten einen Anteil deiner Maximal-ZE.'],
+      ['Schnellschuss / Gezielt / Salve', 'Schnellschuss: billig (Gewehr 25 % der ZE), mittlere Treffsicherheit. Gezielt: teurer (50 %), aber deutlich genauer. Salve: 3 Schüsse (35 %), jeder einzelne ungenauer.'],
+      ['Trefferchance', 'Treffsicherheit des Soldaten × Waffenwert. Besser durch: Knien (+15 %), Forschung „Autopsie“ (+5 % je Alienart). Schlechter durch: große Entfernung (ab 10 Feldern −2 % je Feld, außerhalb der Reichweite halbiert), Ziel in halber Deckung (−30 %), Ziel kniend (−8 %), Ziel im Rauch (−40 %). Immer zwischen 5 und 95 %. Jeder Treffer richtet mindestens 15 % des Waffenschadens an, auch gegen starke Panzerung. Bei Nacht sehen Soldaten nur 12 statt 20 Felder weit.'],
+      ['Reaktionsfeuer', 'Bewegt sich eine Einheit in Sichtweite, kann der Gegner sofort einen Schnellschuss abgeben. Chance: Reaktionswert × Anteil verbliebener ZE × 0,30 (einhändige Waffen +25 %, schwere −30 %). Mit leerem Magazin, Werfern sowie Explosiv-, Brand- und Schockmunition gibt es kein Reaktionsfeuer. Spare dir ZE auf, damit deine Soldaten selbst reagieren können.'],
+      ['Deckung (halbe Deckung)', 'Zäune, Felsen, Autos zwischen Schütze und Ziel senken dessen Trefferchance um 30 %. Gilt nicht, wenn der Schütze direkt daneben steht.'],
+      ['Knien', 'Kostet 4 ZE, Aufstehen kostet 8 ZE. Erhöht die eigene Genauigkeit um 15 %, macht dich aber nicht unverwundbar. Will ein kniender Soldat laufen, steht er zuerst auf und zahlt einmalig die 8 ZE; danach bleibt er stehen.'],
+      ['Nebel des Krieges', 'Du siehst nur, was deine Soldaten sehen (20 Felder, nachts 12). Bereits erkundete Felder bleiben sichtbar, Aliens nur solange sie im Blick sind.'],
+      ['Munition &amp; Nachladen', 'Waffen mit Magazin (alle außer Laser) verbrauchen pro Schuss eine Patrone, eine Salve bis zu drei. Das Standardmagazin ▮ (Gewehr 24, Pistole 12, Sniper 8, Schrot 6, Kanone 6, MK 12) ist gratis und unbegrenzt – lege 1–2 Ersatzmagazine auf Gürtelplätze. Nachladen kostet 10–30 % der ZE. Ein angebrochenes Magazin wandert in den Gürtelplatz zurück, ein leeres wird verworfen. Laser-Waffen brauchen nie Munition.'],
+      ['Sondermunition', 'In der Ausrüstung wählst du die Ladung je Waffe (Platz „Munition“) und legst weitere Magazine in den Gürtel. HE (✹) explodiert am Aufschlagpunkt, IN (🔥) setzt Felder in Brand, Raketen (↑ ⇑ ♨) gibt es leicht, schwer und als Brandrakete, Plasma-Zellen (🔋) füttern Plasmawaffen, Schockbomben (🌀) betäuben. Sondermunition kostet Geld und wird bei Einsatzende aus dem Lager abgezogen; angebrochene Magazine kehren zurück. Die Plasma-Zelle fällt auch als Beute von Plasma-Aliens an.'],
+      ['Schadensarten', 'Projektil, Laser, Plasma, Explosiv, Brand und Betäubung. Panzerbrechende Waffen (Kanone, MK, Schwerer Laser) halbieren die Panzerung des Ziels, Brand zählt sie nur zu 30 %, Betäubung zu 50 %. Manche Aliens widerstehen einzelnen Arten: Wächterdrohnen sind immun gegen Betäubung, Klauenbestien brennen besonders gut.'],
+      ['Explosivgeschosse', 'Raketen, HE-Magazine und Schockbomben haben einen Wirkungsradius und explodieren auch bei einem Fehlschuss am Aufschlagpunkt. Sie dürfen auf ein leeres, sichtbares Feld abgefeuert werden. Achtung: Eigene Soldaten im Radius werden verletzt – das Fadenkreuz warnt davor.'],
+      ['Brand', 'Brandmunition und Brandrakete entzünden Felder für 2–3 Runden. Wer auf einem brennenden Feld steht oder es betritt, nimmt 15 Schaden je Rundenwechsel. Auf Gras, Holz und Pflanzen breitet sich das Feuer aus. Rauch blockiert die Sicht; Wegfindung und Aliens meiden Flammen.'],
+      ['Betäubung &amp; Gefangennahme', 'Schockstab (Nahkampf, angrenzendes Alien), Schockwerfer und Schockbomben richten Betäubungsschaden an. Wird er so hoch wie die LP, fällt die Einheit bewusstlos um; Bewusstlose zählen für den Sieg. Sie erwachen nach einigen Runden von selbst (10 % der LP pro Runde), ein Medi-Kit weckt bewusstlose Soldaten sofort. Gewinnst du den Einsatz, werden bewusstlose Aliens zu Gefangenen im Lager: Sie bringen mehr Punkte und schalten Verhör-Forschung frei (Vael, Krull – Voraussetzung für Schockwerfer und Lenkwaffen). Gefangene lassen sich auch verkaufen.'],
+      ['Sensormine', 'Wird geworfen (30 % ZE) und scharfgeschaltet; sie explodiert, sobald ein Alien näher als 1,5 Felder kommt. Eigene Soldaten lösen sie nicht aus. Nicht gezündete Minen werden nach einem Sieg geborgen. Erfordert die Forschung „Sensorminen“.'],
+      ['Sprengladung', 'Wird bis zu 7 Felder weit gelegt (35 % ZE), zündet am Ende deines Zuges und richtet 120 Schaden mit Radius 3 an – sprengt Wände und Schiffshüllen. Zuerst Abstand gewinnen!'],
+      ['Lenkrakete (Leitwerfer)', 'Ziehe 1–6 Wegpunkte; die Rakete fliegt die Strecke ohne Sichtlinie ab und explodiert am Ende oder am ersten Hindernis (Schaden 160, Radius 4). Letzten Wegpunkt erneut antippen = Start. Einmal verwendet, ist sie verbraucht.'],
+      ['Bewegungsscanner', 'Zeigt bis zum Zugende gelbe Ringe für Aliens und Zivilisten im Umkreis von 12 Feldern, die sich in der letzten Runde bewegt haben (15 % ZE, nicht verbraucht).'],
+      ['Einhändig &amp; schwer', 'Pistolen sind einhändig: billiger Schnellschuss und +25 % Reaktionsfeuer. Schwere Waffen (Kanone, MK, Raketen-, Leit-, Schwerer Laser/Plasmawerfer) treffen im Stehen mit Schnellschuss 15 % schlechter und reagieren 30 % seltener – knie dich hin oder ziele.'],
+      ['Gürtel-Ausrüstung', 'Splittergranate (Schaden 55, Radius 2,6) und Alien-Granate (95, Radius 3,2) kosten 30 % der ZE. Nebelgranate (25 %): 3 Runden Rauch, Radius 2,5. Leuchtfackel (20 %): leuchtet nachts Radius 6 für 4 Runden aus. Medi-Kit (30 %): heilt 25 LP, 3 Anwendungen – auf sich selbst oder einen angrenzenden Soldaten. Granaten und Fehlschüsse zerstören Deckung. Jeder Soldat hat 4 Gürtelplätze; Ersatzmagazine belegen je einen.'],
+      ['Beschaffung &amp; Lager', 'Waffen, Munition und Gegenstände kaufst du im Menü „Beschaffung“, sobald die Forschung sie freischaltet. Der Lagerbestand wird auf die Soldaten verteilt: Jede Waffe, Rakete und Granate im Gürtel braucht ein Stück aus dem Lager. Standardmagazine sind frei.'],
+      ['Landezone &amp; Rückzug', 'Die Landezone liegt beim Transporter. Beim Rückzug (⚑) werden nur Soldaten in der Landezone evakuiert – alle anderen gelten als vermisst.'],
+      ['Forschung &amp; Artefakte', 'Aus abgeschossenen UFOs und gefallenen Aliens bergen deine Truppen Artefakte (z. B. Leichname). Manche Projekte brauchen bestimmte Artefakte. Wissenschaftler im Labor erforschen sie; neue Waffen, Rüstungen und Fähigkeiten folgen.'],
+      ['Radar / Ortung', 'Deine Basis ortet UFOs nur innerhalb des Radarkreises. Weitere Radaranlagen vergrößern ihn um 35 %, die Forschung „Navigation“ um 60 %.'],
+      ['Finanzierung &amp; Monatsbericht', 'Jeden Monat zahlen die Regionen je nach Erfolg: Bei guter Wertung steigt die Förderung (bis +25 %), bei sehr schlechter (unter −60 Punkten) sinkt sie (bis −15 %). Je Region liegt sie zwischen 80.000 und 240.000 ¢. Abgezogen werden Gehälter (Soldat 20.000 ¢, Wissenschaftler 20.000 ¢) und Unterhalt (Anlage 40.000 ¢, Jäger 60.000 ¢). Neue Soldaten kosten 40.000 ¢.'],
+      ['Game Over', 'Ein Monat ist schlecht, wenn der Kontostand negativ ist oder die Monatswertung unter der Schwelle liegt (−300, mit jedem Monat 60 Punkte tiefer, höchstens −1.000). Drei schlechte Monate in Folge beenden das Projekt; ein guter Monat setzt den Zähler zurück. Der erste Monat zählt nie. Unentdeckte UFOs kosten erst ab dem dritten Monat Punkte (je −4), ein verlorener Einsatz höchstens −20 (Terror −60) – ein Versuch lohnt sich also immer, ein ignorierter Terrorangriff kostet −200.'],
+      ['Bergungsprämie', 'Für jeden erlegten Alien zahlt der Rat nach Art: Vael 8.000 ¢, Vael-Soldat 12.000 ¢, Krull und Drohne 20.000 ¢, Klauenbestie 15.000 ¢; Gefangene zählen ×1,5. Dazu bei Sieg ein UFO-Zuschlag nach Klasse (Späher 50.000 ¢ bis Schlachtschiff 250.000 ¢) bzw. 120.000 ¢ für einen abgewehrten Terrorangriff. Auch bei Rückzug oder Niederlage gibt es die Hälfte der Alien-Prämie.'],
+      ['Teilbeute beim Rückzug', 'Wer sich zurückzieht (⚑), nimmt die Leichen und Wracks mit, die höchstens 6 Felder von der Landezone entfernt liegen. UFO-Hülle, Zerium und Technik gibt es nur nach einem Sieg. Ein Terror-Einsatz in der Stadt liefert keine UFO-Technik.'],
+      ['Hyperwellen-Relais', 'Ein seltenes Bauteil aus Frachtern und Schlachtschiffen (abgestürzt nur in 60 % der Fälle). Es ist Voraussetzung der Forschung „Hyperwellen-Dekodierung“, die das Hive-Nest freischaltet. Ein Relais bringt beim Verkauf 150.000 ¢ – nicht vorschnell verkaufen! Alternative: das Projekt „Verhör: Krull“ (Gefangener Krull) ersetzt es und verkürzt die Dekodierung um 200 WT. Fehlt das Navigationsmodul oder das Drohnen-Wrack, genügen auch 8× Legierung + 2× Zerium bzw. 3× Plasmawaffe + 1× Zerium.'],
+      ['Hive-Nest', 'Scheitert ein Angriff, schwächen die erlegten Wachen das Nest: Die Besatzung sinkt (mindestens 5) und wächst um 2 je Monat nach. Der Kommandant selbst erholt sich immer.'],
+      ['Zeitsteuerung', 'Die Weltkarte läuft in Echtzeit mit sechs Stufen (Pause, 1 Min., 5 Min., 30 Min., 2 Std., 12 Std. Spielzeit pro Sekunde). Fenster und Menüs halten die Zeit an. Bei UFO-Kontakt am besten auf kleine Stufen schalten.'],
+    ])],
+    ['Cheats', () => `<p class="muted">Die Cheat-Konsole ist für Tests und zum Ausprobieren gedacht.</p>` + tbl([
+      ['Cheat-Konsole öffnen / schließen', 'Menü-Eintrag', 'F10 oder ^', `${P('L3')} + ${P('R3')} gleichzeitig (Stickklick)`],
+    ]) + `<h4>Cheat-Codes (im Eingabefeld der Konsole)</h4>` + tbl([
+      ['GELDREGEN', '+5.000.000 ¢'], ['UNSTERBLICH', 'Gottmodus an'], ['ADLERAUGE', 'Karte und alle UFOs aufdecken'], ['EINSTEIN', 'Gesamte Forschung abschließen'],
+    ], ['Code', 'Wirkung']) + `<h4>Schalter &amp; Sofort-Aktionen</h4><p>Gottmodus, unendliche ZE, 100 % Trefferchance, Ein-Treffer-Kills, Karte aufdecken, kein Alien-Reaktionsfeuer, alle UFOs orten, Sofort-Forschung, Sofort-Bau, alle Ausrüstung. Dazu: Geld, Forschung, Heilen, UFO/Terrorangriff/Hive erzeugen, Aliens vernichten, Mission gewinnen.</p>`],
+  ];
+  let cur = 0;
+  const h = modal({
+    title: '🎮 Steuerung & Anleitung', wide: true, cls: 'help-modal',
+    html: `<div class="help-tabs" role="tablist">${tabs.map((t, i) => `<button class="btn help-tab" role="tab" data-tab="${i}">${t[0]}</button>`).join('')}</div><div class="help-body" role="tabpanel"></div><p class="muted help-pad">Reiter wechseln mit ${P('LB')} / ${P('RB')} · Schließen mit ${P('B')} oder Esc</p>`,
     buttons: [{ label: 'OK', primary: true }],
   });
+  const body = h.el.querySelector('.help-body');
+  const show = (i) => {
+    cur = (i + tabs.length) % tabs.length;
+    body.innerHTML = tabs[cur][1]();
+    h.el.querySelectorAll('.help-tab').forEach((b, k) => { b.classList.toggle('on', k === cur); b.setAttribute('aria-selected', k === cur); });
+    h.el.querySelector('.modal-body').scrollTop = 0;
+  };
+  h.el.querySelectorAll('.help-tab').forEach((b) => b.addEventListener('click', () => { sfx('click'); show(+b.dataset.tab); }));
+  h.el.addEventListener('navtab', (e) => { sfx('click'); show(cur + e.detail); });
+  show(0);
 }
 
 function victory() {
@@ -375,7 +485,7 @@ engine.onFrame = (dt) => {
   fpsT -= dt;
   if (fpsT <= 0 && settings.showFps) {
     fpsT = 0.5;
-    fpsEl.innerHTML = `${Math.round(engine.fps)} FPS · ${engine.frameMs.toFixed(1)} ms<br>${engine.internalW}×${engine.internalH} → ${engine.outW}×${engine.outH}<br>${UPSCALE_MODES[settings.upscale].label}${settings.dynamicRes ? ` · DRS ${Math.round(engine.dynScale * 100)}%` : ''}`;
+    fpsEl.innerHTML = `${Math.round(engine.fps)} FPS · ${engine.frameMs.toFixed(1)} ms<br>${engine.internalW}×${engine.internalH} → ${engine.outW}×${engine.outH}<br>${UPSCALE_MODES[settings.upscale].label} · ${engine.methodLabel}${settings.dynamicRes ? ` · DRS ${Math.round(engine.dynScale * 100)}%` : ''}`;
   }
 };
 
