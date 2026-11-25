@@ -1,0 +1,60 @@
+name: Desktop (Windows-EXE)
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch/Tag/Commit, aus dem die EXE gebaut wird
+        default: claude/gallant-cray-8s8udi
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: desktop
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Abhängigkeiten
+        working-directory: desktop
+        run: npm ci --no-audit --no-fund
+      - name: Version setzen
+        working-directory: desktop
+        run: npm version "1.0.${{ github.run_number }}" --no-git-tag-version
+      - name: EXE bauen (Installer + portable)
+        working-directory: desktop
+        run: npm run dist:win
+      - name: Selbsttest der EXE (startet das Spiel, neues Spiel, Bildschirmfoto)
+        working-directory: desktop
+        continue-on-error: true
+        run: |
+          AEGIS_SMOKE="$PWD/dist/selbsttest.png" timeout 180 ./dist/win-unpacked/AEGIS.exe --use-angle=swiftshader --enable-unsafe-swiftshader
+      - name: Dateien auflisten
+        working-directory: desktop
+        run: ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AEGIS-Windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/selbsttest.png
+          if-no-files-found: error
+      - name: GitHub-Release „desktop-latest“ aktualisieren
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: desktop
+        run: |
+          gh release delete desktop-latest --yes --cleanup-tag || true
+          gh release create desktop-latest dist/AEGIS-Setup-*.exe dist/AEGIS-Portable-*.exe \
+            --target "$(git rev-parse HEAD)" \
+            --title "AEGIS für Windows (Version 1.0.${{ github.run_number }})" \
+            --notes "AEGIS – Protokoll Erstkontakt als Windows-Programm. **AEGIS-Setup** installiert das Spiel mit Startmenü- und Desktop-Verknüpfung, **AEGIS-Portable** startet ohne Installation. Windows 10/11 (64 Bit), Grafikkarte mit WebGL2. F11 = Vollbild. Beim ersten Start kann Windows SmartScreen warnen, weil die Datei nicht signiert ist: „Weitere Informationen“ → „Trotzdem ausführen“. Gebaut aus Commit $(git rev-parse --short HEAD)."

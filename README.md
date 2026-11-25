@@ -84,6 +84,15 @@ js/game.js, data.js Kampagnenzustand & Spieldaten
 
 `viewer.html` (eigenständige Seite, nicht im Hauptmenü verlinkt; z. B. `http://localhost:8080/viewer.html`) zeigt alle 3D-Assets mit derselben Licht- und Materialpipeline wie das Spiel: Hero-Autos (`js/herocar.js`, Typ, Lackfarbe, Schaden, Licht), Figuren (`js/characters.js`, jede Basis × Personal-/Power-Rüstung/zivil, Zustände und alle Animationsclips), Fluggeräte und UFOs (`js/craftmodels.js`, Stufe hoch/niedrig), alle GLBs und Textur-Sets aus `assets/manifest.json` sowie eine Auswahl prozeduraler Props aus `js/models.js`. Links Liste mit Suche und Kategorie-Filter, Mitte 3D-Ansicht (Orbit-Steuerung, Drehteller, Drahtgitter, Normalen- und UV-Checker-Ansicht), rechts einklappbare Panels: HDRI-Umgebung (`js/environment.js`), Tonemapping AgX/ACES/Neutral, Belichtung, Schatten, PBR-Boden (Asphalt/Beton/Gehwegplatten), Bloom; Statistik (Dreiecke, Vertices, Draw-Calls, Materialien mit Slot, Texturen mit Auflösung und geschätztem GPU-Speicher, LOD-Stufen mit Umschaltung, Bones, Clips, Maße in Metern) und Prüfungen mit ✓/⚠/✗ (G2-`validateVehicle` für Fahrzeuge, fehlende Normalen/UVs, NaN, Texturen ohne Zweierpotenz oder > 2048, unbenannte Materialien, > 30 000 Dreiecke ohne LOD, Maßstab Auto 3,5–6 m / Figur 1,5–2,1 m). „Alle prüfen“ lädt jedes Asset nacheinander und zeigt eine Ergebnistabelle (als Markdown kopierbar). Auf dem Handy sind Liste und Info-Panel ausklappbare Overlays. URL-Parameter: `?a=hero:sedan`, `?check=1`, `?view=uv`, `?env=dusk`, `?floor=concrete`; Skript-Zugriff über `window.__viewer`.
 
+## Windows-Programm (EXE)
+
+Unter `desktop/` liegt eine Electron-Hülle, die das Spiel als normales Windows-Programm verpackt (Spielstände bleiben lokal gespeichert, F11 = Vollbild, Bluetooth-Controller funktionieren wie im Browser).
+
+- Fertige Dateien: GitHub → *Releases* → **desktop-latest** → `AEGIS-Setup-….exe` (Installer) oder `AEGIS-Portable-….exe` (ohne Installation).
+- Neu bauen: Actions → „Desktop (Windows-EXE)“ → Run workflow. Der Build läuft auf einem Windows-Runner, testet die EXE kurz selbst und ersetzt das Release `desktop-latest`.
+- Lokal: `cd desktop && npm ci && npm start` (Fenster) bzw. `npm run dist:win` (unter Windows).
+- Die EXE ist nicht signiert; Windows SmartScreen zeigt deshalb beim ersten Start eine Warnung („Weitere Informationen“ → „Trotzdem ausführen“).
+
 ## Tests & Veröffentlichung
 
 - Tests (Node 20+): `cd tests && npm install && npm test`. `npm run test:unit` prüft Kartengenerator (alle Biome × 200 Seeds), Kampagnenlogik, Ausrüstung und Spieldaten; `npm run test:e2e` startet Chromium (Playwright, headless, SwiftShader) gegen einen lokalen Server und spielt Menü → Weltkarte → Mission → Zug → Sieg → Weltkarte durch. Einmalig `npx playwright install chromium`.

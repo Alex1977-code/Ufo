@@ -48,7 +48,7 @@ jobs:
         run: |
           SHA=$(git rev-parse --short=8 HEAD)
           mkdir ../site
-          tar --exclude=./.git --exclude=./tests --exclude=./orchestrator --exclude=./.github -cf - . | tar -xf - -C ../site
+          tar --exclude=./.git --exclude=./tests --exclude=./orchestrator --exclude=./.github --exclude=./desktop -cf - . | tar -xf - -C ../site
           touch ../site/.nojekyll
           sed -i "s/^const CACHE = .*/const CACHE = 'aegis-${SHA}';/" ../site/sw.js
           grep -n "^const CACHE" ../site/sw.js
