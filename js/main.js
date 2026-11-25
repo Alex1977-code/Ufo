@@ -256,7 +256,7 @@ function toggleFullscreen() {
 
 function openSettings() {
   const opt = (key, label, values, fmt = (v) => v) => {
-    const cur = settings[key];
+    const cur = settings[key] ?? (key === 'figures' ? (((navigator.deviceMemory && navigator.deviceMemory < 3) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2)) ? 'simple' : 'real') : undefined);
     return `<div class="set-row"><label>${label}</label><div class="seg">${values.map(([v, l]) => `<button class="btn seg-b ${cur === v ? 'active' : ''}" data-k="${key}" data-v='${JSON.stringify(v)}'>${fmt(l)}</button>`).join('')}</div></div>`;
   };
   const range = (key, label, min, max, step) => `<div class="set-row"><label>${label}</label><input type="range" data-r="${key}" min="${min}" max="${max}" step="${step}" value="${settings[key]}"><output>${settings[key]}</output></div>`;
@@ -273,6 +273,7 @@ function openSettings() {
     ${opt('toneMap', 'Tonemapping', [['agx', 'AgX'], ['aces', 'ACES'], ['neutral', 'Neutral']])}
     ${opt('grading', 'Farbstimmung', [['neutral', 'Neutral'], ['filmic', 'Filmisch'], ['vivid', 'Kräftig']])}
     ${opt('hdri', 'Umgebungslicht (HDRI)', [['off', 'Aus'], ['1k', '1K'], ...(mobile ? [] : [['2k', '2K']])])}
+    ${opt('figures', 'Figuren & Fahrzeuge', [['real', 'Realistisch'], ['simple', 'Einfach (schneller)']])}
     ${opt('shadowFilter', 'Schattenqualität', [['off', 'Aus'], ['pcf', 'Weich (PCF)'], ['vsm', 'Sehr weich (VSM)'], ...(mobile ? [] : [['pcss', 'Kontaktschatten (PCSS)']])])}
     ${opt('shadows', 'Schattenauflösung', [['off', 'Aus'], ['low', 'Niedrig'], ['med', 'Mittel'], ['high', 'Hoch']])}
     ${mobile ? '' : opt('ssr', 'Spiegelungen (SSR)', [[false, 'Aus'], [true, 'An']])}

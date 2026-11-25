@@ -9,7 +9,7 @@ import { getHeroCarKit } from './herocar.js';
 import { loadCharacterLibrary, makeCharacter } from './characters.js';
 import { makeTransport as makeKondor, animateCraft, setHatch } from './craftmodels.js';
 import { WEAPONS, ARMORS, ALIENS, ITEMS, BELT_SLOTS, RANKS, UFOS, effWeapon, ammoFits, ammoList, defaultLoad, isInstantItem, guidedMode } from './data.js';
-import { Game } from './game.js';
+import { Game, alienCount, missionRewards } from './game.js';
 import { Input, padLabel } from './input.js';
 import { modal, toast, confirmBox, anyModalOpen, floatText, banner, bar, el } from './ui.js';
 import { sfx, setMusicMood } from './audio.js';
@@ -306,7 +306,7 @@ export class Tactical {
     this.unsub = [];
     this.fx = [];
     this.lightPool = [];
-    this.result = { kills: {}, civSaved: 0, civKilled: 0, itemsUsed: {} };
+    this.result = { kills: {}, corpses: [], civSaved: 0, civKilled: 0, itemsUsed: {} };
     this.beltSlot = 0;
     this.smokes = []; this.flares = [];
     this.mines = []; this.charges = []; this.blips = []; this.waypoints = []; this.groundTarget = null;
@@ -1168,11 +1168,8 @@ export class Tactical {
     });
     // Aliens
     const site = this.opts.site;
-    let roster, n;
     const monthIdx = Game.c.lastMonth || 0;
-    if (site.kind === 'hive') { roster = ['krull', 'drone', 'vael_s', 'beast']; n = 11; }
-    else if (site.kind === 'terror') { roster = ['vael', 'vael_s', 'beast', 'beast', monthIdx > 2 ? 'krull' : 'vael_s']; n = randInt(7, 10); }
-    else { const us = UFOS[site.ufoType]; roster = us.roster; n = randInt(us.crew[0], us.crew[1]); if (site.kind === 'crash') n = Math.max(1, Math.round(n * 0.75)); }
+    const { roster, n } = alienCount(site, monthIdx); // E11 (Terror früh: 1 Bestie), E15 (Hive-Besatzung schrumpft mit site.hiveKilled)
     const inUfo = m.alienSpawns.filter((s) => s.inUfo), outUfo = m.alienSpawns.filter((s) => !s.inUfo);
     const used = new Set();
     if (site.kind === 'hive' && m.boss) { this.addAlien('hive', m.boss.x, m.boss.y, true); used.add(m.boss.y * m.W + m.boss.x); }
@@ -1954,6 +1951,7 @@ export class Tactical {
     sfx(t.team === 'alien' ? 'alienDeath' : 'death');
     if (t.team === 'alien') {
       this.result.kills[t.spec] = (this.result.kills[t.spec] || 0) + 1;
+      this.result.corpses.push({ type: t.spec, x: t.x, y: t.y }); // E6: Teilbeute beim Rückzug
       this.floatAt(t, '✖ ELIMINIERT', '#ffd080', true);
     } else if (t.team === 'player') {
       this.floatAt(t, '☠ GEFALLEN', '#ff7a7a', true);
@@ -2859,55 +2857,35 @@ export class Tactical {
     const site = this.opts.site;
     const r = this.result;
     r.won = won;
-    let score = 0;
+    let score = 0; // wird unten aus missionRewards() übernommen
     const lines = [];
-    // Aliens & Artefakte
+    // Aliens & Artefakte: Beute, Prämie und Wertung berechnet missionRewards() (js/game.js, E1 §6.2) nach den Soldaten
     const totalKills = Object.values(r.kills).reduce((a, b) => a + b, 0);
     const artifacts = {};
-    const addA = (k, n) => { if (n > 0) artifacts[k] = (artifacts[k] || 0) + n; };
-    const plasmaW = (wk) => wk === 'a_rifle' || wk === 'a_pistol' || wk === 'a_heavy';
     const loot = r.ammoLoot; // erbeutete Plasma-Zellen (nur mit erforschtem Plasma)
-    for (const [type, n] of Object.entries(r.kills)) {
-      score += ALIENS[type].score * n;
-      if (won) {
-        addA(ALIENS[type].corpse, n);
-        const wk = ALIENS[type].weapon;
-        if (plasmaW(wk)) { addA('Plasmawaffe', n); if (Game.has('plasma')) loot.pz_cell = (loot.pz_cell || 0) + n; }
-      }
-    }
-    if (won) {
-      // Bewusstlose Aliens werden Gefangene (Artefakt „Gefangener …“); nicht fangbare Arten zählen wie eine Tötung
-      for (const a of this.units.filter((u) => u.team === 'alien' && u.ko)) {
-        const A = ALIENS[a.spec];
-        r.captured[a.spec] = (r.captured[a.spec] || 0) + 1;
-        score += Math.round(A.score * 1.5);
-        if (A.captive) addA(A.captive, 1); else addA(A.corpse, 1);
-        if (plasmaW(A.weapon)) { addA('Plasmawaffe', 1); if (Game.has('plasma')) loot.pz_cell = (loot.pz_cell || 0) + 1; }
-      }
-      if (Game.has('verhoer_vael') && site.ufoType) addA('Zerium', 1); // Verhör: Vael
-      if (site.ufoType) {
-        const R = UFOS[site.ufoType].radius;
-        addA('Alien-Legierung', R * (site.kind === 'crash' ? 2 : 3));
-        addA('Zerium', site.kind === 'crash' ? randInt(1, 3) : randInt(3, 6));
-        if (site.ufoType !== 'scout') addA('UFO-Navigationsmodul', 1);
-        score += UFOS[site.ufoType].score;
-      }
-      score += site.kind === 'terror' ? 100 : 50;
-    } else score -= site.kind === 'terror' ? 150 : 40;
+    // Bewusstlose Aliens werden bei Sieg Gefangene; nicht fangbare Arten zählt missionRewards wie eine Leiche
+    if (won) for (const a of this.units.filter((u) => u.team === 'alien' && u.ko)) r.captured[a.spec] = (r.captured[a.spec] || 0) + 1;
     // Zivilisten
-    if (site.kind === 'terror') {
-      r.civSaved = won ? this.units.filter((u) => u.team === 'civ' && u.alive).length : 0;
-      score += r.civSaved * 10 - r.civKilled * 15;
-    }
+    if (site.kind === 'terror') r.civSaved = won ? this.units.filter((u) => u.team === 'civ' && u.alive).length : 0;
     // Soldaten (bewusstlos: bei Sieg gerettet, bei Niederlage vermisst)
     const dead = [], survivors = [];
     for (const u of this.units.filter((x) => x.team === 'player')) {
       const s = u.soldier;
-      if (!u.alive && !(u.ko && won)) { if (u.ko) u.mia = true; dead.push(u); score -= 25; c.soldiers = c.soldiers.filter((x) => x.id !== s.id); c.stats.lost++; continue; }
+      if (!u.alive && !(u.ko && won)) { if (u.ko) u.mia = true; dead.push(u); c.soldiers = c.soldiers.filter((x) => x.id !== s.id); c.stats.lost++; continue; }
       const promoted = Game.awardXp(s, (u.kills || 0) + (u.captures || 0), true);
       s.wound = Math.ceil(Math.max(0, u.dmgTaken - (u.healed || 0)) / 4);
       survivors.push({ u, promoted });
     }
+    // Beute, Prämie, Wertung (E4–E7, E14, E15) – reine Funktion aus game.js
+    const rw = missionRewards({
+      site, won, aborted, kills: r.kills, captures: r.captured, corpses: r.corpses, lzCells: this.map.lz,
+      monthIdx: c.lastMonth || 0, dead: dead.length, civSaved: r.civSaved || 0, civKilled: r.civKilled || 0,
+      verhoerVael: Game.has('verhoer_vael'), verhoerKrull: Game.has('verhoer_krull'), hasPlasma: Game.has('plasma'),
+    });
+    score = rw.score;
+    Object.assign(artifacts, rw.artifacts);
+    for (const [k, n] of Object.entries(rw.ammoLoot)) loot[k] = (loot[k] || 0) + n;
+    r.hiveKills = rw.hiveKills; // E15: geoscape.missionDone() zermürbt damit das Hive-Nest
     // Lager
     for (const [k, n] of Object.entries(artifacts)) c.artifacts[k] = (c.artifacts[k] || 0) + n;
     // gefallene/vermisste Soldaten verlieren ihre mitgeführten Gürtel-Gegenstände (Medi-Kit = 1 Stück)
@@ -2927,8 +2905,7 @@ export class Tactical {
     const lootTxt = Object.entries(loot).filter(([, n]) => n > 0).map(([k, n]) => `${ITEMS[k].icon} ${ITEMS[k].name} ×${n}`).join('<br>');
     // tote Soldaten verlieren ihre Ausrüstung
     for (const u of dead) { const s = u.soldier; if (s.weapon !== 'rifle') c.stock[s.weapon] = Math.max(0, (c.stock[s.weapon] || 0) - 1); if (s.armor !== 'none') c.stock[s.armor] = Math.max(0, (c.stock[s.armor] || 0) - 1); }
-    const capN = Object.values(r.captured).reduce((a, b) => a + b, 0);
-    const bounty = won ? Math.round(((totalKills + capN) * 15000 + (site.ufoType ? UFOS[site.ufoType].radius * 40000 : 0)) * (Game.has('verhoer_krull') ? 1.2 : 1)) : 0;
+    const bounty = rw.bounty; // E4: nach Art, Gefangene ×1,5, Rückzug/Niederlage 50 %, Verhör Krull +20 % ist eingerechnet
     c.credits += bounty;
     c.stats.missions++; if (won) c.stats.won++;
     c.stats.kills += totalKills;
@@ -2947,7 +2924,8 @@ export class Tactical {
             ${capTxt ? `<p>Gefangene: <b class="good">${capTxt}</b></p>` : ''}
             ${site.kind === 'terror' ? `<p>Gerettete Zivilisten: <b class="good">${r.civSaved}</b> · Opfer: <b class="bad">${r.civKilled}</b></p>` : ''}
             <p>Wertung: <b class="${score >= 0 ? 'good' : 'bad'}">${score >= 0 ? '+' : ''}${score}</b></p>
-            ${bounty ? `<p>Bergungsprämie: <b class="good">${bounty.toLocaleString('de-DE')} ¢</b></p>` : ''}
+            ${bounty ? `<p>Bergungsprämie${won ? '' : ' (halbe Prämie)'}: <b class="good">${bounty.toLocaleString('de-DE')} ¢</b></p>` : ''}
+            ${rw.notes.length ? `<p class="muted">${rw.notes.join('<br>')}</p>` : ''}
             <h4>Geborgene Artefakte</h4><p class="muted">${Object.entries(artifacts).map(([k, n]) => `${k} ×${n}`).join('<br>') || 'Keine'}</p>
             <h4>Verbrauchte Ausrüstung</h4><p class="muted">${usedTxt || 'Keine'}</p>
             ${lootTxt ? `<h4>Erbeutete Munition</h4><p class="muted">${lootTxt}</p>` : ''}</div>
